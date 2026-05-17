@@ -47,7 +47,7 @@ interface Props {
 // Constants — tweak these and the whole sim re-balances
 const LAMP_WATTS = 80
 const PRICE_PER_KWH = 0.15
-const CO2_PER_KWH = 0.25
+const CO2_PER_KWH = 0.13           // Portugal grid 2023 — APA official data
 const HOURS_PER_YEAR_NIGHT = 4100
 const PED_SPEED = 1.4
 const CAR_SPEED = 11
