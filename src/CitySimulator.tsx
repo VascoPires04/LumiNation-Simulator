@@ -1,0 +1,1156 @@
+import { useEffect, useRef, useState } from 'react'
+
+type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
+type AgentType = 'ped' | 'car'
+
+interface Lamp {
+  x: number
+  y: number
+  brightness: number
+  target: number
+  streetId: number
+  side: string
+}
+
+interface Street {
+  ax: number
+  ay: number
+  bx: number
+  by: number
+  dir: 'h' | 'v'
+}
+
+interface Agent {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  type: AgentType
+  street: Street
+  t: number
+  stride: number
+  color: string | null
+}
+
+interface Building {
+  x: number; y: number; w: number; h: number
+}
+
+interface Props {
+  mode: Mode
+}
+
+// Constants — tweak these and the whole sim re-balances
+const LAMP_WATTS = 80
+const PRICE_PER_KWH = 0.15
+const CO2_PER_KWH = 0.25
+const HOURS_PER_YEAR_NIGHT = 4100
+const PED_SPEED = 1.4
+const CAR_SPEED = 11
+const METERS_PER_PIXEL = 0.35
+const LAMP_REACH_PED = 180
+const LAMP_REACH_CAR = 300
+const LAMP_REACH_BEHIND_PED = 260
+const LAMP_REACH_BEHIND_CAR = 400
+const MAX_VISUAL_BRI = 0.85  // Visual cap: both Always-on and LumiNation peak render at this level
+
+const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
+
+function seededRng(seed: number) {
+  let s = ((seed + 1) * 2654435761) >>> 0 || 1
+  return () => {
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5
+    return (s >>> 0) / 4294967295
+  }
+}
+
+function buildCityBlocks(W: number, H: number): Building[] {
+  const buildings: Building[] = []
+  const inset = 18
+  const xZones: [number, number][] = [
+    [0, 0.18 * W - inset],
+    [0.18 * W + inset, 0.50 * W - inset],
+    [0.50 * W + inset, 0.82 * W - inset],
+    [0.82 * W + inset, W],
+  ]
+  const yZones: [number, number][] = [
+    [0, 0.20 * H - inset],
+    [0.20 * H + inset, 0.50 * H - inset],
+    [0.50 * H + inset, 0.80 * H - inset],
+    [0.80 * H + inset, H],
+  ]
+  for (let ci = 0; ci < 4; ci++) {
+    for (let ri = 0; ri < 4; ri++) {
+      const [x0, x1] = xZones[ci]
+      const [y0, y1] = yZones[ri]
+      const cellW = x1 - x0
+      const cellH = y1 - y0
+      if (cellW < 12 || cellH < 12) continue
+      const rng = seededRng(ci * 41 + ri * 13 + 7)
+      const nCols = 2 + Math.floor(rng() * 2)
+      const nRows = 2 + Math.floor(rng() * 2)
+      for (let bc = 0; bc < nCols; bc++) {
+        for (let br = 0; br < nRows; br++) {
+          if (rng() < 0.18) continue
+          const stepX = cellW / nCols
+          const stepY = cellH / nRows
+          const gap = 3
+          const bw = stepX - gap * 2
+          const bh = stepY - gap * 2
+          if (bw > 4 && bh > 4) {
+            buildings.push({ x: x0 + bc * stepX + gap, y: y0 + br * stepY + gap, w: bw, h: bh })
+          }
+        }
+      }
+    }
+  }
+  return buildings
+}
+
+export default function CitySimulator({ mode }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
+
+  // Sim state lives in refs so the render loop never re-mounts
+  const lampsRef = useRef<Lamp[]>([])
+  const streetsRef = useRef<Street[]>([])
+  const agentsRef = useRef<Agent[]>([])
+  const trackedRef = useRef<Agent | null>(null)
+  const dimsRef = useRef({ W: 0, H: 0 })
+
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+
+  const [baselinePct, setBaselinePct] = useState(0.30)
+  const [lookaheadSec, setLookaheadSec] = useState(4.0)
+  const [scenario, setScenario] = useState<'manual' | 'quiet' | 'busy' | 'mixed'>('manual')
+  const [paused, setPaused] = useState(false)
+  const [stats, setStats] = useState({
+    powerNow: 0,
+    powerPct: 0,
+    kwhSaved: 0,
+    eurSaved: 0,
+    co2Saved: 0,
+    peds: 0,
+    cars: 0,
+  })
+
+  const baselineRef = useRef(baselinePct)
+  baselineRef.current = baselinePct
+  const lookaheadRef = useRef(lookaheadSec)
+  lookaheadRef.current = lookaheadSec
+  const scenarioRef = useRef(scenario)
+  scenarioRef.current = scenario
+  const pausedRef = useRef(paused)
+  pausedRef.current = paused
+  const kwhSavedRef = useRef(0)
+  const scenarioTimerRef = useRef(0)
+  const buildingsRef = useRef<Building[]>([])
+
+  // --- Layout the city ---
+  function layoutCity(width: number, height: number) {
+    const lamps: Lamp[] = []
+    const streets: Street[] = []
+    const cols = [0.18, 0.5, 0.82]
+    const rows = [0.2, 0.5, 0.8]
+
+    rows.forEach(ry => {
+      streets.push({ ax: 0, ay: ry * height, bx: width, by: ry * height, dir: 'h' })
+    })
+    cols.forEach(cx => {
+      streets.push({ ax: cx * width, ay: 0, bx: cx * width, by: height, dir: 'v' })
+    })
+
+    const spacing = Math.min(width, height) * 0.11
+    streets.forEach((s, sid) => {
+      if (s.dir === 'h') {
+        for (let x = spacing * 0.5; x < width; x += spacing) {
+          lamps.push({ x, y: s.ay - 20, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'top' })
+          lamps.push({ x, y: s.ay + 20, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'bot' })
+        }
+      } else {
+        for (let y = spacing * 0.5; y < height; y += spacing) {
+          lamps.push({ x: s.ax - 20, y, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'lft' })
+          lamps.push({ x: s.ax + 20, y, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'rgt' })
+        }
+      }
+    })
+
+    lampsRef.current = lamps
+    streetsRef.current = streets
+    buildingsRef.current = buildCityBlocks(width, height)
+  }
+
+  // --- Spawn agents ---
+  function nearestStreet(px: number, py: number) {
+    const { W, H } = dimsRef.current
+    let best: { s: Street; qx: number; qy: number } | null = null
+    let bestD = Infinity
+    for (const s of streetsRef.current) {
+      let qx: number, qy: number
+      if (s.dir === 'h') { qx = Math.max(0, Math.min(W, px)); qy = s.ay }
+      else { qx = s.ax; qy = Math.max(0, Math.min(H, py)) }
+      const d = Math.hypot(px - qx, py - qy)
+      if (d < bestD) { bestD = d; best = { s, qx, qy } }
+    }
+    return bestD < 50 ? best : null
+  }
+
+  function spawnAgent(px: number, py: number, type: AgentType): Agent | null {
+    const hit = nearestStreet(px, py)
+    if (!hit) return null
+    const { s, qx, qy } = hit
+    const speed = type === 'car' ? CAR_SPEED : PED_SPEED
+    const sign = Math.random() < 0.5 ? -1 : 1
+    const a: Agent = {
+      x: qx, y: qy,
+      vx: s.dir === 'h' ? sign * speed : 0,
+      vy: s.dir === 'v' ? sign * speed : 0,
+      type, street: s, t: 0,
+      stride: Math.random() * Math.PI * 2,
+      color: type === 'car' ? CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] : null,
+    }
+    agentsRef.current.push(a)
+    return a
+  }
+
+  function spawnRandomEdge(type: AgentType) {
+    const { W, H } = dimsRef.current
+    const streets = streetsRef.current
+    const s = streets[Math.floor(Math.random() * streets.length)]
+    if (s.dir === 'h') {
+      const fromLeft = Math.random() < 0.5
+      spawnAgent(fromLeft ? 2 : W - 2, s.ay, type)
+    } else {
+      const fromTop = Math.random() < 0.5
+      spawnAgent(s.ax, fromTop ? 2 : H - 2, type)
+    }
+  }
+
+  // --- Physics step ---
+  function step(dt: number) {
+    const agents = agentsRef.current
+    const { W, H } = dimsRef.current
+
+    for (const a of agents) {
+      a.x += a.vx * dt / METERS_PER_PIXEL
+      a.y += a.vy * dt / METERS_PER_PIXEL
+      a.t += dt
+      a.stride += dt * (a.type === 'car' ? 0 : 8)
+    }
+
+    agentsRef.current = agents.filter(a => a.x > -30 && a.x < W + 30 && a.y > -30 && a.y < H + 30)
+    if (trackedRef.current && !agentsRef.current.includes(trackedRef.current)) {
+      trackedRef.current = agentsRef.current.find(a => a.type === 'ped') || null
+    }
+
+    // Intersection turning
+    for (const a of agentsRef.current) {
+      for (const s of streetsRef.current) {
+        if (s === a.street) continue
+        let near = false
+        if (s.dir === 'h' && a.street.dir === 'v') {
+          if (Math.abs(a.y - s.ay) < 4) near = true
+        } else if (s.dir === 'v' && a.street.dir === 'h') {
+          if (Math.abs(a.x - s.ax) < 4) near = true
+        }
+        if (near && Math.random() < 0.012) {
+          const speed = Math.hypot(a.vx, a.vy)
+          const sign = Math.random() < 0.5 ? -1 : 1
+          if (s.dir === 'h') { a.vx = sign * speed; a.vy = 0 }
+          else { a.vx = 0; a.vy = sign * speed }
+          a.street = s
+        }
+      }
+    }
+
+    // Lamp targets
+    for (const l of lampsRef.current) l.target = baselineRef.current
+    for (const a of agentsRef.current) {
+      const isCar = a.type === 'car'
+      const reachAhead = isCar ? LAMP_REACH_CAR : LAMP_REACH_PED
+      const reachBehind = isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED
+      const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))
+      const dx = a.vx / sp
+      const dy = a.vy / sp
+      const lookaheadPx = (sp * lookaheadRef.current) / METERS_PER_PIXEL
+      const fx = a.x + dx * lookaheadPx
+      const fy = a.y + dy * lookaheadPx
+      const agentStreetId = streetsRef.current.indexOf(a.street)
+
+      for (const l of lampsRef.current) {
+        const sameStreet = l.streetId === agentStreetId
+
+        // Cross-street lamps only get a small intersection spillover (50px max)
+        if (!sameStreet) {
+          const d = Math.hypot(l.x - a.x, l.y - a.y)
+          if (d < 50) {
+            const boost = 1 - (d / 50)
+            l.target = Math.max(l.target, boost)  // reach up to 1.0 (100%) at intersection center
+          }
+          continue
+        }
+
+        // Same-street corridor segment logic
+        // Project the lamp onto the pedestrian/vehicle motion ray
+        const distAlong = (l.x - a.x) * dx + (l.y - a.y) * dy
+
+        // Solid light corridor that spans from reachBehind (rear safety margin) to (lookaheadPx + reachAhead) (front prediction margin)
+        if (distAlong >= -reachBehind && distAlong <= (lookaheadPx + reachAhead)) {
+          l.target = 1.0  // Active corridor lights are fully at 100% (safety first!)
+        }
+      }
+    }
+
+    for (const l of lampsRef.current) {
+      const rising = l.target > l.brightness
+      const rate = rising ? 3.2 : 1.2  // smooth warm-up fade-in (3.2), gradual dim-down (1.2)
+      const ease = 1 - Math.exp(-dt * rate)
+      l.brightness += (l.target - l.brightness) * ease
+      // Snap to target when very close — prevents hovering at 0.97 instead of 1.0
+      if (Math.abs(l.target - l.brightness) < 0.01) l.brightness = l.target
+    }
+
+    // Energy
+    const N = lampsRef.current.length
+    const fullPower = N * LAMP_WATTS
+    let luminationPower = 0
+    for (const l of lampsRef.current) luminationPower += LAMP_WATTS * l.brightness
+    const savedW = fullPower - luminationPower
+    kwhSavedRef.current += (savedW * dt) / 3_600_000
+
+    return { luminationPower, fullPower }
+  }
+
+  // --- Drawing helpers ---
+  function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+    ctx.moveTo(x + r, y)
+    ctx.arcTo(x + w, y, x + w, y + h, r)
+    ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r)
+    ctx.arcTo(x, y, x + w, y, r)
+  }
+
+  function drawPedestrian(ctx: CanvasRenderingContext2D, a: Agent, brightness: number) {
+    const sw = Math.sin(a.stride) * 2.5
+    const cw = Math.cos(a.stride) * 1.8
+    const skin = `rgba(240,200,160,${0.6 + 0.4 * brightness})`
+    const body = `rgba(200,210,230,${0.55 + 0.45 * brightness})`
+
+    ctx.strokeStyle = body
+    ctx.lineWidth = 1.4
+    ctx.beginPath()
+    ctx.moveTo(a.x - 3 - sw * 0.4, a.y); ctx.lineTo(a.x + 3 + sw * 0.4, a.y)
+    ctx.stroke()
+
+    ctx.lineWidth = 1.2
+    ctx.strokeStyle = `rgba(170,180,200,${0.5 + 0.5 * brightness})`
+    ctx.beginPath()
+    ctx.moveTo(a.x, a.y + 1); ctx.lineTo(a.x + cw * 0.5, a.y + 4)
+    ctx.moveTo(a.x, a.y + 1); ctx.lineTo(a.x - cw * 0.5, a.y + 4)
+    ctx.stroke()
+
+    ctx.fillStyle = body
+    ctx.beginPath()
+    ctx.ellipse(a.x, a.y, 2.4, 2.8, 0, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.fillStyle = skin
+    ctx.beginPath()
+    ctx.arc(a.x, a.y - 1.5, 1.8, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  function drawCar(ctx: CanvasRenderingContext2D, a: Agent, brightness: number) {
+    const angle = Math.atan2(a.vy, a.vx)
+    ctx.save()
+    ctx.translate(a.x, a.y)
+    ctx.rotate(angle)
+
+    const w = 16, h = 8
+
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
+    ctx.beginPath()
+    roundRect(ctx, -w/2 + 1, -h/2 + 1.5, w, h, 2)
+    ctx.fill()
+
+    ctx.fillStyle = a.color || '#888'
+    ctx.beginPath()
+    roundRect(ctx, -w/2, -h/2, w, h, 2.2)
+    ctx.fill()
+
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'
+    ctx.beginPath()
+    roundRect(ctx, -w/2 + 3, -h/2 + 1.5, w - 8, h - 3, 1.5)
+    ctx.fill()
+
+    ctx.fillStyle = `rgba(180,210,240,${0.35 + 0.4 * brightness})`
+    ctx.beginPath()
+    ctx.moveTo(w/2 - 5, -h/2 + 1.5)
+    ctx.lineTo(w/2 - 2.5, -h/2 + 1.5)
+    ctx.lineTo(w/2 - 2.5, h/2 - 1.5)
+    ctx.lineTo(w/2 - 5, h/2 - 1.5)
+    ctx.closePath()
+    ctx.fill()
+
+    // Headlights cone
+    const grd = ctx.createRadialGradient(w/2 + 2, 0, 0, w/2 + 2, 0, 28)
+    grd.addColorStop(0, `rgba(255,240,200,${0.55 * (0.7 + 0.3 * brightness)})`)
+    grd.addColorStop(1, 'rgba(255,240,200,0)')
+    ctx.fillStyle = grd
+    ctx.beginPath()
+    ctx.moveTo(w/2, -h/2 + 1)
+    ctx.lineTo(w/2 + 28, -h * 1.2)
+    ctx.lineTo(w/2 + 28, h * 1.2)
+    ctx.lineTo(w/2, h/2 - 1)
+    ctx.closePath()
+    ctx.fill()
+
+    ctx.fillStyle = 'rgba(255,250,220,0.9)'
+    ctx.beginPath(); ctx.arc(w/2 - 0.5, -h/2 + 1.8, 0.9, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(w/2 - 0.5, h/2 - 1.8, 0.9, 0, Math.PI * 2); ctx.fill()
+
+    ctx.fillStyle = 'rgba(220,40,40,0.8)'
+    ctx.beginPath(); ctx.arc(-w/2 + 0.5, -h/2 + 1.8, 0.7, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(-w/2 + 0.5, h/2 - 1.8, 0.7, 0, Math.PI * 2); ctx.fill()
+
+    ctx.restore()
+  }
+
+  function localBrightnessAt(x: number, y: number): number {
+    let v = 0
+    for (const l of lampsRef.current) {
+      const d = Math.hypot(l.x - x, l.y - y)
+      if (d < 80) v += l.brightness * (1 - d / 80) * 0.4
+    }
+    return Math.min(1, v + 0.1)
+  }
+
+  function drawCityTopDown(ctx: CanvasRenderingContext2D, useBaseline: boolean) {
+    const { W, H } = dimsRef.current
+
+    ctx.fillStyle = '#040406'
+    ctx.fillRect(0, 0, W, H)
+
+    // Building blocks with gradient fills and warm, subtle lit windows
+    for (const bld of buildingsRef.current) {
+      const bGrd = ctx.createLinearGradient(bld.x, bld.y, bld.x + bld.w, bld.y + bld.h)
+      bGrd.addColorStop(0, '#0a0a0f')
+      bGrd.addColorStop(1, '#111119')
+      ctx.fillStyle = bGrd
+      ctx.fillRect(bld.x, bld.y, bld.w, bld.h)
+      
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)'
+      ctx.lineWidth = 0.6
+      ctx.strokeRect(bld.x, bld.y, bld.w, bld.h)
+
+      // Draw subtle warm glowing windows on top of buildings
+      const rng = seededRng(bld.x * 13 + bld.y * 31)
+      const winSize = 2
+      const winSpacing = 5
+      const cols = Math.floor((bld.w - 6) / winSpacing)
+      const rows = Math.floor((bld.h - 6) / winSpacing)
+      
+      if (cols > 0 && rows > 0) {
+        ctx.fillStyle = 'rgba(250, 199, 117, 0.15)' // Faint warm light
+        for (let c = 0; c < cols; c++) {
+          for (let r = 0; r < rows; r++) {
+            if (rng() < 0.10) { // 10% chance for window to show activity
+              const wx = bld.x + 4 + c * winSpacing
+              const wy = bld.y + 4 + r * winSpacing
+              ctx.fillRect(wx, wy, winSize, winSize)
+            }
+          }
+        }
+      }
+    }
+
+    // Road styling: sidewalk border (width 44) -> road surface (width 32) -> center line
+    ctx.strokeStyle = '#0e0e14'
+    ctx.lineWidth = 44
+    for (const s of streetsRef.current) {
+      ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
+    }
+    ctx.strokeStyle = '#14141d'
+    ctx.lineWidth = 32
+    for (const s of streetsRef.current) {
+      ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
+    }
+    ctx.strokeStyle = '#181824'
+    ctx.lineWidth = 14
+    for (const s of streetsRef.current) {
+      ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
+    }
+    ctx.strokeStyle = '#2a2a3a'
+    ctx.lineWidth = 0.8
+    ctx.setLineDash([6, 8])
+    for (const s of streetsRef.current) {
+      ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
+    }
+    ctx.setLineDash([])
+
+    // Communication mesh — opacity reacts to lamp brightness
+    ctx.lineWidth = 1
+    const byStreet = new Map<string, Lamp[]>()
+    lampsRef.current.forEach(l => {
+      const key = `${l.streetId}-${l.side}`
+      if (!byStreet.has(key)) byStreet.set(key, [])
+      byStreet.get(key)!.push(l)
+    })
+    byStreet.forEach(arr => {
+      arr.sort((a, b) => (a.x + a.y) - (b.x + b.y))
+      for (let i = 0; i < arr.length - 1; i++) {
+        const avgB = useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, (arr[i].brightness + arr[i + 1].brightness) / 2)
+        ctx.strokeStyle = `rgba(250, 199, 117, ${0.02 + avgB * 0.08})`
+        ctx.beginPath()
+        ctx.moveTo(arr[i].x, arr[i].y); ctx.lineTo(arr[i + 1].x, arr[i + 1].y)
+        ctx.stroke()
+      }
+    })
+
+    // Lamps + halos (extra smooth gradient transitions)
+    for (const l of lampsRef.current) {
+      const b = useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, l.brightness)
+      const r = 14 + b * 110
+      const grd = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, r)
+      grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * b})`)
+      grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * b})`)
+      grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.16 * b})`)
+      grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.05 * b})`)
+      grd.addColorStop(1,    'rgba(250, 199, 117, 0)')
+      ctx.fillStyle = grd
+      ctx.beginPath(); ctx.arc(l.x, l.y, r, 0, Math.PI * 2); ctx.fill()
+
+      ctx.fillStyle = `rgba(255, 230, 170, ${0.5 + 0.5 * b})`
+      ctx.beginPath(); ctx.arc(l.x, l.y, 2.4, 0, Math.PI * 2); ctx.fill()
+
+      ctx.fillStyle = '#22222a'
+      ctx.beginPath(); ctx.arc(l.x, l.y, 1, 0, Math.PI * 2); ctx.fill()
+    }
+
+    for (const a of agentsRef.current) {
+      const bri = useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, localBrightnessAt(a.x, a.y))
+      if (a.type === 'car') drawCar(ctx, a, bri)
+      else drawPedestrian(ctx, a, bri)
+    }
+
+    // Atmospheric vignette
+    const vg = ctx.createRadialGradient(W / 2, H / 2, W * 0.28, W / 2, H / 2, W * 0.78)
+    vg.addColorStop(0, 'rgba(0,0,0,0)')
+    vg.addColorStop(1, 'rgba(0,0,0,0.48)')
+    ctx.fillStyle = vg
+    ctx.fillRect(0, 0, W, H)
+  }
+
+  function drawFPV(ctx: CanvasRenderingContext2D) {
+    const { W, H } = dimsRef.current
+
+    if (!trackedRef.current) {
+      trackedRef.current = agentsRef.current.find(a => a.type === 'ped') || spawnAgent(W * 0.5, H * 0.5, 'ped')
+      if (!trackedRef.current) return
+    }
+    const a = trackedRef.current
+    const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))
+
+    // 1. Sky Background (Deep atmospheric indigo-black)
+    const sky = ctx.createLinearGradient(0, 0, 0, H * 0.45)
+    sky.addColorStop(0, '#020205')
+    sky.addColorStop(1, '#0b0914')
+    ctx.fillStyle = sky
+    ctx.fillRect(0, 0, W, H)
+
+    // 2. Stars
+    const starRng = seededRng(777)
+    ctx.fillStyle = '#ffffff'
+    for (let i = 0; i < 40; i++) {
+      const sx = starRng() * W
+      const sy = starRng() * (H * 0.45 - 20)
+      const size = 0.5 + starRng() * 1.0
+      ctx.globalAlpha = 0.15 + starRng() * 0.7
+      ctx.fillRect(sx, sy, size, size)
+    }
+    ctx.globalAlpha = 1.0
+
+    const horizonY = H * 0.45
+    const vpx = W / 2
+    const bobY = Math.sin(a.stride * 1.0) * 3 // Walking head-bob
+
+    const camHeight = 0.5
+    const projX = (x: number, depth: number) => {
+      const scale = 1 / depth
+      return vpx + x * scale * W
+    }
+    const projY = (y: number, depth: number) => {
+      const scale = 1 / depth
+      return horizonY - (y - camHeight) * scale * H + bobY
+    }
+
+    // 3. Draw Road & Sidewalk asphalt surface (perspective trapezoids)
+    // Ambient road surface - slightly lit so it's not pitch black
+    const farZ = 60.0
+    ctx.fillStyle = '#101018'
+    ctx.beginPath()
+    ctx.moveTo(projX(-0.4, farZ), projY(0, farZ))
+    ctx.lineTo(projX(0.4, farZ), projY(0, farZ))
+    ctx.lineTo(projX(0.4, 0.3), projY(0, 0.3))
+    ctx.lineTo(projX(-0.4, 0.3), projY(0, 0.3))
+    ctx.closePath()
+    ctx.fill()
+
+    // Left Sidewalk
+    ctx.fillStyle = '#151520'
+    ctx.beginPath()
+    ctx.moveTo(projX(-0.65, farZ), projY(0, farZ))
+    ctx.lineTo(projX(-0.4, farZ), projY(0, farZ))
+    ctx.lineTo(projX(-0.4, 0.3), projY(0, 0.3))
+    ctx.lineTo(projX(-0.65, 0.3), projY(0, 0.3))
+    ctx.closePath()
+    ctx.fill()
+
+    // Right Sidewalk
+    ctx.fillStyle = '#151520'
+    ctx.beginPath()
+    ctx.moveTo(projX(0.4, farZ), projY(0, farZ))
+    ctx.lineTo(projX(0.65, farZ), projY(0, farZ))
+    ctx.lineTo(projX(0.65, 0.3), projY(0, 0.3))
+    ctx.lineTo(projX(0.4, 0.3), projY(0, 0.3))
+    ctx.closePath()
+    ctx.fill()
+
+
+
+    // Curb lines
+    ctx.strokeStyle = '#222232'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(projX(-0.4, 10.0), projY(0, 10.0)); ctx.lineTo(projX(-0.4, 0.3), projY(0, 0.3))
+    ctx.moveTo(projX(0.4, 10.0), projY(0, 10.0)); ctx.lineTo(projX(0.4, 0.3), projY(0, 0.3))
+    ctx.stroke()
+
+    // Sidewalk joint/paving lines scrolling in depth
+    const spacing = Math.min(W, H) * 0.11
+    const pixelsToZ = 1.5 / (spacing * 1.2)
+    const progress = a.t * (sp / METERS_PER_PIXEL) * pixelsToZ
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)'
+    ctx.lineWidth = 1
+    const pavingStart = (10 - (progress % 0.5)) % 0.5
+    for (let zVal = pavingStart; zVal < farZ; zVal += 0.5) {
+      if (zVal < 0.3) continue
+      // Left sidewalk lines
+      ctx.beginPath()
+      ctx.moveTo(projX(-0.65, zVal), projY(0, zVal))
+      ctx.lineTo(projX(-0.4, zVal), projY(0, zVal))
+      ctx.stroke()
+
+      // Right sidewalk lines
+      ctx.beginPath()
+      ctx.moveTo(projX(0.4, zVal), projY(0, zVal))
+      ctx.lineTo(projX(0.65, zVal), projY(0, zVal))
+      ctx.stroke()
+    }
+
+    // Centered dashed road markings scrolling in depth
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.22)'
+    const dashStart = (10 - (progress % 1.0)) % 1.0
+    for (let zVal = dashStart; zVal < farZ; zVal += 1.0) {
+      if (zVal < 0.3) continue
+      ctx.beginPath()
+      ctx.moveTo(projX(-0.012, zVal + 0.3), projY(0, zVal + 0.3))
+      ctx.lineTo(projX(0.012, zVal + 0.3), projY(0, zVal + 0.3))
+      ctx.lineTo(projX(0.012, zVal), projY(0, zVal))
+      ctx.lineTo(projX(-0.012, zVal), projY(0, zVal))
+      ctx.closePath()
+      ctx.fill()
+    }
+
+    // 4. Construct Renderable Items (Painters Algorithm: sort by Z descending)
+    interface RenderItem {
+      type: 'building' | 'lamp'
+      z: number
+      bldIndex?: number
+      lamp?: Lamp
+      relativeSide?: string
+    }
+
+    const renderItems: RenderItem[] = []
+
+    // Populate perspective buildings
+    const startBldIndex = Math.floor(progress / 1.5) - 1
+    for (let i = 0; i < 40; i++) {
+      const bldIndex = startBldIndex + i
+      const zWorld = bldIndex * 1.5
+      const zRel = zWorld - progress
+      if (zRel >= 0.3 && zRel <= 60) {
+        renderItems.push({ type: 'building', z: zRel, bldIndex })
+      }
+    }
+
+    // Populate virtual streetlights — evenly spaced, scrolling infinitely like buildings
+    const lampSpacing = 1.6  // Natural staggered spacing (1.6 Z units instead of 0.75)
+    const startLampIndex = Math.floor(progress / lampSpacing) - 1
+    for (let i = 0; i < 30; i++) {
+      const lampIndex = startLampIndex + i
+      const zWorld = lampIndex * lampSpacing
+      const zRel = zWorld - progress
+      if (zRel >= 0.3 && zRel <= 45) {
+        // Alternate: even index = left side, odd = right side (staggered like real streets)
+        const side = lampIndex % 2 === 0 ? 'left' : 'right'
+        renderItems.push({ type: 'lamp', z: zRel, lamp: lampsRef.current[0], relativeSide: side })
+      }
+    }
+
+    // Sort render queue: furthest first, lamps render AFTER buildings at same depth
+    renderItems.sort((r1, r2) => {
+      if (Math.abs(r1.z - r2.z) < 0.01) return r1.type === 'lamp' ? 1 : -1
+      return r2.z - r1.z
+    })
+
+    const lerp2D = (p1: { x: number; y: number }, p2: { x: number; y: number }, t: number) => ({
+      x: p1.x + (p2.x - p1.x) * t,
+      y: p1.y + (p2.y - p1.y) * t
+    })
+
+    // Render loop
+    renderItems.forEach(item => {
+      if (item.type === 'building') {
+        const bldIndex = item.bldIndex || 0
+        const hRng = seededRng(bldIndex * 59 + 7)
+        const h = 3.5 + hRng() * 2.5 // Building heights (taller than lamp poles)
+        const zF = item.z
+        const zB = item.z + 1.5
+
+        // Left building block
+        {
+          const xL = -2.2, xR = -0.45
+          const yG = 0, yR = h
+          const fTR = { x: projX(xR, zF), y: projY(yR, zF) }
+          const fBR = { x: projX(xR, zF), y: projY(yG, zF) }
+          const bTR = { x: projX(xR, zB), y: projY(yR, zB) }
+          const bBR = { x: projX(xR, zB), y: projY(yG, zB) }
+
+          const fTL = { x: projX(xL, zF), y: projY(yR, zF) }
+          const fBL = { x: projX(xL, zF), y: projY(yG, zF) }
+
+          // Side wall
+          ctx.fillStyle = '#09080f'
+          ctx.beginPath()
+          ctx.moveTo(fTR.x, fTR.y)
+          ctx.lineTo(bTR.x, bTR.y)
+          ctx.lineTo(bBR.x, bBR.y)
+          ctx.lineTo(fBR.x, fBR.y)
+          ctx.closePath()
+          ctx.fill()
+
+          ctx.strokeStyle = 'rgba(255,255,255,0.02)'
+          ctx.lineWidth = 0.5
+          ctx.stroke()
+
+          // Side wall window grid
+          const numCols = 3
+          const numRows = 5
+          for (let c = 0; c < numCols; c++) {
+            for (let r = 0; r < numRows; r++) {
+              const u = (c + 0.25) / numCols
+              const v = (r + 0.22) / numRows
+              const wWidth = 0.5 / numCols
+              const wHeight = 0.55 / numRows
+
+              const wBR = lerp2D(lerp2D(fBR, bBR, u), lerp2D(fTR, bTR, u), v)
+              const wTR = lerp2D(lerp2D(fBR, bBR, u), lerp2D(fTR, bTR, u), v + wHeight)
+              const wTL = lerp2D(lerp2D(fBR, bBR, u + wWidth), lerp2D(fTR, bTR, u + wWidth), v + wHeight)
+              const wBL = lerp2D(lerp2D(fBR, bBR, u + wWidth), lerp2D(fTR, bTR, u + wWidth), v)
+
+              const winRng = seededRng(bldIndex * 47 + c * 13 + r * 19)
+              ctx.fillStyle = winRng() < 0.15 ? 'rgba(250, 199, 117, 0.52)' : 'rgba(8, 8, 14, 0.8)'
+              ctx.beginPath()
+              ctx.moveTo(wBR.x, wBR.y)
+              ctx.lineTo(wTR.x, wTR.y)
+              ctx.lineTo(wTL.x, wTL.y)
+              ctx.lineTo(wBL.x, wBL.y)
+              ctx.closePath()
+              ctx.fill()
+            }
+          }
+
+          // Front wall
+          ctx.fillStyle = '#050508'
+          ctx.beginPath()
+          ctx.moveTo(fTL.x, fTL.y)
+          ctx.lineTo(fTR.x, fTR.y)
+          ctx.lineTo(fBR.x, fBR.y)
+          ctx.lineTo(fBL.x, fBL.y)
+          ctx.closePath()
+          ctx.fill()
+        }
+
+        // Right building block
+        {
+          const xL = 0.45, xR = 2.2
+          const yG = 0, yR = h
+          const fTL = { x: projX(xL, zF), y: projY(yR, zF) }
+          const fBL = { x: projX(xL, zF), y: projY(yG, zF) }
+          const bTL = { x: projX(xL, zB), y: projY(yR, zB) }
+          const bBL = { x: projX(xL, zB), y: projY(yG, zB) }
+
+          const fTR = { x: projX(xR, zF), y: projY(yR, zF) }
+          const fBR = { x: projX(xR, zF), y: projY(yG, zF) }
+
+          // Side wall
+          ctx.fillStyle = '#09080f'
+          ctx.beginPath()
+          ctx.moveTo(fTL.x, fTL.y)
+          ctx.lineTo(bTL.x, bTL.y)
+          ctx.lineTo(bBL.x, bBL.y)
+          ctx.lineTo(fBL.x, fBL.y)
+          ctx.closePath()
+          ctx.fill()
+
+          ctx.strokeStyle = 'rgba(255,255,255,0.02)'
+          ctx.lineWidth = 0.5
+          ctx.stroke()
+
+          // Side wall windows
+          const numCols = 3
+          const numRows = 5
+          for (let c = 0; c < numCols; c++) {
+            for (let r = 0; r < numRows; r++) {
+              const u = (c + 0.25) / numCols
+              const v = (r + 0.22) / numRows
+              const wWidth = 0.5 / numCols
+              const wHeight = 0.55 / numRows
+
+              const wBL = lerp2D(lerp2D(fBL, bBL, u), lerp2D(fTL, bTL, u), v)
+              const wTL = lerp2D(lerp2D(fBL, bBL, u), lerp2D(fTL, bTL, u), v + wHeight)
+              const wTR = lerp2D(lerp2D(fBL, bBL, u + wWidth), lerp2D(fTL, bTL, u + wWidth), v + wHeight)
+              const wBR = lerp2D(lerp2D(fBL, bBL, u + wWidth), lerp2D(fTL, bTL, u + wWidth), v)
+
+              const winRng = seededRng(bldIndex * 47 + c * 13 + r * 19 + 11)
+              ctx.fillStyle = winRng() < 0.15 ? 'rgba(250, 199, 117, 0.52)' : 'rgba(8, 8, 14, 0.8)'
+              ctx.beginPath()
+              ctx.moveTo(wBL.x, wBL.y)
+              ctx.lineTo(wTL.x, wTL.y)
+              ctx.lineTo(wTR.x, wTR.y)
+              ctx.lineTo(wBR.x, wBR.y)
+              ctx.closePath()
+              ctx.fill()
+            }
+          }
+
+          // Front wall
+          ctx.fillStyle = '#050508'
+          ctx.beginPath()
+          ctx.moveTo(fTL.x, fTL.y)
+          ctx.lineTo(fTR.x, fTR.y)
+          ctx.lineTo(fBR.x, fBR.y)
+          ctx.lineTo(fBL.x, fBL.y)
+          ctx.closePath()
+          ctx.fill()
+        }
+      } else if (item.type === 'lamp') {
+        const scale = 1 / item.z
+        const relativeSide = item.relativeSide
+        const lamp = item.lamp!
+        // Citizen View: calculate brightness dynamically based on lookahead and baseline
+        // - All active streetlights in the corridor have the exact same 100% physical light output (MAX_VISUAL_BRI)
+        // - Distant lamps fade smoothly to the baseline brightness slider percentage
+        const lookaheadZ = lookaheadRef.current * 1.6  // Scale factor to make slider changes highly visible in 3D perspective
+        const safeZLimit = Math.max(1.5, lookaheadZ)
+        const fadeLength = 1.2 // Sharper, cleaner transition so lookahead cuts are highly distinct
+
+        let bri = MAX_VISUAL_BRI
+        if (item.z > safeZLimit) {
+          const distPast = item.z - safeZLimit
+          const fadeFactor = Math.max(0, Math.min(1, distPast / fadeLength))
+          // Fade from MAX_VISUAL_BRI to (baseline * MAX_VISUAL_BRI)
+          const baseBri = baselineRef.current * MAX_VISUAL_BRI
+          bri = MAX_VISUAL_BRI * (1 - fadeFactor) + baseBri * fadeFactor
+        }
+
+        // Depth-fade to prevent distant overlapping semi-transparent elements from compounding into a solid block
+        const depthFade = Math.max(0.08, Math.min(1.0, 4.5 / item.z))
+
+        const isLeft = relativeSide === 'left'
+        const lampX = isLeft ? -0.38 : 0.38  // on the sidewalk, between curb (±0.40) and building (±0.45)
+
+        // Pole — realistic: ~6m streetlight, eye level ~1.7m => ratio ~3.5x
+        const poleBaseX = projX(lampX, item.z)
+        const poleBaseY = projY(0, item.z)
+        const poleHeight = 1.8
+        const poleTopY = projY(poleHeight, item.z)
+
+        ctx.strokeStyle = `rgba(140, 140, 160, ${0.6 + 0.4 * scale})`
+        ctx.lineWidth = Math.max(2, 4 * scale)
+        ctx.beginPath()
+        ctx.moveTo(poleBaseX, poleBaseY)
+        ctx.lineTo(poleBaseX, poleTopY)
+        ctx.stroke()
+
+        // Arm extending toward street
+        const armLength = isLeft ? 0.10 : -0.10
+        const armX = projX(lampX + armLength, item.z)
+        const armY = projY(poleHeight + 0.04, item.z)
+
+        ctx.beginPath()
+        ctx.moveTo(poleBaseX, poleTopY)
+        ctx.lineTo(armX, armY)
+        ctx.stroke()
+
+        // VISIBLE LIGHT CONE from fixture down to ground
+        // This is the key: you see the beam going FROM the lamp TO the road
+        const groundCenterX = projX(lampX * 0.3, item.z) // cone lands toward road center
+        const groundY = projY(0, item.z)
+        const coneSpreadGround = 0.22 * scale * W // how wide the cone is at ground level
+        const coneGrd = ctx.createLinearGradient(armX, armY, groundCenterX, groundY)
+        coneGrd.addColorStop(0, `rgba(255, 235, 190, ${0.45 * bri * depthFade})`)
+        coneGrd.addColorStop(0.5, `rgba(250, 215, 150, ${0.22 * bri * depthFade})`)
+        coneGrd.addColorStop(1, `rgba(250, 199, 117, ${0.10 * bri * depthFade})`)
+        ctx.fillStyle = coneGrd
+        ctx.beginPath()
+        ctx.moveTo(armX - 2 * scale, armY)  // narrow at fixture
+        ctx.lineTo(armX + 2 * scale, armY)
+        ctx.lineTo(groundCenterX + coneSpreadGround, groundY)  // wide at ground
+        ctx.lineTo(groundCenterX - coneSpreadGround, groundY)
+        ctx.closePath()
+        ctx.fill()
+
+        // Ground light pool (where the cone hits the road)
+        const poolRadX = (0.10 + 0.36 * bri) * scale * W
+        const poolRadY = poolRadX * 0.35
+
+        const poolGrd = ctx.createRadialGradient(groundCenterX, groundY, 0, groundCenterX, groundY, poolRadX)
+        poolGrd.addColorStop(0, `rgba(255, 224, 155, ${0.70 * bri * depthFade})`)
+        poolGrd.addColorStop(0.3, `rgba(250, 199, 117, ${0.40 * bri * depthFade})`)
+        poolGrd.addColorStop(0.7, `rgba(250, 199, 117, ${0.12 * bri * depthFade})`)
+        poolGrd.addColorStop(1, 'rgba(250, 199, 117, 0)')
+        ctx.fillStyle = poolGrd
+        ctx.beginPath()
+        ctx.ellipse(groundCenterX, groundY, poolRadX, poolRadY, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Bulb glow/halo at fixture
+        const glowRad = (8 + bri * 32) * scale
+        const glowGrd = ctx.createRadialGradient(armX, armY, 0, armX, armY, glowRad)
+        glowGrd.addColorStop(0, `rgba(255, 240, 200, ${0.95 * bri * depthFade})`)
+        glowGrd.addColorStop(0.2, `rgba(255, 224, 155, ${0.55 * bri * depthFade})`)
+        glowGrd.addColorStop(0.5, `rgba(250, 199, 117, ${0.18 * bri * depthFade})`)
+        glowGrd.addColorStop(1, 'rgba(250, 199, 117, 0)')
+        ctx.fillStyle = glowGrd
+        ctx.beginPath()
+        ctx.arc(armX, armY, glowRad, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Bright lamp core dot
+        ctx.fillStyle = `rgba(255, 250, 235, ${0.7 + 0.3 * bri * depthFade})`
+        ctx.beginPath()
+        ctx.arc(armX, armY, Math.max(1.5, 2.5 * scale), 0, Math.PI * 2)
+        ctx.fill()
+      }
+    })
+
+
+
+    // Soft vignette (lighter than before)
+    const vg = ctx.createRadialGradient(W / 2, H / 2, W * 0.35, W / 2, H / 2, W * 0.85)
+    vg.addColorStop(0, 'rgba(0,0,0,0)')
+    vg.addColorStop(1, 'rgba(0,0,0,0.35)')
+    ctx.fillStyle = vg
+    ctx.fillRect(0, 0, W, H)
+
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'
+    ctx.font = '12px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('the corridor stays ahead — the citizen never notices', W / 2, H - 24)
+  }
+
+  function draw(ctx: CanvasRenderingContext2D) {
+    const { W, H } = dimsRef.current
+    const m = modeRef.current
+    if (m === 'compare') {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W / 2, H); ctx.clip()
+      drawCityTopDown(ctx, true)
+      ctx.restore()
+      ctx.save(); ctx.beginPath(); ctx.rect(W / 2, 0, W / 2, H); ctx.clip()
+      drawCityTopDown(ctx, false)
+      ctx.restore()
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+      ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke()
+    } else if (m === 'fpv') {
+      drawFPV(ctx)
+    } else {
+      drawCityTopDown(ctx, m === 'baseline')
+    }
+  }
+
+  // --- Scenario auto-spawn ---
+  function handleScenario(dt: number) {
+    if (scenarioRef.current === 'manual') return
+    scenarioTimerRef.current -= dt
+    if (scenarioTimerRef.current > 0) return
+    if (scenarioRef.current === 'quiet') {
+      scenarioTimerRef.current = 4 + Math.random() * 5
+      spawnRandomEdge(Math.random() < 0.85 ? 'ped' : 'car')
+    } else if (scenarioRef.current === 'busy') {
+      scenarioTimerRef.current = 0.4 + Math.random() * 0.6
+      spawnRandomEdge(Math.random() < 0.55 ? 'car' : 'ped')
+    } else if (scenarioRef.current === 'mixed') {
+      scenarioTimerRef.current = 1.2 + Math.random() * 1.5
+      spawnRandomEdge(Math.random() < 0.5 ? 'car' : 'ped')
+    }
+  }
+
+  // --- Main effect: canvas setup + render loop ---
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const stage = stageRef.current
+    if (!canvas || !stage) return
+    const ctx = canvas.getContext('2d')!
+    const dpr = window.devicePixelRatio || 1
+
+    const resize = () => {
+      const rect = stage.getBoundingClientRect()
+      const W = rect.width, H = rect.height
+      dimsRef.current = { W, H }
+      canvas.width = W * dpr
+      canvas.height = H * dpr
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      layoutCity(W, H)
+    }
+    resize()
+    const ro = new ResizeObserver(resize)
+    ro.observe(stage)
+
+    let lastTick = performance.now()
+    let raf = 0
+    let statsTick = 0
+
+    const loop = (now: number) => {
+      raf = requestAnimationFrame(loop)
+      const dt = Math.min(0.1, (now - lastTick) / 1000)
+      lastTick = now
+      if (pausedRef.current) return
+      handleScenario(dt)
+      const power = step(dt)
+      draw(ctx)
+
+      // Throttle stats updates (re-renders React) to ~10Hz
+      statsTick += dt
+      if (statsTick > 0.1) {
+        statsTick = 0
+        const N = lampsRef.current.length
+        const full = N * LAMP_WATTS
+        const pct = full > 0 ? Math.round((power.luminationPower / full) * 100) : 0
+        const instSavedW = full - power.luminationPower
+        const annualKwh = (instSavedW / 1000) * HOURS_PER_YEAR_NIGHT
+        setStats({
+          powerNow: Math.round(power.luminationPower),
+          powerPct: pct,
+          kwhSaved: kwhSavedRef.current,
+          eurSaved: Math.round(annualKwh * PRICE_PER_KWH),
+          co2Saved: Math.round(annualKwh * CO2_PER_KWH),
+          peds: agentsRef.current.filter(a => a.type === 'ped').length,
+          cars: agentsRef.current.filter(a => a.type === 'car').length,
+        })
+      }
+    }
+    raf = requestAnimationFrame(loop)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+    }
+  }, [])
+
+  // --- Canvas click handler ---
+  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current!.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const a = spawnAgent(x, y, e.shiftKey ? 'car' : 'ped')
+    if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
+  }
+
+  // --- Render ---
+  return (
+    <div className="main">
+      <div className="stage" ref={stageRef}>
+        <canvas ref={canvasRef} onClick={handleClick} />
+        {mode === 'compare' && (
+          <div className="stage-label-row">
+            <span>Always-on</span><span>LumiNation</span>
+          </div>
+        )}
+        {mode === 'fpv' && (
+          <div className="fpv-banner">
+            <span>walking down the street · the lights just feel normal</span>
+          </div>
+        )}
+        {mode !== 'fpv' && (
+          <div className="stage-hint">click a street to add a pedestrian · shift+click for a car</div>
+        )}
+      </div>
+
+      <aside className="sidebar">
+        <div className="card">
+          <div className="card-label">Power now</div>
+          <div className="metric-row">
+            <span className="metric-value">{stats.powerNow.toLocaleString()}</span>
+            <span className="metric-unit">W</span>
+            <span className="metric-aux">{stats.powerPct}% of always-on</span>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-label">Energy saved (session)</div>
+          <div className="metric-row">
+            <span className="metric-value">{stats.kwhSaved.toFixed(3)}</span>
+            <span className="metric-unit">kWh</span>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-label">Projected annual savings</div>
+          <div className="metric-row">
+            <span className="metric-unit">€</span>
+            <span className="metric-value">{stats.eurSaved.toLocaleString()}</span>
+            <span className="metric-aux">{stats.co2Saved.toLocaleString()} kg CO₂/yr</span>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-label">Agents</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
+            <span>Pedestrians</span><span style={{ fontWeight: 500 }}>{stats.peds}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
+            <span>Vehicles</span><span style={{ fontWeight: 500 }}>{stats.cars}</span>
+          </div>
+        </div>
+
+        <div className="card controls">
+          <div className="card-label">Scenario</div>
+          <select value={scenario} onChange={e => setScenario(e.target.value as any)}>
+            <option value="manual">Manual (click to add)</option>
+            <option value="quiet">Quiet residential · 3am</option>
+            <option value="busy">Busy avenue · 8pm</option>
+            <option value="mixed">Mixed traffic · 11pm</option>
+          </select>
+
+          <div className="row"><span>Baseline brightness</span><span>{Math.round(baselinePct * 100)}%</span></div>
+          <input type="range" min={15} max={100} step={1} value={Math.round(baselinePct * 100)}
+            onChange={e => setBaselinePct(parseInt(e.target.value, 10) / 100)} />
+
+          <div className="row"><span>Lookahead</span><span>{lookaheadSec.toFixed(1)}s</span></div>
+          <input type="range" min={20} max={80} step={1} value={Math.round(lookaheadSec * 10)}
+            onChange={e => setLookaheadSec(parseInt(e.target.value, 10) / 10)} />
+
+          <div className="button-row">
+            <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0 }}>Clear</button>
+            <button onClick={() => setPaused(p => !p)}>{paused ? 'Resume' : 'Pause'}</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  )
+}
