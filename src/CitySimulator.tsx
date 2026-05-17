@@ -34,7 +34,11 @@ interface Agent {
 
 interface Building {
   x: number; y: number; w: number; h: number
+  btype: 'residential' | 'commercial' | 'office'
 }
+
+interface Tree { x: number; y: number }
+interface ParkZone { x: number; y: number; w: number; h: number }
 
 interface Props {
   mode: Mode
@@ -51,8 +55,10 @@ const METERS_PER_PIXEL = 0.35
 const LAMP_REACH_PED = 180
 const LAMP_REACH_CAR = 300
 const LAMP_REACH_BEHIND_PED = 260
-const LAMP_REACH_BEHIND_CAR = 400
+const LAMP_REACH_BEHIND_CAR = 200
 const MAX_VISUAL_BRI = 0.85  // Visual cap: both Always-on and LumiNation peak render at this level
+const PARK_CI = 1
+const PARK_RI = 2
 
 const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
@@ -79,8 +85,11 @@ function buildCityBlocks(W: number, H: number): Building[] {
     [0.50 * H + inset, 0.80 * H - inset],
     [0.80 * H + inset, H],
   ]
+  const btypes: ('residential' | 'commercial' | 'office')[] = ['residential', 'commercial', 'office']
   for (let ci = 0; ci < 4; ci++) {
     for (let ri = 0; ri < 4; ri++) {
+      if (ci === PARK_CI && ri === PARK_RI) continue
+      const btype = btypes[(ci + ri) % 3]
       const [x0, x1] = xZones[ci]
       const [y0, y1] = yZones[ri]
       const cellW = x1 - x0
@@ -98,7 +107,7 @@ function buildCityBlocks(W: number, H: number): Building[] {
           const bw = stepX - gap * 2
           const bh = stepY - gap * 2
           if (bw > 4 && bh > 4) {
-            buildings.push({ x: x0 + bc * stepX + gap, y: y0 + br * stepY + gap, w: bw, h: bh })
+            buildings.push({ x: x0 + bc * stepX + gap, y: y0 + br * stepY + gap, w: bw, h: bh, btype })
           }
         }
       }
@@ -146,6 +155,8 @@ export default function CitySimulator({ mode }: Props) {
   const kwhSavedRef = useRef(0)
   const scenarioTimerRef = useRef(0)
   const buildingsRef = useRef<Building[]>([])
+  const treesRef = useRef<Tree[]>([])
+  const parkRef = useRef<ParkZone | null>(null)
 
   // --- Layout the city ---
   function layoutCity(width: number, height: number) {
@@ -179,6 +190,42 @@ export default function CitySimulator({ mode }: Props) {
     lampsRef.current = lamps
     streetsRef.current = streets
     buildingsRef.current = buildCityBlocks(width, height)
+
+    // Park zone boundaries
+    const insetPk = 18
+    const xZonesPk: [number, number][] = [
+      [0, 0.18 * width - insetPk],
+      [0.18 * width + insetPk, 0.50 * width - insetPk],
+      [0.50 * width + insetPk, 0.82 * width - insetPk],
+      [0.82 * width + insetPk, width],
+    ]
+    const yZonesPk: [number, number][] = [
+      [0, 0.20 * height - insetPk],
+      [0.20 * height + insetPk, 0.50 * height - insetPk],
+      [0.50 * height + insetPk, 0.80 * height - insetPk],
+      [0.80 * height + insetPk, height],
+    ]
+    const [px0, px1] = xZonesPk[PARK_CI]
+    const [py0, py1] = yZonesPk[PARK_RI]
+    parkRef.current = { x: px0, y: py0, w: px1 - px0, h: py1 - py0 }
+
+    // Trees along sidewalks — sparse, asymmetric, realistic (not every street, not every side)
+    const trees: Tree[] = []
+    streets.forEach((s, si) => {
+      const tRng = seededRng(si * 137 + 42)
+      if (s.dir === 'h') {
+        for (let x = spacing; x < width; x += spacing) {
+          if (tRng() < 0.28) trees.push({ x, y: s.ay - 20 })
+          if (tRng() < 0.20) trees.push({ x, y: s.ay + 20 })
+        }
+      } else {
+        for (let y = spacing; y < height; y += spacing) {
+          if (tRng() < 0.24) trees.push({ x: s.ax - 20, y })
+          if (tRng() < 0.18) trees.push({ x: s.ax + 20, y })
+        }
+      }
+    })
+    treesRef.current = trees
   }
 
   // --- Spawn agents ---
@@ -429,65 +476,133 @@ export default function CitySimulator({ mode }: Props) {
   function drawCityTopDown(ctx: CanvasRenderingContext2D, useBaseline: boolean) {
     const { W, H } = dimsRef.current
 
-    ctx.fillStyle = '#040406'
+    // Ground/terrain base
+    ctx.fillStyle = '#08080e'
     ctx.fillRect(0, 0, W, H)
 
-    // Building blocks with gradient fills and warm, subtle lit windows
+    // Park zone (green space)
+    const park = parkRef.current
+    if (park) {
+      // Green ground
+      const pg = ctx.createLinearGradient(park.x, park.y, park.x + park.w, park.y + park.h)
+      pg.addColorStop(0, '#0a1e0c')
+      pg.addColorStop(1, '#091508')
+      ctx.fillStyle = pg
+      ctx.fillRect(park.x, park.y, park.w, park.h)
+
+    }
+
+    // Building shadows — SE offset creates height illusion
+    for (const bld of buildingsRef.current) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.62)'
+      ctx.fillRect(bld.x + 4, bld.y + 4, bld.w, bld.h)
+    }
+
+    // Building footprints with strong type tints + edge lighting
     for (const bld of buildingsRef.current) {
       const bGrd = ctx.createLinearGradient(bld.x, bld.y, bld.x + bld.w, bld.y + bld.h)
-      bGrd.addColorStop(0, '#0a0a0f')
-      bGrd.addColorStop(1, '#111119')
+      if (bld.btype === 'residential') {
+        bGrd.addColorStop(0, '#1e1316'); bGrd.addColorStop(1, '#281c22')
+      } else if (bld.btype === 'commercial') {
+        bGrd.addColorStop(0, '#10152a'); bGrd.addColorStop(1, '#171f38')
+      } else {
+        bGrd.addColorStop(0, '#111a18'); bGrd.addColorStop(1, '#172420')
+      }
       ctx.fillStyle = bGrd
       ctx.fillRect(bld.x, bld.y, bld.w, bld.h)
-      
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)'
-      ctx.lineWidth = 0.6
-      ctx.strokeRect(bld.x, bld.y, bld.w, bld.h)
-
-      // Draw subtle warm glowing windows on top of buildings
+      // NW highlight — simulates light from upper-left
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
+      ctx.fillRect(bld.x, bld.y, bld.w, 1.5)
+      ctx.fillRect(bld.x, bld.y, 1.5, bld.h)
+      // SE shadow edge
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.38)'
+      ctx.fillRect(bld.x + bld.w - 1.5, bld.y, 1.5, bld.h)
+      ctx.fillRect(bld.x, bld.y + bld.h - 1.5, bld.w, 1.5)
+      // Windows
       const rng = seededRng(bld.x * 13 + bld.y * 31)
       const winSize = 2
       const winSpacing = 5
-      const cols = Math.floor((bld.w - 6) / winSpacing)
-      const rows = Math.floor((bld.h - 6) / winSpacing)
-      
-      if (cols > 0 && rows > 0) {
-        ctx.fillStyle = 'rgba(250, 199, 117, 0.15)' // Faint warm light
-        for (let c = 0; c < cols; c++) {
-          for (let r = 0; r < rows; r++) {
-            if (rng() < 0.10) { // 10% chance for window to show activity
-              const wx = bld.x + 4 + c * winSpacing
-              const wy = bld.y + 4 + r * winSpacing
-              ctx.fillRect(wx, wy, winSize, winSize)
+      const wCols = Math.floor((bld.w - 6) / winSpacing)
+      const wRows = Math.floor((bld.h - 6) / winSpacing)
+      if (wCols > 0 && wRows > 0) {
+        for (let c = 0; c < wCols; c++) {
+          for (let r = 0; r < wRows; r++) {
+            if (rng() < 0.13) {
+              ctx.fillStyle = 'rgba(250, 199, 117, 0.25)'
+              ctx.fillRect(bld.x + 4 + c * winSpacing, bld.y + 4 + r * winSpacing, winSize, winSize)
             }
           }
         }
       }
     }
 
-    // Road styling: sidewalk border (width 44) -> road surface (width 32) -> center line
-    ctx.strokeStyle = '#0e0e14'
+    // Roads: sidewalk strip → asphalt → faint centre highlight → dashed line
+    ctx.strokeStyle = '#131420'  // sidewalk (slightly lighter than terrain)
     ctx.lineWidth = 44
     for (const s of streetsRef.current) {
       ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
     }
-    ctx.strokeStyle = '#14141d'
-    ctx.lineWidth = 32
+    ctx.strokeStyle = '#0d0e17'  // asphalt (darker than sidewalk)
+    ctx.lineWidth = 30
     for (const s of streetsRef.current) {
       ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
     }
-    ctx.strokeStyle = '#181824'
-    ctx.lineWidth = 14
+    ctx.strokeStyle = '#111222'  // faint centre
+    ctx.lineWidth = 10
     for (const s of streetsRef.current) {
       ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
     }
-    ctx.strokeStyle = '#2a2a3a'
+    ctx.strokeStyle = '#32324e'
     ctx.lineWidth = 0.8
     ctx.setLineDash([6, 8])
     for (const s of streetsRef.current) {
       ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
     }
     ctx.setLineDash([])
+
+    // Crosswalks — zebra stripes at all 9 intersections
+    const streetCols = [0.18, 0.5, 0.82]
+    const streetRows = [0.2, 0.5, 0.8]
+    ctx.fillStyle = 'rgba(200, 205, 240, 0.14)'
+    streetCols.forEach(cxF => {
+      streetRows.forEach(ryF => {
+        const ix = cxF * W, iy = ryF * H
+        for (let i = 0; i < 4; i++) {
+          ctx.fillRect(ix - 34 - i * 5, iy - 13, 3, 26)
+          ctx.fillRect(ix + 28 + i * 5, iy - 13, 3, 26)
+          ctx.fillRect(ix - 13, iy - 34 - i * 5, 26, 3)
+          ctx.fillRect(ix - 13, iy + 28 + i * 5, 26, 3)
+        }
+      })
+    })
+
+    // Roundabout at center intersection (cosmetic — routing is unchanged)
+    {
+      const rcx = 0.5 * W, rcy = 0.5 * H
+      ctx.strokeStyle = '#1e2030'
+      ctx.lineWidth = 10
+      ctx.beginPath(); ctx.arc(rcx, rcy, 19, 0, Math.PI * 2); ctx.stroke()
+      const ig = ctx.createRadialGradient(rcx, rcy, 0, rcx, rcy, 13)
+      ig.addColorStop(0, '#142a1a'); ig.addColorStop(1, '#0a1510')
+      ctx.fillStyle = ig
+      ctx.beginPath(); ctx.arc(rcx, rcy, 13, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(15, 58, 20, 0.97)'
+      ctx.beginPath(); ctx.arc(rcx, rcy, 6, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(30, 95, 38, 0.65)'
+      ctx.beginPath(); ctx.arc(rcx - 1, rcy - 1, 3, 0, Math.PI * 2); ctx.fill()
+    }
+
+    // Trees along sidewalks — 4-ring canopy, slightly smaller
+    for (const t of treesRef.current) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.42)'
+      ctx.beginPath(); ctx.arc(t.x + 2, t.y + 2, 8, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(8, 42, 11, 0.97)'
+      ctx.beginPath(); ctx.arc(t.x, t.y, 8, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(15, 65, 20, 0.88)'
+      ctx.beginPath(); ctx.arc(t.x - 1, t.y - 1, 5.5, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(26, 95, 34, 0.52)'
+      ctx.beginPath(); ctx.arc(t.x - 2, t.y - 2, 3, 0, Math.PI * 2); ctx.fill()
+    }
 
     // Communication mesh — opacity reacts to lamp brightness
     ctx.lineWidth = 1
@@ -508,8 +623,15 @@ export default function CitySimulator({ mode }: Props) {
       }
     })
 
-    // Lamps + halos (extra smooth gradient transitions)
+    // Lamps + halos — lamps inside roundabout zone are merged into a single center lamp
+    const roundX = W * 0.5, roundY = H * 0.5, roundZone = 40
+    const roundLamps = lampsRef.current.filter(l => Math.hypot(l.x - roundX, l.y - roundY) < roundZone)
+    const roundB = roundLamps.length > 0
+      ? (useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, roundLamps.reduce((s, l) => s + l.brightness, 0) / roundLamps.length))
+      : baselineRef.current
+
     for (const l of lampsRef.current) {
+      if (Math.hypot(l.x - roundX, l.y - roundY) < roundZone) continue
       const b = useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, l.brightness)
       const r = 14 + b * 110
       const grd = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, r)
@@ -520,12 +642,27 @@ export default function CitySimulator({ mode }: Props) {
       grd.addColorStop(1,    'rgba(250, 199, 117, 0)')
       ctx.fillStyle = grd
       ctx.beginPath(); ctx.arc(l.x, l.y, r, 0, Math.PI * 2); ctx.fill()
-
       ctx.fillStyle = `rgba(255, 230, 170, ${0.5 + 0.5 * b})`
       ctx.beginPath(); ctx.arc(l.x, l.y, 2.4, 0, Math.PI * 2); ctx.fill()
-
       ctx.fillStyle = '#22222a'
       ctx.beginPath(); ctx.arc(l.x, l.y, 1, 0, Math.PI * 2); ctx.fill()
+    }
+
+    // Single lamp at roundabout center (replaces the nearby street lamps visually)
+    {
+      const r = 14 + roundB * 110
+      const grd = ctx.createRadialGradient(roundX, roundY, 0, roundX, roundY, r)
+      grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * roundB})`)
+      grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * roundB})`)
+      grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.16 * roundB})`)
+      grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.05 * roundB})`)
+      grd.addColorStop(1,    'rgba(250, 199, 117, 0)')
+      ctx.fillStyle = grd
+      ctx.beginPath(); ctx.arc(roundX, roundY, r, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = `rgba(255, 230, 170, ${0.5 + 0.5 * roundB})`
+      ctx.beginPath(); ctx.arc(roundX, roundY, 2.4, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#22222a'
+      ctx.beginPath(); ctx.arc(roundX, roundY, 1, 0, Math.PI * 2); ctx.fill()
     }
 
     for (const a of agentsRef.current) {
