@@ -116,10 +116,11 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     camera.lookAt(0, 1.7, -100)
 
     // ── Renderer ───────────────────────────────────────────────────────────
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    const isMob = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || W <= 768
+    const renderer = new THREE.WebGLRenderer({ antialias: !isMob })
+    renderer.setPixelRatio(isMob ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2))
     renderer.setSize(W, H)
-    renderer.shadowMap.enabled = true
+    renderer.shadowMap.enabled = !isMob   // shadows too heavy for mobile WebGL
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ReinhardToneMapping
     renderer.toneMappingExposure = 1.0

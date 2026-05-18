@@ -376,6 +376,5 @@ Lookahead scale: 8 m/sec
   and suggest a safer alternative.
 - Speak Portuguese with me when I write in Portuguese, English when I write in
   English.
-- `FPV3D.tsx` is **not tracked by git** (appears as untracked in git status).
-  This means `git checkout` cannot revert it — any undo must be done manually
-  via Edit tool. Be extra careful before making large changes to this file.
+- `FPV3D.tsx` **is tracked by git** — changes are versioned normally and
+  `git checkout` can revert it. Still, be careful before making large changes.
