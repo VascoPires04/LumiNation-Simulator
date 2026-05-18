@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useIsMobile } from './hooks/useIsMobile'
 import * as THREE from 'three'
 
 interface Agent {
@@ -57,6 +58,7 @@ function makeWindowTexture(seed: number): THREE.CanvasTexture {
 }
 
 export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef, agentsRef, pausedRef, spawnPed }: FPV3DProps) {
+  const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
 
   const [speedMult, setSpeedMult] = useState(1.0)
@@ -1682,7 +1684,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         </div>
 
         {/* Right Side: Speed Controls */}
-        <div className="fpv-card" style={{ minWidth: '300px' }}>
+        <div className="fpv-card" style={isMobile ? undefined : { minWidth: '300px' }}>
           <div className="fpv-card-title">⚙️ Citizen Controls</div>
 
           <div className="fpv-button-group">
@@ -1706,9 +1708,11 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
             </button>
           </div>
 
-          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 4 }}>
-            Pro Tip: Hold <b>SHIFT</b> to sprint on keyboard!
-          </div>
+          {!isMobile && (
+            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 4 }}>
+              Pro Tip: Hold <b>SHIFT</b> to sprint on keyboard!
+            </div>
+          )}
         </div>
       </div>
     </div>

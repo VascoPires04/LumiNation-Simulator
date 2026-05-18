@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import FPV3D from './FPV3D'
+import { useIsMobile } from './hooks/useIsMobile'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 type AgentType = 'ped' | 'car'
@@ -120,6 +121,7 @@ function buildCityBlocks(W: number, H: number): Building[] {
 export default function CitySimulator({ mode }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
+  const isMobile = useIsMobile()
 
   // Sim state lives in refs so the render loop never re-mounts
   const lampsRef = useRef<Lamp[]>([])
@@ -1266,7 +1268,7 @@ export default function CitySimulator({ mode }: Props) {
     }
   }, [])
 
-  // --- Canvas click handler ---
+  // --- Canvas click / touch handlers ---
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = e.clientX - rect.left
@@ -1275,11 +1277,27 @@ export default function CitySimulator({ mode }: Props) {
     if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
   }
 
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault()
+    const touch = e.changedTouches[0]
+    if (!touch) return
+    const rect = canvasRef.current!.getBoundingClientRect()
+    const x = touch.clientX - rect.left
+    const y = touch.clientY - rect.top
+    const a = spawnAgent(x, y, 'ped')
+    if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
+  }
+
   // --- Render ---
   return (
     <div className="main">
       <div className="stage" ref={stageRef}>
-        <canvas ref={canvasRef} onClick={handleClick} style={{ display: mode === 'fpv' ? 'none' : undefined }} />
+        <canvas
+          ref={canvasRef}
+          onClick={handleClick}
+          onTouchEnd={handleTouchEnd}
+          style={{ display: mode === 'fpv' ? 'none' : undefined, touchAction: 'none' }}
+        />
         {mode === 'fpv' && (
           <FPV3D
             lampsRef={lampsRef}
@@ -1301,7 +1319,9 @@ export default function CitySimulator({ mode }: Props) {
           </div>
         )}
         {mode !== 'fpv' && (
-          <div className="stage-hint">click a street to add a pedestrian · shift+click for a car</div>
+          <div className="stage-hint">
+            {isMobile ? 'tap a street to add a pedestrian' : 'click a street to add a pedestrian · shift+click for a car'}
+          </div>
         )}
       </div>
 
