@@ -1005,6 +1005,51 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         })
       }
 
+      // ── Sidewalk Bollards (Pilaretes de Passeio) ───────────────────────────
+      // Sparser, localized safety bollards only at park, playground, and parking slot boundaries!
+      let bollardZPositions: number[] = []
+      if (slotType === 'park' || slotType === 'playground') {
+        // Protect the open green lawns with 3 beautifully spaced bollards
+        bollardZPositions = [-3.5, 0, 3.5]
+      } else if (slotType === 'parking') {
+        // Mark the edges of the parking entrance wing walls
+        bollardZPositions = [-5.2, 5.2]
+      }
+
+      if (bollardZPositions.length > 0) {
+        const bollardMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, roughness: 0.9, metalness: 0.05 })
+        const bollardBaseGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.65, 8)
+        const bollardCapGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.08, 8)
+        const bollardDomeGeo = new THREE.SphereGeometry(0.07, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2)
+
+        const bollardX = outDir * 8.24 // 0.2m inside the curb on the sidewalk
+
+        for (const localZ of bollardZPositions) {
+          const bollardGroup = new THREE.Group()
+          
+          // Base pillar
+          const base = new THREE.Mesh(bollardBaseGeo, bollardMat)
+          base.position.set(0, 0.325, 0)
+          base.castShadow = true
+          base.receiveShadow = true
+          bollardGroup.add(base)
+
+          // Subtle decorative collar ring (replicates the premium stone groove look)
+          const cap = new THREE.Mesh(bollardCapGeo, bollardMat)
+          cap.position.set(0, 0.68, 0)
+          cap.castShadow = true
+          bollardGroup.add(cap)
+
+          const dome = new THREE.Mesh(bollardDomeGeo, bollardMat)
+          dome.position.set(0, 0.72, 0)
+          dome.castShadow = true
+          bollardGroup.add(dome)
+
+          bollardGroup.position.set(bollardX, 0.02, localZ)
+          group.add(bollardGroup)
+        }
+      }
+
       const xPos = side === 'left' ? BLDG_X_L : BLDG_X_R
       group.position.set(xPos, 0, -index * BLDG_SPACING - BLDG_DEPTH / 2)
       scene.add(group)
