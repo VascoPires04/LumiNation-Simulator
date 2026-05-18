@@ -77,6 +77,15 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const W = container.clientWidth
     const H = container.clientHeight
 
+    // On portrait screens the standard 72° vertical FOV produces a very narrow
+    // horizontal FOV, cutting off buildings on both sides. This keeps horizontal
+    // coverage consistent across all aspect ratios.
+    function computeFOV(aspect: number): number {
+      const TARGET_HFOV_RAD = 75 * Math.PI / 180  // target ≥75° horizontal
+      const vFOV = 2 * Math.atan(Math.tan(TARGET_HFOV_RAD / 2) / aspect) * 180 / Math.PI
+      return Math.max(72, Math.min(120, vFOV))
+    }
+
     // ── Key Listeners for Sprinting ────────────────────────────────────────
     const keys = { Shift: false }
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -102,7 +111,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     scene.fog = new THREE.FogExp2(0x0a1428, 0.006)
 
     // ── Camera ─────────────────────────────────────────────────────────────
-    const camera = new THREE.PerspectiveCamera(72, W / H, 0.1, 300)
+    const camera = new THREE.PerspectiveCamera(computeFOV(W / H), W / H, 0.1, 300)
     camera.position.set(0, 1.7, 0)
     camera.lookAt(0, 1.7, -100)
 
@@ -1416,6 +1425,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const ro = new ResizeObserver(() => {
       const w = container.clientWidth, h = container.clientHeight
       camera.aspect = w / h
+      camera.fov = computeFOV(w / h)
       camera.updateProjectionMatrix()
       renderer.setSize(w, h)
     })

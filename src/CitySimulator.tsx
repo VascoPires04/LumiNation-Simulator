@@ -1370,6 +1370,16 @@ export default function CitySimulator({ mode }: Props) {
               </div>
             </div>
 
+            <div className="card">
+              <div className="card-label">Agents</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
+                <span>Pedestrians</span><span style={{ fontWeight: 500 }}>{stats.peds}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
+                <span>Vehicles</span><span style={{ fontWeight: 500 }}>{stats.cars}</span>
+              </div>
+            </div>
+
             <div className="card chart-card" style={{ paddingBottom: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="card-label" style={{ marginBottom: 0 }}>Power · last 60s</div>
@@ -1395,16 +1405,6 @@ export default function CitySimulator({ mode }: Props) {
               <div className="metric-row">
                 <span className="metric-value">{fmtEur(scaledEur)}</span>
                 <span className="metric-aux">{fmtCo2(scaledCo2)}</span>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-label">Agents</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
-                <span>Pedestrians</span><span style={{ fontWeight: 500 }}>{stats.peds}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
-                <span>Vehicles</span><span style={{ fontWeight: 500 }}>{stats.cars}</span>
               </div>
             </div>
           </>

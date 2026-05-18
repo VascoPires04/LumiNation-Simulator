@@ -574,47 +574,39 @@ input[type="range"] {
     font-size: 9px;
   }
 
-  /* ── FPV overlay: compact horizontal strip on mobile ── */
+  /* ── FPV overlay: thin button strip on mobile ── */
   .fpv-overlay {
     flex-direction: row;
     align-items: stretch;
-    bottom: 7px;
-    left: 7px;
-    right: 7px;
-    gap: 5px;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    gap: 0;
     max-height: none;
     overflow: visible;
   }
-  .fpv-card {
+  /* Hide the dashboard stats card — just show speed controls */
+  .fpv-overlay .fpv-card:first-child {
+    display: none;
+  }
+  /* Controls card fills full width as a slim strip */
+  .fpv-overlay .fpv-card:last-child {
     flex: 1;
-    min-width: 0;
-    padding: 7px 8px;
-    gap: 4px;
+    padding: 6px 8px;
+    gap: 5px;
   }
   .fpv-card-title {
-    font-size: 9px;
-    padding-bottom: 4px;
-    margin-bottom: 1px;
-    letter-spacing: 0.03em;
-  }
-  .fpv-stat-row {
-    font-size: 9px;
-    gap: 3px;
-  }
-  .fpv-stat-label {
-    font-size: 9px;
-  }
-  .fpv-stat-value {
-    font-size: 9px;
+    display: none;
   }
   .fpv-button-group {
-    flex-direction: column;
-    gap: 3px;
+    flex-direction: row;
+    gap: 5px;
   }
   .fpv-btn {
-    padding: 4px 5px;
-    font-size: 10px;
-    min-height: 28px;
+    flex: 1;
+    padding: 5px 4px;
+    font-size: 11px;
+    min-height: 34px;
   }
 
   /* ── Controls collapsible on mobile ── */
