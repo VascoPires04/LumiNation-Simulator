@@ -370,11 +370,14 @@ export default function CitySimulator({ mode }: Props) {
     }
 
     // Lamp targets
+    // Scale corridor reach proportionally to canvas width so it looks the same
+    // on all screen sizes (reference: 960px desktop canvas)
+    const corridorScale = Math.min(1, dimsRef.current.W / 960)
     for (const l of lampsRef.current) l.target = baselineRef.current
     for (const a of agentsRef.current) {
       const isCar = a.type === 'car'
-      const reachAhead = isCar ? LAMP_REACH_CAR : LAMP_REACH_PED
-      const reachBehind = isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED
+      const reachAhead = (isCar ? LAMP_REACH_CAR : LAMP_REACH_PED) * corridorScale
+      const reachBehind = (isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) * corridorScale
       const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))
       const dx = a.vx / sp
       const dy = a.vy / sp
@@ -1281,7 +1284,10 @@ export default function CitySimulator({ mode }: Props) {
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
-    const a = spawnAgent(x, y, e.shiftKey ? 'car' : 'ped')
+    // On mobile, ghost clicks arrive here after touch — respect spawnModeRef.
+    // On desktop, shift+click still works as before.
+    const isCar = e.shiftKey || spawnModeRef.current === 'car'
+    const a = spawnAgent(x, y, isCar ? 'car' : 'ped')
     if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
   }
 
