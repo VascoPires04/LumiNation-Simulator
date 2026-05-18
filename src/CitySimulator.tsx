@@ -370,14 +370,16 @@ export default function CitySimulator({ mode }: Props) {
     }
 
     // Lamp targets
-    // Scale corridor reach proportionally to canvas width so it looks the same
-    // on all screen sizes (reference: 960px desktop canvas)
-    const corridorScale = Math.min(1, dimsRef.current.W / 960)
+    // Scale the REAR corridor proportionally to canvas width — on a 375px mobile
+    // canvas the 260px rear reach was eating almost the whole screen. The FRONT
+    // reach stays full-size so (a) the corridor looks long ahead and (b) the
+    // Lookahead slider has a visible effect. Reference width: 960px desktop.
+    const backScale = Math.min(1, dimsRef.current.W / 960)
     for (const l of lampsRef.current) l.target = baselineRef.current
     for (const a of agentsRef.current) {
       const isCar = a.type === 'car'
-      const reachAhead = (isCar ? LAMP_REACH_CAR : LAMP_REACH_PED) * corridorScale
-      const reachBehind = (isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) * corridorScale
+      const reachAhead = isCar ? LAMP_REACH_CAR : LAMP_REACH_PED          // full-size forward reach
+      const reachBehind = (isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) * backScale
       const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))
       const dx = a.vx / sp
       const dy = a.vy / sp
