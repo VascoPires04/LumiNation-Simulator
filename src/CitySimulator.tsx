@@ -58,7 +58,7 @@ const LAMP_REACH_PED = 180
 const LAMP_REACH_CAR = 300
 const LAMP_REACH_BEHIND_PED = 260
 const LAMP_REACH_BEHIND_CAR = 200
-const MAX_VISUAL_BRI = 0.85  // Visual cap: both Always-on and LumiNation peak render at this level
+const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const PARK_CI = 1
 const PARK_RI = 2
 
@@ -680,7 +680,7 @@ export default function CitySimulator({ mode }: Props) {
     byStreet.forEach(arr => {
       arr.sort((a, b) => (a.x + a.y) - (b.x + b.y))
       for (let i = 0; i < arr.length - 1; i++) {
-        const avgB = useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, (arr[i].brightness + arr[i + 1].brightness) / 2)
+        const avgB = useBaseline ? MAX_VISUAL_BRI : ((arr[i].brightness + arr[i + 1].brightness) / 2) * MAX_VISUAL_BRI
         ctx.strokeStyle = `rgba(250, 199, 117, ${0.02 + avgB * 0.08})`
         ctx.beginPath()
         ctx.moveTo(arr[i].x, arr[i].y); ctx.lineTo(arr[i + 1].x, arr[i + 1].y)
@@ -692,7 +692,7 @@ export default function CitySimulator({ mode }: Props) {
     const roundX = W * 0.5, roundY = H * 0.5, roundZone = 40
     const roundLamps = lampsRef.current.filter(l => Math.hypot(l.x - roundX, l.y - roundY) < roundZone)
     const roundB = roundLamps.length > 0
-      ? (useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, roundLamps.reduce((s, l) => s + l.brightness, 0) / roundLamps.length))
+      ? (useBaseline ? MAX_VISUAL_BRI : (roundLamps.reduce((s, l) => s + l.brightness, 0) / roundLamps.length) * MAX_VISUAL_BRI)
       : baselineRef.current
 
     // Scale glow radius with canvas size so it looks the same on all screen sizes
@@ -700,7 +700,7 @@ export default function CitySimulator({ mode }: Props) {
 
     for (const l of lampsRef.current) {
       if (Math.hypot(l.x - roundX, l.y - roundY) < roundZone) continue
-      const b = useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, l.brightness)
+      const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
       const r = (14 + b * 110) * glowScale
       const grd = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, r)
       grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * b})`)
@@ -734,7 +734,7 @@ export default function CitySimulator({ mode }: Props) {
     }
 
     for (const a of agentsRef.current) {
-      const bri = useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, localBrightnessAt(a.x, a.y))
+      const bri = useBaseline ? MAX_VISUAL_BRI : localBrightnessAt(a.x, a.y) * MAX_VISUAL_BRI
       if (a.type === 'car') drawCar(ctx, a, bri)
       else drawPedestrian(ctx, a, bri)
     }

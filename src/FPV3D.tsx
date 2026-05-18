@@ -24,7 +24,7 @@ interface FPV3DProps {
   spawnPed: () => Agent | null
 }
 
-const MAX_VISUAL_BRI = 0.85
+const MAX_VISUAL_BRI = 0.68
 const PED_SPEED = 1.4
 const METERS_PER_PIXEL = 0.35
 
