@@ -521,10 +521,12 @@ export default function CitySimulator({ mode }: Props) {
   }
 
   function localBrightnessAt(x: number, y: number): number {
+    const { W, H } = dimsRef.current
+    const reach = Math.min(W, H) * 0.14
     let v = 0
     for (const l of lampsRef.current) {
       const d = Math.hypot(l.x - x, l.y - y)
-      if (d < 80) v += l.brightness * (1 - d / 80) * 0.4
+      if (d < reach) v += l.brightness * (1 - d / reach) * 0.4
     }
     return Math.min(1, v + 0.1)
   }
@@ -686,10 +688,13 @@ export default function CitySimulator({ mode }: Props) {
       ? (useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, roundLamps.reduce((s, l) => s + l.brightness, 0) / roundLamps.length))
       : baselineRef.current
 
+    // Scale glow radius with canvas size so it looks the same on all screen sizes
+    const glowScale = Math.min(W, H) / 580
+
     for (const l of lampsRef.current) {
       if (Math.hypot(l.x - roundX, l.y - roundY) < roundZone) continue
       const b = useBaseline ? MAX_VISUAL_BRI : Math.min(MAX_VISUAL_BRI, l.brightness)
-      const r = 14 + b * 110
+      const r = (14 + b * 110) * glowScale
       const grd = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, r)
       grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * b})`)
       grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * b})`)
@@ -706,7 +711,7 @@ export default function CitySimulator({ mode }: Props) {
 
     // Single lamp at roundabout center (replaces the nearby street lamps visually)
     {
-      const r = 14 + roundB * 110
+      const r = (14 + roundB * 110) * glowScale
       const grd = ctx.createRadialGradient(roundX, roundY, 0, roundX, roundY, r)
       grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * roundB})`)
       grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * roundB})`)
