@@ -411,6 +411,28 @@ input[type="range"] {
   100% { box-shadow: 0 0 0 0 rgba(250, 199, 117, 0); }
 }
 
+/* ── Controls collapsible (all screens) ── */
+.controls-toggle {
+  display: none;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  min-height: unset;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.controls-toggle-arrow {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.controls-body {
+  display: block;
+}
+
 @media (max-width: 768px) {
   /* ── App shell ── */
   .app {
@@ -424,60 +446,93 @@ input[type="range"] {
 
   /* ── Topbar ── */
   .topbar {
-    padding: 10px 14px;
-    gap: 8px;
+    padding: 8px 12px;
+    gap: 6px;
   }
   .brand-tag {
     display: none;
   }
   .brand-name {
-    font-size: 16px;
+    font-size: 15px;
   }
   .brand-mark {
-    width: 30px;
-    height: 30px;
-    font-size: 15px;
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
   }
   .mode-bar {
     width: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
+    gap: 5px;
   }
   .mode-bar button {
-    min-height: 44px;
+    min-height: 40px;
     font-size: 12px;
-    padding: 8px 6px;
+    padding: 6px 4px;
   }
 
   /* ── Main layout ── */
   .main {
     grid-template-columns: 1fr;
-    padding: 10px 12px 20px;
-    gap: 12px;
+    padding: 8px 10px 16px;
+    gap: 10px;
     overflow: visible;
   }
 
   /* ── Stage / canvas ── */
   .stage {
-    min-height: 0;
-    height: 56vw;
-    max-height: 52vh;
+    min-height: 220px;
+    height: clamp(220px, 58vw, 340px);
+    max-height: none;
   }
 
-  /* ── Sidebar ── */
+  /* ── Sidebar: 2-column grid for metric cards ── */
   .sidebar {
     overflow-y: visible;
     max-height: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    align-items: start;
+  }
+
+  /* Chart card and controls span both columns */
+  .sidebar .chart-card,
+  .sidebar .controls {
+    grid-column: 1 / -1;
+  }
+
+  /* ── Card sizing on mobile ── */
+  .card {
+    padding: 10px 12px;
+  }
+
+  .card-label {
+    font-size: 10px;
+    margin-bottom: 3px;
+  }
+
+  .metric-value {
+    font-size: 20px;
+  }
+
+  .metric-unit {
+    font-size: 11px;
+  }
+
+  .metric-aux {
+    font-size: 10px;
   }
 
   /* ── Touch targets ── */
   button {
-    min-height: 44px;
+    min-height: 40px;
   }
   select {
-    min-height: 44px;
-    padding: 8px 10px;
+    min-height: 40px;
+    padding: 6px 8px;
+    font-size: 13px;
   }
   input[type="range"] {
     height: 28px;
@@ -485,15 +540,17 @@ input[type="range"] {
 
   /* ── Stage hint ── */
   .stage-hint {
-    font-size: 11px;
-    right: 10px;
+    font-size: 10px;
+    right: 8px;
+    left: 8px;
+    bottom: 8px;
   }
 
   /* ── Footer ── */
   .footer {
     flex-direction: column;
     gap: 2px;
-    padding: 8px 14px;
+    padding: 6px 12px;
     font-size: 10px;
   }
 
@@ -502,16 +559,16 @@ input[type="range"] {
     flex-direction: column;
     align-items: stretch;
     bottom: 10px;
-    left: 10px;
-    right: 10px;
+    left: 8px;
+    right: 8px;
     gap: 8px;
-    max-height: 52%;
+    max-height: 55%;
     overflow-y: auto;
   }
   .fpv-card {
     min-width: 0;
     width: 100%;
-    padding: 12px;
+    padding: 10px 12px;
     gap: 8px;
   }
   .fpv-card-title {
@@ -526,8 +583,35 @@ input[type="range"] {
     gap: 6px;
   }
   .fpv-btn {
-    padding: 12px 6px;
+    padding: 10px 6px;
     font-size: 12px;
-    min-height: 44px;
+    min-height: 40px;
+  }
+
+  /* ── Controls collapsible on mobile ── */
+  .controls-toggle {
+    display: flex;
+  }
+
+  .controls-body {
+    display: none;
+    margin-top: 8px;
+  }
+
+  .controls-body--open {
+    display: block;
+  }
+
+  .controls .row {
+    margin: 6px 0 3px;
+  }
+
+  .controls .button-row {
+    margin-top: 10px;
+    gap: 6px;
+  }
+
+  .controls .button-row button {
+    min-height: 40px;
   }
 }

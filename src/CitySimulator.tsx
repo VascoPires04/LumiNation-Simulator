@@ -138,6 +138,7 @@ export default function CitySimulator({ mode }: Props) {
   const [scenario, setScenario] = useState<'manual' | 'quiet' | 'busy' | 'mixed'>('manual')
   const [paused, setPaused] = useState(false)
   const [lisbon, setLisbon] = useState(false)
+  const [controlsOpen, setControlsOpen] = useState(false)
   const [stats, setStats] = useState({
     powerNow: 0,
     powerPct: 0,
@@ -1364,7 +1365,7 @@ export default function CitySimulator({ mode }: Props) {
               </div>
             </div>
 
-            <div className="card" style={{ paddingBottom: 4 }}>
+            <div className="card chart-card" style={{ paddingBottom: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="card-label" style={{ marginBottom: 0 }}>Power · last 60s</div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', gap: 8 }}>
@@ -1405,39 +1406,49 @@ export default function CitySimulator({ mode }: Props) {
         })()}
 
         <div className="card controls">
-          <div className="card-label">Scenario</div>
-          <select value={scenario} onChange={e => setScenario(e.target.value as any)}>
-            <option value="manual">Manual (click to add)</option>
-            <option value="quiet">Quiet residential · 3am</option>
-            <option value="busy">Busy avenue · 8pm</option>
-            <option value="mixed">Mixed traffic · 11pm</option>
-          </select>
-
-          <div className="row"><span>Baseline brightness</span><span>{Math.round(baselinePct * 100)}%</span></div>
-          <input type="range" min={15} max={100} step={1} value={Math.round(baselinePct * 100)}
-            onChange={e => setBaselinePct(parseInt(e.target.value, 10) / 100)} />
-
-          <div className="row"><span>Lookahead</span><span>{lookaheadSec.toFixed(1)}s</span></div>
-          <input type="range" min={20} max={80} step={1} value={Math.round(lookaheadSec * 10)}
-            onChange={e => setLookaheadSec(parseInt(e.target.value, 10) / 10)} />
-
-          <div className="button-row">
-            <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0; powerHistoryRef.current = [] }}>Clear</button>
-            <button onClick={() => setPaused(p => !p)}>{paused ? 'Resume' : 'Pause'}</button>
-          </div>
           <button
-            onClick={() => setLisbon(l => !l)}
-            style={{
-              marginTop: 8, width: '100%', padding: '7px 0',
-              background: lisbon ? '#FAC775' : 'transparent',
-              color: lisbon ? '#0a0a12' : '#FAC775',
-              border: '1px solid #FAC775',
-              borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
+            className="controls-toggle"
+            onClick={() => setControlsOpen(o => !o)}
+            aria-expanded={controlsOpen}
           >
-            🏙 {lisbon ? 'Lisbon scale ON · 70k lamps' : 'Lisbon scale (70,000 lamps)'}
+            <span className="card-label" style={{ marginBottom: 0 }}>Controls</span>
+            <span className="controls-toggle-arrow">{controlsOpen ? '▲' : '▼'}</span>
           </button>
+          <div className={`controls-body${controlsOpen || !isMobile ? ' controls-body--open' : ''}`}>
+            <div className="card-label" style={{ marginBottom: 6 }}>Scenario</div>
+            <select value={scenario} onChange={e => setScenario(e.target.value as any)}>
+              <option value="manual">Manual (click to add)</option>
+              <option value="quiet">Quiet residential · 3am</option>
+              <option value="busy">Busy avenue · 8pm</option>
+              <option value="mixed">Mixed traffic · 11pm</option>
+            </select>
+
+            <div className="row"><span>Baseline brightness</span><span>{Math.round(baselinePct * 100)}%</span></div>
+            <input type="range" min={15} max={100} step={1} value={Math.round(baselinePct * 100)}
+              onChange={e => setBaselinePct(parseInt(e.target.value, 10) / 100)} />
+
+            <div className="row"><span>Lookahead</span><span>{lookaheadSec.toFixed(1)}s</span></div>
+            <input type="range" min={20} max={80} step={1} value={Math.round(lookaheadSec * 10)}
+              onChange={e => setLookaheadSec(parseInt(e.target.value, 10) / 10)} />
+
+            <div className="button-row">
+              <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0; powerHistoryRef.current = [] }}>Clear</button>
+              <button onClick={() => setPaused(p => !p)}>{paused ? 'Resume' : 'Pause'}</button>
+            </div>
+            <button
+              onClick={() => setLisbon(l => !l)}
+              style={{
+                marginTop: 8, width: '100%', padding: '7px 0',
+                background: lisbon ? '#FAC775' : 'transparent',
+                color: lisbon ? '#0a0a12' : '#FAC775',
+                border: '1px solid #FAC775',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              🏙 {lisbon ? 'Lisbon scale ON · 70k lamps' : 'Lisbon scale (70,000 lamps)'}
+            </button>
+          </div>
         </div>
       </aside>
     </div>
