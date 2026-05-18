@@ -126,7 +126,12 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     container.appendChild(renderer.domElement)
 
     // ── Lights ─────────────────────────────────────────────────────────────
-    scene.add(new THREE.AmbientLight(0x08080c, 0.05))
+    // Hemisphere light: sky colour (cool blue-grey) from above, ground bounce
+    // (warm dark) from below. This ensures building faces are always at least
+    // subtly visible on all devices — real-world night streets have sky glow.
+    scene.add(new THREE.HemisphereLight(0x1a2540, 0x0a0906, 1.2))
+    // Keep a very faint ambient so deep shadows aren't pure black
+    scene.add(new THREE.AmbientLight(0x0a0c12, 0.3))
 
     // ── Ground ─────────────────────────────────────────────────────────────
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.95, metalness: 0.0 })
