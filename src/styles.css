@@ -446,44 +446,45 @@ input[type="range"] {
 
   /* ── Topbar ── */
   .topbar {
-    padding: 8px 12px;
-    gap: 6px;
+    padding: 6px 10px;
+    gap: 5px;
   }
   .brand-tag {
     display: none;
   }
   .brand-name {
-    font-size: 15px;
+    font-size: 13px;
   }
   .brand-mark {
-    width: 28px;
-    height: 28px;
-    font-size: 14px;
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    box-shadow: none;
   }
   .mode-bar {
     width: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 5px;
+    gap: 4px;
   }
   .mode-bar button {
-    min-height: 40px;
-    font-size: 12px;
-    padding: 6px 4px;
+    min-height: 32px;
+    font-size: 11px;
+    padding: 4px 3px;
   }
 
   /* ── Main layout ── */
   .main {
     grid-template-columns: 1fr;
-    padding: 8px 10px 16px;
-    gap: 10px;
+    padding: 6px 8px 12px;
+    gap: 7px;
     overflow: visible;
   }
 
-  /* ── Stage / canvas ── */
+  /* ── Stage / canvas — tall on mobile ── */
   .stage {
-    min-height: 260px;
-    height: clamp(260px, 72vw, 460px);
+    min-height: 300px;
+    height: clamp(300px, 56vh, 600px);
     max-height: none;
   }
 
@@ -493,7 +494,7 @@ input[type="range"] {
     max-height: none;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 6px;
     align-items: start;
   }
 
@@ -510,96 +511,110 @@ input[type="range"] {
 
   /* ── Card sizing on mobile ── */
   .card {
-    padding: 10px 12px;
+    padding: 7px 9px;
   }
 
   .card-label {
-    font-size: 10px;
-    margin-bottom: 3px;
+    font-size: 9px;
+    margin-bottom: 2px;
+    letter-spacing: 0.03em;
   }
 
   .metric-value {
-    font-size: 20px;
+    font-size: 17px;
   }
 
   .metric-unit {
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .metric-aux {
-    font-size: 10px;
+    font-size: 9px;
+  }
+
+  /* Chart smaller on mobile */
+  .chart-card canvas {
+    height: 44px !important;
+  }
+
+  /* Agents card rows */
+  .sidebar .card div[style] {
+    font-size: 11px !important;
+    margin-top: 2px !important;
   }
 
   /* ── Touch targets ── */
   button {
-    min-height: 40px;
+    min-height: 34px;
+    font-size: 11px;
+    padding: 5px 10px;
   }
   select {
-    min-height: 40px;
-    padding: 6px 8px;
-    font-size: 13px;
+    min-height: 34px;
+    padding: 5px 7px;
+    font-size: 12px;
   }
   input[type="range"] {
-    height: 28px;
+    height: 22px;
   }
 
   /* ── Stage hint ── */
   .stage-hint {
-    font-size: 10px;
-    right: 8px;
-    left: 8px;
-    bottom: 8px;
+    font-size: 9px;
+    right: 7px;
+    left: 7px;
+    bottom: 6px;
   }
 
   /* ── Footer ── */
   .footer {
     flex-direction: column;
-    gap: 2px;
-    padding: 6px 12px;
-    font-size: 10px;
+    gap: 1px;
+    padding: 4px 10px;
+    font-size: 9px;
   }
 
   /* ── FPV overlay: compact horizontal strip on mobile ── */
   .fpv-overlay {
     flex-direction: row;
     align-items: stretch;
-    bottom: 8px;
-    left: 8px;
-    right: 8px;
-    gap: 6px;
+    bottom: 7px;
+    left: 7px;
+    right: 7px;
+    gap: 5px;
     max-height: none;
     overflow: visible;
   }
   .fpv-card {
     flex: 1;
     min-width: 0;
-    padding: 8px 10px;
-    gap: 6px;
+    padding: 7px 8px;
+    gap: 4px;
   }
   .fpv-card-title {
-    font-size: 10px;
+    font-size: 9px;
     padding-bottom: 4px;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
     letter-spacing: 0.03em;
   }
   .fpv-stat-row {
-    font-size: 10px;
-    gap: 4px;
+    font-size: 9px;
+    gap: 3px;
   }
   .fpv-stat-label {
-    font-size: 10px;
+    font-size: 9px;
   }
   .fpv-stat-value {
-    font-size: 10px;
+    font-size: 9px;
   }
   .fpv-button-group {
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
   }
   .fpv-btn {
-    padding: 5px 6px;
-    font-size: 11px;
-    min-height: 32px;
+    padding: 4px 5px;
+    font-size: 10px;
+    min-height: 28px;
   }
 
   /* ── Controls collapsible on mobile ── */
@@ -609,7 +624,7 @@ input[type="range"] {
 
   .controls-body {
     display: none;
-    margin-top: 8px;
+    margin-top: 6px;
   }
 
   .controls-body--open {
@@ -617,15 +632,17 @@ input[type="range"] {
   }
 
   .controls .row {
-    margin: 6px 0 3px;
+    margin: 5px 0 2px;
+    font-size: 11px;
   }
 
   .controls .button-row {
-    margin-top: 10px;
-    gap: 6px;
+    margin-top: 8px;
+    gap: 5px;
   }
 
   .controls .button-row button {
-    min-height: 40px;
+    min-height: 34px;
+    font-size: 11px;
   }
 }

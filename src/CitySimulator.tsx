@@ -1209,14 +1209,14 @@ export default function CitySimulator({ mode }: Props) {
     const resize = () => {
       const rect = stage.getBoundingClientRect()
       const W = rect.width, H = rect.height
-      const prevW = dimsRef.current.W
+      const { W: prevW, H: prevH } = dimsRef.current
       dimsRef.current = { W, H }
       canvas.width = W * dpr
       canvas.height = H * dpr
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      // Only re-layout city when width changes — height changes (e.g. sidebar growing)
-      // should not reset the simulation layout.
-      if (W !== prevW) layoutCity(W, H)
+      // Re-layout when width changes OR when height changes by more than 20px
+      // (e.g. switching between mobile/desktop stage heights)
+      if (W !== prevW || Math.abs(H - prevH) > 20) layoutCity(W, H)
     }
     resize()
     const ro = new ResizeObserver(resize)
