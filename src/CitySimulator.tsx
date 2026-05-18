@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import FPV3D from './FPV3D'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 type AgentType = 'ped' | 'car'
@@ -1212,15 +1213,24 @@ export default function CitySimulator({ mode }: Props) {
   return (
     <div className="main">
       <div className="stage" ref={stageRef}>
-        <canvas ref={canvasRef} onClick={handleClick} />
+        <canvas ref={canvasRef} onClick={handleClick} style={{ display: mode === 'fpv' ? 'none' : undefined }} />
+        {mode === 'fpv' && (
+          <FPV3D
+            lampsRef={lampsRef}
+            trackedRef={trackedRef}
+            lookaheadRef={lookaheadRef}
+            baselineRef={baselineRef}
+            agentsRef={agentsRef}
+            pausedRef={pausedRef}
+            spawnPed={() => {
+              const { W, H } = dimsRef.current
+              return spawnAgent(W * 0.5, H * 0.5, 'ped')
+            }}
+          />
+        )}
         {mode === 'compare' && (
           <div className="stage-label-row">
             <span>Always-on</span><span>LumiNation</span>
-          </div>
-        )}
-        {mode === 'fpv' && (
-          <div className="fpv-banner">
-            <span>walking down the street · the lights just feel normal</span>
           </div>
         )}
         {mode !== 'fpv' && (

@@ -1,0 +1,1327 @@
+import { useEffect, useRef } from 'react'
+import * as THREE from 'three'
+
+interface Agent {
+  x: number; y: number; vx: number; vy: number
+  type: 'ped' | 'car'; stride: number; t: number
+  street: { ax: number; ay: number; bx: number; by: number; dir: 'h' | 'v' }
+  color: string | null
+}
+
+interface Lamp {
+  x: number; y: number; brightness: number; target: number
+  streetId: number; side: string
+}
+
+interface FPV3DProps {
+  lampsRef: React.MutableRefObject<Lamp[]>
+  trackedRef: React.MutableRefObject<Agent | null>
+  lookaheadRef: React.MutableRefObject<number>
+  baselineRef: React.MutableRefObject<number>
+  agentsRef: React.MutableRefObject<Agent[]>
+  pausedRef: React.MutableRefObject<boolean>
+  spawnPed: () => Agent | null
+}
+
+const MAX_VISUAL_BRI = 0.85
+const PED_SPEED = 1.4
+const METERS_PER_PIXEL = 0.35
+
+function seededRng(seed: number) {
+  let s = ((seed + 1) * 2654435761) >>> 0 || 1
+  return () => {
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5
+    return (s >>> 0) / 4294967295
+  }
+}
+
+function makeWindowTexture(seed: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas')
+  canvas.width = 128; canvas.height = 256
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#050508'
+  ctx.fillRect(0, 0, 128, 256)
+
+  const rng = seededRng(seed)
+  const cols = 4, rows = 8
+  const pw = 128 / cols, ph = 256 / rows
+
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      const lit = rng() < 0.18
+      ctx.fillStyle = lit ? `rgba(250,199,117,${0.5 + rng() * 0.4})` : '#07070d'
+      ctx.fillRect(c * pw + 3, r * ph + 3, pw - 6, ph - 6)
+    }
+  }
+  return new THREE.CanvasTexture(canvas)
+}
+
+export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef, agentsRef, pausedRef, spawnPed }: FPV3DProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const container = containerRef.current!
+    const W = container.clientWidth
+    const H = container.clientHeight
+
+    // ── Scene ──────────────────────────────────────────────────────────────
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x020205)
+    scene.fog = new THREE.FogExp2(0x020a18, 0.009)
+
+    // ── Camera ─────────────────────────────────────────────────────────────
+    const camera = new THREE.PerspectiveCamera(72, W / H, 0.1, 300)
+    camera.position.set(0, 1.7, 0)
+    camera.lookAt(0, 1.7, -100)
+
+    // ── Renderer ───────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.setSize(W, H)
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.toneMapping = THREE.ReinhardToneMapping
+    renderer.toneMappingExposure = 1.0
+    container.appendChild(renderer.domElement)
+
+    // ── Lights ─────────────────────────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0x08080c, 0.05))
+
+    // ── Ground ─────────────────────────────────────────────────────────────
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.95, metalness: 0.0 })
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(8, 600), roadMat)
+    road.rotation.x = -Math.PI / 2
+    road.position.set(0, 0, -300)
+    road.receiveShadow = true
+    scene.add(road)
+
+    const swMat = new THREE.MeshStandardMaterial({ color: 0x181816, roughness: 0.92 })
+    const swL = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 600), swMat)
+    swL.rotation.x = -Math.PI / 2; swL.position.set(-6.25, 0.005, -300); swL.receiveShadow = true; scene.add(swL)
+    const swR = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 600), swMat)
+    swR.rotation.x = -Math.PI / 2; swR.position.set(6.25, 0.005, -300); swR.receiveShadow = true; scene.add(swR)
+
+    // Curb edges
+    const curbMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28 })
+    const curbGeo = new THREE.BoxGeometry(0.14, 0.14, 600)
+    const curbL = new THREE.Mesh(curbGeo, curbMat); curbL.position.set(-4.06, 0.07, -300); scene.add(curbL)
+    const curbR = new THREE.Mesh(curbGeo, curbMat); curbR.position.set(4.06, 0.07, -300); scene.add(curbR)
+
+    // Road centre dashes — pooled, recycled
+    const DASH_COUNT = 40
+    const DASH_SPACING = 8
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xe8e8e8 })
+    const dashGeo = new THREE.BoxGeometry(0.12, 0.01, 3.2)
+    const dashes: THREE.Mesh[] = []
+    for (let i = 0; i < DASH_COUNT; i++) {
+      const m = new THREE.Mesh(dashGeo, dashMat)
+      m.position.set(0, 0.01, -i * DASH_SPACING)
+      scene.add(m); dashes.push(m)
+    }
+
+    // ── Stars ──────────────────────────────────────────────────────────────
+    const starGeo = new THREE.BufferGeometry()
+    const starPos: number[] = []
+    const starRng = seededRng(777)
+    for (let i = 0; i < 280; i++) {
+      const theta = starRng() * Math.PI * 2
+      const phi = starRng() * Math.PI * 0.48   // upper hemisphere
+      const r = 180
+      starPos.push(
+        r * Math.sin(phi) * Math.cos(theta),
+        r * Math.cos(phi) + 30,
+        r * Math.sin(phi) * Math.sin(theta) - 80
+      )
+    }
+    starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3))
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.4, sizeAttenuation: false, fog: false })
+    scene.add(new THREE.Points(starGeo, starMat))
+
+    // ── Building pool ──────────────────────────────────────────────────────
+    const BLDG_COUNT = 10     // per side
+    const BLDG_SPACING = 22   // metres between building groups
+    const BLDG_DEPTH = 14     // Z depth of each block
+    const BLDG_WIDTH = 11
+    const BLDG_X_L = -12.5
+    const BLDG_X_R = 12.5
+
+    interface BldgGroup { group: THREE.Group; index: number }
+    const bldgsL: BldgGroup[] = []
+    const bldgsR: BldgGroup[] = []
+
+    interface AdaptiveLamp {
+      point: THREE.PointLight
+      bulb?: THREE.Mesh
+      ledMesh?: THREE.Mesh
+      pool: THREE.Mesh
+      parentGroup: THREE.Group
+      localZOffset: number
+      maxIntensity: number
+      maxPoolOpacity: number
+    }
+    const adaptiveLamps: AdaptiveLamp[] = []
+
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x2e1d15, roughness: 0.92 })
+    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x0a2e12, roughness: 0.88 })
+
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x888898, roughness: 0.6 })
+    const armMat = new THREE.MeshStandardMaterial({ color: 0x777788, roughness: 0.6 })
+    const fixtureMat = new THREE.MeshStandardMaterial({ color: 0x444455, roughness: 0.5 })
+    const bulbMat = new THREE.MeshStandardMaterial({ emissive: new THREE.Color(0xffeebb), emissiveIntensity: 3, color: 0x111111 })
+
+    // Soft radial gradient texture for ground pool — avoids hard circle edge
+    function makeSoftPoolTexture(): THREE.CanvasTexture {
+      const c = document.createElement('canvas'); c.width = 128; c.height = 128
+      const cx2 = c.getContext('2d')!
+      const g = cx2.createRadialGradient(64, 64, 0, 64, 64, 64)
+      g.addColorStop(0,    'rgba(255, 220, 100, 0.85)')
+      g.addColorStop(0.25, 'rgba(255, 200, 80,  0.45)')
+      g.addColorStop(0.55, 'rgba(250, 175, 55,  0.14)')
+      g.addColorStop(0.80, 'rgba(250, 155, 30,  0.04)')
+      g.addColorStop(1,    'rgba(250, 140, 20,  0)')
+      cx2.fillStyle = g; cx2.fillRect(0, 0, 128, 128)
+      return new THREE.CanvasTexture(c)
+    }
+    const poolTex = makeSoftPoolTexture()
+
+    const WALL_COLORS = [
+      0xbcb7ae, // antique muted white (slightly greyish-cream)
+      0xaaa59c, // weathered cream (soft weathered limestone)
+      0x9b9389, // mid-tone gray facade
+      0x585654, // dark gray render
+      0x32353b, // charcoal concrete
+      0x8b5a42, // terracotta / warm brick
+      0x4a5d4e, // sage / olive green
+      0xa47c55, // warm ochre / mustard
+      0x2a3e4a, // deep teal / blue-gray
+      0x634f47, // warm taupe
+    ]
+    const AWNING_COLORS = [0xb81820, 0x1a4aaa, 0x1a7830, 0x884400, 0x6a1a8a, 0x186878]
+    const SIGN_COLORS   = [0xd02020, 0x2060cc, 0x20aa40, 0xcc8800, 0x8830cc, 0x20aacc]
+
+    function makeBuildingGroup(side: 'left' | 'right', index: number): BldgGroup {
+      const rng  = seededRng(index * 73  + (side === 'left' ? 0 : 333))
+      const rng2 = seededRng(index * 131 + (side === 'left' ? 0 : 700))
+
+      const group = new THREE.Group()
+      const isLeft  = side === 'left'
+      const faceX   = isLeft ?  BLDG_WIDTH / 2 : -BLDG_WIDTH / 2  // local X of street face
+      const outDir  = isLeft ? 1 : -1                               // +1 toward road for left bldg
+
+      const slotTypeVal = rng()
+      let slotType: 'building' | 'park' | 'playground' | 'parking' = 'building'
+      if (index > 0 && index < BLDG_COUNT - 1) {
+        // Deterministically check if the previous slot (index - 1) was chosen as an interstitial
+        const prevRng = seededRng((index - 1) * 73 + (side === 'left' ? 0 : 333))
+        const prevSlotVal = prevRng()
+        const wasPrevInterstitial = (index - 1 > 0) && (prevSlotVal < 0.30)
+
+        if (!wasPrevInterstitial) {
+          if (slotTypeVal < 0.10) {
+            slotType = 'park'
+          } else if (slotTypeVal < 0.22) {
+            slotType = 'playground'
+          } else if (slotTypeVal < 0.30) {
+            slotType = 'parking'
+          }
+        }
+      }
+
+      if (slotType === 'building') {
+        // Split the 14m slot into two sub-buildings of different height & colour
+        const splitZ  = 6 + rng() * 4           // where the two buildings meet (4–10m from slot start)
+        const depthA  = splitZ                   // sub-building A depth (Z)
+        const depthB  = BLDG_DEPTH - splitZ      // sub-building B depth
+        const hA      = 7  + rng() * 16
+        const hB      = 6  + rng() * 14
+        const colorA  = WALL_COLORS[Math.floor(rng() * WALL_COLORS.length)]
+        const colorB  = WALL_COLORS[Math.floor(rng() * WALL_COLORS.length)]
+
+        // Local Z centres of each sub-building (slot goes from -BLDG_DEPTH/2 to +BLDG_DEPTH/2)
+        const zA = -BLDG_DEPTH / 2 + depthA / 2
+        const zB =  BLDG_DEPTH / 2 - depthB / 2
+
+        const addSubBuilding = (h: number, depth: number, color: number, localZ: number, seed: number) => {
+          const wallMat = new THREE.MeshStandardMaterial({ color, roughness: 0.88, metalness: 0.03 })
+          const geo  = new THREE.BoxGeometry(BLDG_WIDTH, h, depth)
+          const mesh = new THREE.Mesh(geo, wallMat)
+          mesh.castShadow = true; mesh.receiveShadow = true
+          mesh.position.set(0, h / 2, localZ)
+          group.add(mesh)
+
+          // Real glass window panes on the street-facing side
+          const wRng   = seededRng(seed)
+          const cols   = Math.max(2, Math.round(depth / 2.8))
+          const rows   = Math.max(2, Math.round((h - 3.5) / 3.0))
+          const winW   = (depth / cols) * 0.52
+          const winH   = ((h - 3.5) / rows) * 0.55
+          // PlaneGeometry faces +Z; rotate so it faces ±X (street side)
+          const rotY   = isLeft ? Math.PI / 2 : -Math.PI / 2
+
+          for (let c = 0; c < cols; c++) {
+            for (let r = 0; r < rows; r++) {
+              const lit  = wRng() < 0.18
+              const winMat = new THREE.MeshStandardMaterial({
+                color:           lit ? 0xffc56c : 0x0a0c10,
+                roughness:       lit ? 0.3      : 0.05,
+                metalness:       lit ? 0.0      : 0.9,
+                emissive:        lit ? new THREE.Color(0xff8c1a) : new THREE.Color(0x000000),
+                emissiveIntensity: lit ? 1.5    : 0.0,
+              })
+              const win = new THREE.Mesh(new THREE.PlaneGeometry(winH, winW), winMat)
+              win.rotation.y = rotY
+              const wz = localZ - depth / 2 + (c + 0.5) * (depth / cols)
+              const wy = 3.5 + (r + 0.5) * ((h - 3.5) / rows)
+              win.position.set(faceX + outDir * 0.06, wy, wz)
+              group.add(win)
+            }
+          }
+        }
+
+        addSubBuilding(hA, depthA, colorA, zA, index * 17 + (side === 'left' ? 0 : 500))
+        addSubBuilding(hB, depthB, colorB, zB, index * 31 + (side === 'left' ? 100 : 600))
+
+        // ── Ground floor details ───────────────────────────────────────────
+        const addDoor = (localZ: number) => {
+          const doorColors = [0x2a1206, 0x0e1020, 0x0e2010, 0x1a0808]
+          const doorMat = new THREE.MeshStandardMaterial({
+            color: doorColors[Math.floor(rng2() * doorColors.length)], roughness: 0.85
+          })
+          const door = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.3, 1.1), doorMat)
+          door.position.set(faceX + outDir * 0.04, 1.15, localZ)
+          group.add(door)
+          // door frame
+          const frameMat = new THREE.MeshStandardMaterial({ color: 0x333028, roughness: 0.7 })
+          const frame = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.45, 1.3), frameMat)
+          frame.position.set(faceX + outDir * 0.03, 1.225, localZ)
+          group.add(frame)
+          // handle — small metallic sphere offset from centre
+          const handleMat = new THREE.MeshStandardMaterial({ color: 0xc8a030, roughness: 0.2, metalness: 0.95 })
+          const handle = new THREE.Mesh(new THREE.SphereGeometry(0.055, 7, 5), handleMat)
+          handle.position.set(faceX + outDir * 0.1, 1.05, localZ + 0.28)
+          group.add(handle)
+        }
+
+        addDoor(zA)
+        addDoor(zB)
+
+        // Shopfront for sub-building A (40% chance)
+        const hasShop = rng2() < 0.40
+        if (hasShop) {
+          const glassMat = new THREE.MeshStandardMaterial({
+            color: 0x0c1520, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.55
+          })
+          const shopW = depthA * 0.6
+          const glass = new THREE.Mesh(new THREE.BoxGeometry(0.07, 2.5, shopW), glassMat)
+          glass.position.set(faceX + outDir * 0.035, 1.25, zA)
+          group.add(glass)
+        }
+
+        // Awning for sub-building B (38% chance)
+        const hasAwning = rng2() < 0.38
+        if (hasAwning) {
+          const awningMat = new THREE.MeshStandardMaterial({
+            color: AWNING_COLORS[Math.floor(rng2() * AWNING_COLORS.length)],
+            roughness: 0.95, side: THREE.DoubleSide
+          })
+          const awningDepth = depthB * 0.65
+          const awning = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.1, awningDepth), awningMat)
+          awning.rotation.z = outDir * 0.38
+          awning.position.set(faceX + outDir * 0.65, 3.05, zB)
+          group.add(awning)
+        }
+
+        // Café tables (20% chance, only if has shopfront)
+        const hasCafe = hasShop && rng2() < 0.40
+        if (hasCafe) {
+          const fMat = new THREE.MeshStandardMaterial({ color: 0x1a1208, roughness: 0.85 })
+          for (let t = 0; t < 2; t++) {
+            const tz = zA + (t - 0.5) * 3.2
+            // table top
+            const top = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.055, 0.65), fMat)
+            top.position.set(faceX + outDir * 0.45, 0.74, tz)
+            group.add(top)
+            // table leg
+            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.74, 5), fMat)
+            leg.position.set(faceX + outDir * 0.45, 0.37, tz)
+            group.add(leg)
+            // two chairs
+            for (const cOff of [-0.5, 0.5]) {
+              const seat = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.055, 0.38), fMat)
+              seat.position.set(faceX + outDir * 0.45, 0.44, tz + cOff)
+              group.add(seat)
+              const back = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.42, 0.055), fMat)
+              back.position.set(faceX + outDir * 0.45, 0.66, tz + cOff + (cOff > 0 ? 0.16 : -0.16))
+              group.add(back)
+            }
+          }
+        }
+      } else if (slotType === 'park') {
+        // Grass lawn (depth 10.0 to create a tight gap, width 30.0 to prevent void)
+        const grassMat = new THREE.MeshStandardMaterial({ color: 0x1a3c1e, roughness: 0.95 })
+        const grassGeo = new THREE.BoxGeometry(30.0, 0.04, 10.0)
+        const grass = new THREE.Mesh(grassGeo, grassMat)
+        grass.position.set(outDir * -10.0, 0.02, 0)
+        grass.receiveShadow = true
+        group.add(grass)
+
+        // Add building wings to squeeze the park space to a tight 10m gap
+        const wingMat = new THREE.MeshStandardMaterial({ color: 0x3d3535, roughness: 0.88, metalness: 0.03 })
+        const wingGeo = new THREE.BoxGeometry(30.0, 14.0, 9.8)
+
+        // Left wing
+        const wingL = new THREE.Mesh(wingGeo, wingMat)
+        wingL.position.set(outDir * -10.0, 7.0, -9.9)
+        wingL.castShadow = true; wingL.receiveShadow = true
+        group.add(wingL)
+
+        // Right wing
+        const wingR = new THREE.Mesh(wingGeo, wingMat)
+        wingR.position.set(outDir * -10.0, 7.0, 9.9)
+        wingR.castShadow = true; wingR.receiveShadow = true
+        group.add(wingR)
+
+        // Add lit windows on the Z-facing facades of the wings
+        const winGeo = new THREE.PlaneGeometry(0.8, 1.2)
+        const litWinMat = new THREE.MeshStandardMaterial({
+          color: 0xffc56c,
+          roughness: 0.3,
+          emissive: new THREE.Color(0xff8c1a),
+          emissiveIntensity: 1.5
+        })
+        const unlitWinMat = new THREE.MeshStandardMaterial({
+          color: 0x0a0c10,
+          roughness: 0.05,
+          metalness: 0.9
+        })
+
+        // Left wing windows (at Z = -4.95, facing +Z)
+        for (const wx of [outDir * -2.0, outDir * -6.0]) {
+          for (const wy of [3.2, 7.2]) {
+            const lit = rng2() < 0.25
+            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
+            wMesh.position.set(wx, wy, -4.99)
+            group.add(wMesh)
+          }
+        }
+
+        // Right wing windows (at Z = 4.95, facing -Z)
+        for (const wx of [outDir * -2.0, outDir * -6.0]) {
+          for (const wy of [3.2, 7.2]) {
+            const lit = rng2() < 0.25
+            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
+            wMesh.rotation.y = Math.PI // face the other way
+            wMesh.position.set(wx, wy, 4.99)
+            group.add(wMesh)
+          }
+        }
+
+        // 1 beautiful stylized pocket park tree
+        const pTree = new THREE.Group()
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 1.6, 5), trunkMat)
+        trunk.position.set(0, 0.8, 0)
+        trunk.castShadow = true; trunk.receiveShadow = true
+        pTree.add(trunk)
+
+        const f1 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.65, 1), foliageMat)
+        f1.position.set(0, 1.9, 0)
+        f1.castShadow = true; f1.receiveShadow = true
+        pTree.add(f1)
+
+        const f2 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5, 1), foliageMat)
+        f2.position.set(0.04, 2.35, 0)
+        f2.castShadow = true; f2.receiveShadow = true
+        pTree.add(f2)
+
+        pTree.position.set(outDir * -2.5, 0, 2.0)
+        group.add(pTree)
+
+        // A cute park bench facing the street
+        const bench = new THREE.Group()
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 })
+        const ironMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 })
+
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 1.8), woodMat)
+        seat.position.set(0, 0.45, 0)
+        seat.castShadow = true; seat.receiveShadow = true
+        bench.add(seat)
+
+        const back = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.4, 1.8), woodMat)
+        back.position.set(outDir * -0.28, 0.7, 0)
+        back.castShadow = true; back.receiveShadow = true
+        bench.add(back)
+
+        const legGeo = new THREE.BoxGeometry(0.06, 0.45, 0.6)
+        const legL = new THREE.Mesh(legGeo, ironMat)
+        legL.position.set(0, 0.225, -0.8)
+        legL.castShadow = true
+        bench.add(legL)
+
+        const legR = new THREE.Mesh(legGeo, ironMat)
+        legR.position.set(0, 0.225, 0.8)
+        legR.castShadow = true
+        bench.add(legR)
+
+        bench.position.set(outDir * 2.0, 0, -1.8)
+        bench.rotation.y = isLeft ? -Math.PI / 2 : Math.PI / 2
+        group.add(bench)
+
+        // Wall-mounted cozy pocket park warm LED light
+        const wallLamp = new THREE.Group()
+        
+        // Horizontal bracket coming out of the wall
+        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.08), fixtureMat)
+        bracket.position.set(0, 0, 0.25)
+        wallLamp.add(bracket)
+
+        const lightFixture = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.3), fixtureMat)
+        lightFixture.position.set(0, -0.05, 0.45)
+        wallLamp.add(lightFixture)
+
+        // Glowing warm LED face
+        const ledFaceMat = new THREE.MeshBasicMaterial({ color: 0xffea9f, transparent: true, opacity: 1.0 })
+        const ledFace = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), ledFaceMat)
+        ledFace.rotation.x = Math.PI / 2
+        ledFace.position.set(0, -0.11, 0.45)
+        wallLamp.add(ledFace)
+
+        const parkPointLight = new THREE.PointLight(0xffb040, 15, 12, 2)
+        parkPointLight.position.set(0, -0.15, 0.45)
+        parkPointLight.castShadow = true
+        parkPointLight.shadow.mapSize.width = 128
+        parkPointLight.shadow.mapSize.height = 128
+        wallLamp.add(parkPointLight)
+
+        const parkPoolMat = new THREE.MeshBasicMaterial({
+          map: poolTex, transparent: true, opacity: 0.7,
+          depthWrite: false, blending: THREE.AdditiveBlending
+        })
+        const parkPool = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), parkPoolMat)
+        parkPool.rotation.x = -Math.PI / 2
+        parkPool.position.set(0, -4.38, 0.45)
+        wallLamp.add(parkPool)
+
+        // Place the wall lamp on the left building wing facade facing +Z (at Z = -5.0)
+        wallLamp.position.set(outDir * -2.0, 4.4, -4.95)
+        group.add(wallLamp)
+
+        // Register in adaptiveLamps for movement response!
+        adaptiveLamps.push({
+          point: parkPointLight,
+          ledMesh: ledFace,
+          pool: parkPool,
+          parentGroup: group,
+          localZOffset: -4.5,
+          maxIntensity: 15,
+          maxPoolOpacity: 0.7
+        })
+      } else if (slotType === 'playground') {
+        // Grass lawn (depth 10.0 to create a tight gap, width 30.0 to prevent void)
+        const grassMat = new THREE.MeshStandardMaterial({ color: 0x1f3b23, roughness: 0.95 })
+        const grassGeo = new THREE.BoxGeometry(30.0, 0.04, 10.0)
+        const grass = new THREE.Mesh(grassGeo, grassMat)
+        grass.position.set(outDir * -10.0, 0.02, 0)
+        grass.receiveShadow = true
+        group.add(grass)
+
+        // Add building wings to squeeze the playground space to a tight 10m gap
+        const wingMat = new THREE.MeshStandardMaterial({ color: 0x3d3535, roughness: 0.88, metalness: 0.03 })
+        const wingGeo = new THREE.BoxGeometry(30.0, 14.0, 9.8)
+
+        // Left wing
+        const wingL = new THREE.Mesh(wingGeo, wingMat)
+        wingL.position.set(outDir * -10.0, 7.0, -9.9)
+        wingL.castShadow = true; wingL.receiveShadow = true
+        group.add(wingL)
+
+        // Right wing
+        const wingR = new THREE.Mesh(wingGeo, wingMat)
+        wingR.position.set(outDir * -10.0, 7.0, 9.9)
+        wingR.castShadow = true; wingR.receiveShadow = true
+        group.add(wingR)
+
+        // Add lit windows on the Z-facing facades of the wings
+        const winGeo = new THREE.PlaneGeometry(0.8, 1.2)
+        const litWinMat = new THREE.MeshStandardMaterial({
+          color: 0xffc56c,
+          roughness: 0.3,
+          emissive: new THREE.Color(0xff8c1a),
+          emissiveIntensity: 1.5
+        })
+        const unlitWinMat = new THREE.MeshStandardMaterial({
+          color: 0x0a0c10,
+          roughness: 0.05,
+          metalness: 0.9
+        })
+
+        // Left wing windows (at Z = -4.95, facing +Z)
+        for (const wx of [outDir * -2.0, outDir * -6.0]) {
+          for (const wy of [3.2, 7.2]) {
+            const lit = rng2() < 0.25
+            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
+            wMesh.position.set(wx, wy, -4.99)
+            group.add(wMesh)
+          }
+        }
+
+        // Right wing windows (at Z = 4.95, facing -Z)
+        for (const wx of [outDir * -2.0, outDir * -6.0]) {
+          for (const wy of [3.2, 7.2]) {
+            const lit = rng2() < 0.25
+            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
+            wMesh.rotation.y = Math.PI // face the other way
+            wMesh.position.set(wx, wy, 4.99)
+            group.add(wMesh)
+          }
+        }
+
+        // Horizontal fence rails at the back of playground gap (Z = -5.0 to 5.0)
+        const fenceMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.5, metalness: 0.7 })
+        const railLower = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 9.8), fenceMat)
+        railLower.position.set(outDir * -4.8, 0.45, 0)
+        railLower.castShadow = true
+        group.add(railLower)
+
+        const railUpper = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 9.8), fenceMat)
+        railUpper.position.set(outDir * -4.8, 0.95, 0)
+        railUpper.castShadow = true
+        group.add(railUpper)
+
+        // Vertical posts
+        const postGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.2, 6)
+        for (let zVal = -4.5; zVal <= 4.5; zVal += 2.25) {
+          const post = new THREE.Mesh(postGeo, fenceMat)
+          post.position.set(outDir * -4.8, 0.6, zVal)
+          post.castShadow = true
+          group.add(post)
+        }
+
+        // Sandbox ("Caixa de areia" - beautiful hollow wooden frame)
+        const sandbox = new THREE.Group()
+        const woodFrameMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.85 })
+        const sandMat = new THREE.MeshStandardMaterial({ color: 0xddd2ab, roughness: 0.95 })
+        
+        // Sand
+        const sand = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 1.6), sandMat)
+        sand.position.set(0, 0.05, 0)
+        sand.receiveShadow = true
+        sandbox.add(sand)
+
+        // 4 border wooden walls
+        const wallThickness = 0.1
+        const wallHeight = 0.16
+        const wallLength = 1.8
+
+        const fWallGeo = new THREE.BoxGeometry(wallLength, wallHeight, wallThickness)
+        const wallFront = new THREE.Mesh(fWallGeo, woodFrameMat)
+        wallFront.position.set(0, wallHeight / 2, (wallLength - wallThickness) / 2)
+        wallFront.castShadow = true; wallFront.receiveShadow = true
+        sandbox.add(wallFront)
+
+        const wallBack = new THREE.Mesh(fWallGeo, woodFrameMat)
+        wallBack.position.set(0, wallHeight / 2, -(wallLength - wallThickness) / 2)
+        wallBack.castShadow = true; wallBack.receiveShadow = true
+        sandbox.add(wallBack)
+
+        const sWallGeo = new THREE.BoxGeometry(wallThickness, wallHeight, wallLength - wallThickness * 2)
+        const wallLeft = new THREE.Mesh(sWallGeo, woodFrameMat)
+        wallLeft.position.set((wallLength - wallThickness) / 2, wallHeight / 2, 0)
+        wallLeft.castShadow = true; wallLeft.receiveShadow = true
+        sandbox.add(wallLeft)
+
+        const wallRight = new THREE.Mesh(sWallGeo, woodFrameMat)
+        wallRight.position.set(-(wallLength - wallThickness) / 2, wallHeight / 2, 0)
+        wallRight.castShadow = true; wallRight.receiveShadow = true
+        sandbox.add(wallRight)
+        
+        sandbox.position.set(outDir * -1.8, 0, 2.0)
+        group.add(sandbox)
+
+        // A cute wooden park bench for parents
+        const bench = new THREE.Group()
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 })
+        const ironMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 })
+
+        const benchSeat = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 1.8), woodMat)
+        benchSeat.position.set(0, 0.45, 0)
+        benchSeat.castShadow = true; benchSeat.receiveShadow = true
+        bench.add(benchSeat)
+
+        const benchBack = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.4, 1.8), woodMat)
+        benchBack.position.set(outDir * -0.28, 0.7, 0)
+        benchBack.castShadow = true; benchBack.receiveShadow = true
+        bench.add(benchBack)
+
+        const legGeo = new THREE.BoxGeometry(0.06, 0.45, 0.6)
+        const legL = new THREE.Mesh(legGeo, ironMat)
+        legL.position.set(0, 0.225, -0.8)
+        legL.castShadow = true
+        bench.add(legL)
+
+        const legR = new THREE.Mesh(legGeo, ironMat)
+        legR.position.set(0, 0.225, 0.8)
+        legR.castShadow = true
+        bench.add(legR)
+
+        bench.position.set(outDir * 2.0, 0, -2.0)
+        bench.rotation.y = isLeft ? -Math.PI / 2 : Math.PI / 2
+        group.add(bench)
+
+        // Slide ("Escorrega")
+        const slideGroup = new THREE.Group()
+        const playGreenMat = new THREE.MeshStandardMaterial({ color: 0x28a745, roughness: 0.8 })
+        const playRedMat = new THREE.MeshStandardMaterial({ color: 0xdc3545, roughness: 0.7 })
+
+        // Platform base
+        const platform = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.0, 0.8), playGreenMat)
+        platform.position.set(0, 0.5, 0)
+        platform.castShadow = true; platform.receiveShadow = true
+        slideGroup.add(platform)
+
+        // Roof 4 small pillars + canopy
+        const metalMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4, metalness: 0.8 })
+        for (let xOff of [-0.35, 0.35]) {
+          for (let zOff of [-0.35, 0.35]) {
+            const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.8, 4), metalMat)
+            pillar.position.set(xOff, 1.4, zOff)
+            pillar.castShadow = true
+            slideGroup.add(pillar)
+          }
+        }
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(0.65, 0.4, 4), playRedMat)
+        roof.rotation.y = Math.PI / 4
+        roof.position.set(0, 1.9, 0)
+        roof.castShadow = true
+        slideGroup.add(roof)
+
+        // Slide ramp going towards the street
+        const ramp = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 0.6), playRedMat)
+        ramp.rotation.z = -outDir * 0.4
+        ramp.position.set(outDir * 0.85, 0.5, 0)
+        ramp.castShadow = true; ramp.receiveShadow = true
+        slideGroup.add(ramp)
+
+        // Step boxes behind platform
+        const step1 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 0.3), playGreenMat)
+        step1.position.set(0, 0.15, -0.55)
+        step1.castShadow = true
+        slideGroup.add(step1)
+        
+        const step2 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.3), playGreenMat)
+        step2.position.set(0, 0.3, -0.85)
+        step2.castShadow = true
+        slideGroup.add(step2)
+
+        slideGroup.position.set(outDir * -2.4, 0, -2.0)
+        group.add(slideGroup)
+
+        // Swings ("Baloiços")
+        const swingGroup = new THREE.Group()
+        const playYellowMat = new THREE.MeshStandardMaterial({ color: 0xffc107, roughness: 0.8 })
+
+        // A-frames support
+        const leg1 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.0, 4), metalMat)
+        leg1.rotation.z = 0.22
+        leg1.position.set(-0.2, 0.95, -0.9)
+        leg1.castShadow = true
+        swingGroup.add(leg1)
+
+        const leg2 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.0, 4), metalMat)
+        leg2.rotation.z = -0.22
+        leg2.position.set(0.2, 0.95, -0.9)
+        leg2.castShadow = true
+        swingGroup.add(leg2)
+
+        const leg3 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.0, 4), metalMat)
+        leg3.rotation.z = 0.22
+        leg3.position.set(-0.2, 0.95, 0.9)
+        leg3.castShadow = true
+        swingGroup.add(leg3)
+
+        const leg4 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.0, 4), metalMat)
+        leg4.rotation.z = -0.22
+        leg4.position.set(0.2, 0.95, 0.9)
+        leg4.castShadow = true
+        swingGroup.add(leg4)
+
+        // Top bar
+        const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 2.0), playYellowMat)
+        topBar.position.set(0, 1.9, 0)
+        topBar.castShadow = true
+        swingGroup.add(topBar)
+
+        // The seat
+        const seatMat = new THREE.MeshStandardMaterial({ color: 0xdc3545, roughness: 0.9 })
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.02, 0.38), seatMat)
+        seat.position.set(0, 0.45, 0)
+        seat.castShadow = true; seat.receiveShadow = true
+        swingGroup.add(seat)
+
+        // Thin chain cylinders
+        const chainL = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 1.45, 4), metalMat)
+        chainL.position.set(0, 1.175, -0.12)
+        swingGroup.add(chainL)
+
+        const chainR = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 1.45, 4), metalMat)
+        chainR.position.set(0, 1.175, 0.12)
+        swingGroup.add(chainR)
+
+        swingGroup.position.set(outDir * 0.5, 0, 0.0)
+        group.add(swingGroup)
+
+        // A cute round globe lamp post for the playground
+        const playLamp = new THREE.Group()
+        const playPole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 3.2, 6), new THREE.MeshStandardMaterial({ color: 0x17a2b8, roughness: 0.6 }))
+        playPole.position.set(0, 1.6, 0)
+        playPole.castShadow = true
+        playLamp.add(playPole)
+
+        const playFixture = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshStandardMaterial({
+          emissive: new THREE.Color(0xfff0b0), emissiveIntensity: 3, color: 0x222222
+        }))
+        playFixture.position.set(0, 3.2, 0)
+        playLamp.add(playFixture)
+
+        const playPointLight = new THREE.PointLight(0xffea9f, 10, 9, 2)
+        playPointLight.position.set(0, 3.2, 0)
+        playPointLight.castShadow = true
+        playPointLight.shadow.mapSize.width = 128
+        playPointLight.shadow.mapSize.height = 128
+        playLamp.add(playPointLight)
+
+        const playPoolMat = new THREE.MeshBasicMaterial({
+          map: poolTex, transparent: true, opacity: 0.6,
+          depthWrite: false, blending: THREE.AdditiveBlending
+        })
+        const playPool = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), playPoolMat)
+        playPool.rotation.x = -Math.PI / 2
+        playPool.position.set(0, 0.022, 0)
+        playLamp.add(playPool)
+
+        playLamp.position.set(outDir * -1.5, 0, 1.5)
+        group.add(playLamp)
+
+        // Register in adaptiveLamps for movement response!
+        adaptiveLamps.push({
+          point: playPointLight,
+          bulb: playFixture,
+          pool: playPool,
+          parentGroup: group,
+          localZOffset: 1.5,
+          maxIntensity: 10,
+          maxPoolOpacity: 0.6
+        })
+
+      } else if (slotType === 'parking') {
+        // Asphalt driveway (depth 10.0 to create a tight gap, width 30.0 to prevent void)
+        const driveMat = new THREE.MeshStandardMaterial({ color: 0x111113, roughness: 0.92 })
+        const driveGeo = new THREE.BoxGeometry(30.0, 0.02, 10.0)
+        const drive = new THREE.Mesh(driveGeo, driveMat)
+        drive.position.set(outDir * -10.0, 0.01, 0)
+        drive.receiveShadow = true
+        group.add(drive)
+
+        // Add building wings to squeeze the parking space to a tight 10m gap
+        const wingMat = new THREE.MeshStandardMaterial({ color: 0x3d3535, roughness: 0.88, metalness: 0.03 })
+        const wingGeo = new THREE.BoxGeometry(30.0, 14.0, 9.8)
+
+        // Left wing
+        const wingL = new THREE.Mesh(wingGeo, wingMat)
+        wingL.position.set(outDir * -10.0, 7.0, -9.9)
+        wingL.castShadow = true; wingL.receiveShadow = true
+        group.add(wingL)
+
+        // Right wing
+        const wingR = new THREE.Mesh(wingGeo, wingMat)
+        wingR.position.set(outDir * -10.0, 7.0, 9.9)
+        wingR.castShadow = true; wingR.receiveShadow = true
+        group.add(wingR)
+
+        // Add lit windows on the Z-facing facades of the wings to make them look ultra premium
+        const winGeo = new THREE.PlaneGeometry(0.8, 1.2)
+        const litWinMat = new THREE.MeshStandardMaterial({
+          color: 0xffc56c,
+          roughness: 0.3,
+          emissive: new THREE.Color(0xff8c1a),
+          emissiveIntensity: 1.5
+        })
+        const unlitWinMat = new THREE.MeshStandardMaterial({
+          color: 0x0a0c10,
+          roughness: 0.05,
+          metalness: 0.9
+        })
+
+        // Left wing windows (at Z = -4.95, facing +Z)
+        for (const wx of [outDir * -2.0, outDir * -6.0]) {
+          for (const wy of [3.2, 7.2]) {
+            const lit = rng2() < 0.25
+            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
+            wMesh.position.set(wx, wy, -4.99)
+            group.add(wMesh)
+          }
+        }
+
+        // Right wing windows (at Z = 4.95, facing -Z)
+        for (const wx of [outDir * -2.0, outDir * -6.0]) {
+          for (const wy of [3.2, 7.2]) {
+            const lit = rng2() < 0.25
+            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
+            wMesh.rotation.y = Math.PI // face the other way
+            wMesh.position.set(wx, wy, 4.99)
+            group.add(wMesh)
+          }
+        }
+
+        // Draw crisp white parking lines defining 3 perpendicular spots in the tight gap
+        const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })
+        const lineGeo = new THREE.PlaneGeometry(6.0, 0.12)
+        const zOffsets = [-4.5, -1.5, 1.5, 4.5]
+        for (const zVal of zOffsets) {
+          const pLine = new THREE.Mesh(lineGeo, lineMat)
+          pLine.rotation.x = -Math.PI / 2
+          pLine.position.set(0, 0.015, zVal)
+          group.add(pLine)
+        }
+
+        // Low-poly Cars parked side-by-side (up to 3 stalls)
+        const spots = [-3.0, 0.0, 3.0]
+        for (let s = 0; s < spots.length; s++) {
+          // 80% occupancy chance per spot so they are usually mostly full!
+          if (rng2() < 0.20) continue; 
+
+          const car = new THREE.Group()
+          const carColors = [0x9c1a1c, 0x1a409c, 0x222222, 0x7a8090, 0x4a7a5c, 0xd4a373]
+          const carColor = carColors[Math.floor(rng2() * carColors.length)]
+          const carMat = new THREE.MeshStandardMaterial({ color: carColor, roughness: 0.2, metalness: 0.8 })
+          const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 })
+          const glassMat = new THREE.MeshStandardMaterial({ color: 0x101216, roughness: 0.05, metalness: 0.9 })
+
+          const bodyGeo = new THREE.BoxGeometry(1.8, 0.6, 3.8)
+          const body = new THREE.Mesh(bodyGeo, carMat)
+          body.position.set(0, 0.55, 0)
+          body.castShadow = true; body.receiveShadow = true
+          car.add(body)
+
+          const cabGeo = new THREE.BoxGeometry(1.6, 0.55, 2.2)
+          const cab = new THREE.Mesh(cabGeo, glassMat)
+          cab.position.set(0, 1.05, -0.2)
+          cab.castShadow = true
+          car.add(cab)
+
+          const wheelGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.25, 8)
+          const w1 = new THREE.Mesh(wheelGeo, wheelMat)
+          w1.rotation.z = Math.PI / 2
+          w1.position.set(-0.9, 0.28, 1.0)
+          w1.castShadow = true
+          car.add(w1)
+
+          const w2 = new THREE.Mesh(wheelGeo, wheelMat)
+          w2.rotation.z = Math.PI / 2
+          w2.position.set(0.9, 0.28, 1.0)
+          w2.castShadow = true
+          car.add(w2)
+
+          const w3 = new THREE.Mesh(wheelGeo, wheelMat)
+          w3.rotation.z = Math.PI / 2
+          w3.position.set(-0.9, 0.28, -1.0)
+          w3.castShadow = true
+          car.add(w3)
+
+          const w4 = new THREE.Mesh(wheelGeo, wheelMat)
+          w4.rotation.z = Math.PI / 2
+          w4.position.set(0.9, 0.28, -1.0)
+          w4.castShadow = true
+          car.add(w4)
+
+          // Headlights
+          const lightGeo = new THREE.SphereGeometry(0.08, 6, 6)
+          const lightMat = new THREE.MeshBasicMaterial({ color: 0xfff0b0 })
+          const hlL = new THREE.Mesh(lightGeo, lightMat)
+          hlL.position.set(-0.6, 0.55, 1.9)
+          car.add(hlL)
+
+          const hlR = new THREE.Mesh(lightGeo, lightMat)
+          hlR.position.set(0.6, 0.55, 1.9)
+          car.add(hlR)
+
+          const baseRot = isLeft ? Math.PI / 2 : -Math.PI / 2
+          // Give them small organic offsets so it looks like real people parked them
+          car.rotation.y = baseRot + (rng2() * 0.10 - 0.05)
+          // Parked slightly forward or backward in the spot
+          const parkDepthOffset = rng2() * 0.6 - 0.3
+          car.position.set(outDir * -1.0 + parkDepthOffset, 0, spots[s])
+          group.add(car)
+        }
+
+        // Wall-mounted cozy alley LED light that responds to movement
+        const wallLamp = new THREE.Group()
+        
+        // Horizontal bracket coming out of the wall
+        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.08), fixtureMat)
+        bracket.position.set(0, 0, 0.25)
+        wallLamp.add(bracket)
+
+        const lightFixture = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.3), fixtureMat)
+        lightFixture.position.set(0, -0.05, 0.45)
+        wallLamp.add(lightFixture)
+
+        // Glowing warm LED face
+        const ledFaceMat = new THREE.MeshBasicMaterial({ color: 0xffea9f, transparent: true, opacity: 1.0 })
+        const ledFace = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), ledFaceMat)
+        ledFace.rotation.x = Math.PI / 2
+        ledFace.position.set(0, -0.11, 0.45)
+        wallLamp.add(ledFace)
+
+        const alleyPointLight = new THREE.PointLight(0xffb040, 15, 12, 2)
+        alleyPointLight.position.set(0, -0.15, 0.45)
+        alleyPointLight.castShadow = true
+        alleyPointLight.shadow.mapSize.width = 128
+        alleyPointLight.shadow.mapSize.height = 128
+        wallLamp.add(alleyPointLight)
+
+        const alleyPoolMat = new THREE.MeshBasicMaterial({
+          map: poolTex, transparent: true, opacity: 0.7,
+          depthWrite: false, blending: THREE.AdditiveBlending
+        })
+        const alleyPool = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), alleyPoolMat)
+        alleyPool.rotation.x = -Math.PI / 2
+        // pool center aligns with the point light source
+        alleyPool.position.set(0, -4.38, 0.45)
+        wallLamp.add(alleyPool)
+
+        // Place the wall lamp on the left building wing facade facing +Z (at Z = -5.0)
+        wallLamp.position.set(outDir * -2.0, 4.4, -4.95)
+        group.add(wallLamp)
+
+        // Register in adaptiveLamps for movement response!
+        adaptiveLamps.push({
+          point: alleyPointLight,
+          ledMesh: ledFace,
+          pool: alleyPool,
+          parentGroup: group,
+          localZOffset: -4.5,
+          maxIntensity: 15,
+          maxPoolOpacity: 0.7
+        })
+      }
+
+      const xPos = side === 'left' ? BLDG_X_L : BLDG_X_R
+      group.position.set(xPos, 0, -index * BLDG_SPACING - BLDG_DEPTH / 2)
+      scene.add(group)
+      return { group, index }
+    }
+
+    for (let i = 0; i < BLDG_COUNT; i++) {
+      bldgsL.push(makeBuildingGroup('left', i))
+      bldgsR.push(makeBuildingGroup('right', i))
+    }
+
+    // ── Tree pool ──────────────────────────────────────────────────────────
+    const TREE_COUNT = 8    // per side
+    const TREE_SPACING = 48  // metres
+    interface TreeGroup {
+      group: THREE.Group
+      index: number
+      side: 'left' | 'right'
+    }
+    const treeGroupsL: TreeGroup[] = []
+    const treeGroupsR: TreeGroup[] = []
+
+
+
+    function makeTreeGroup(side: 'left' | 'right', index: number): TreeGroup {
+      const isLeft = side === 'left'
+      const treeX = isLeft ? -5.3 : 5.3
+      const group = new THREE.Group()
+
+      // Trunk
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.11, 2.0, 5), trunkMat)
+      trunk.position.set(0, 1.0, 0)
+      trunk.castShadow = true; trunk.receiveShadow = true
+      group.add(trunk)
+
+      // Canopy (3 stacked spheres for a stylized low-poly look)
+      const c1 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.85, 1), foliageMat)
+      c1.position.set(0, 2.3, 0)
+      c1.castShadow = true; c1.receiveShadow = true
+      group.add(c1)
+
+      const c2 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.72, 1), foliageMat)
+      c2.position.set(isLeft ? 0.05 : -0.05, 2.9, 0)
+      c2.castShadow = true; c2.receiveShadow = true
+      group.add(c2)
+
+      const c3 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55, 1), foliageMat)
+      c3.position.set(0, 3.4, 0)
+      c3.castShadow = true; c3.receiveShadow = true
+      group.add(c3)
+
+      // Stagger: left starts at 0, right starts at TREE_SPACING/2
+      const zOffset = side === 'right' ? TREE_SPACING / 2 : 0
+      group.position.set(treeX, 0, -index * TREE_SPACING - zOffset - 4)
+      scene.add(group)
+
+      return { group, index, side }
+    }
+
+    for (let i = 0; i < TREE_COUNT; i++) {
+      treeGroupsL.push(makeTreeGroup('left', i))
+      treeGroupsR.push(makeTreeGroup('right', i))
+    }
+
+    // ── Streetlight pool ───────────────────────────────────────────────────
+    const LAMP_COUNT = 32    // per side
+    const LAMP_SPACING = 11  // metres — dense urban spacing
+    const LAMP_HEIGHT = 6.0
+    const LAMP_ARM = 1.4     // arm toward road
+
+    interface LampGroup {
+      group: THREE.Group
+      point: THREE.PointLight
+      bulb: THREE.Mesh
+      pool: THREE.Mesh
+      poolOuter: THREE.Mesh
+      index: number
+      side: 'left' | 'right'
+    }
+    const lampGroupsL: LampGroup[] = []
+    const lampGroupsR: LampGroup[] = []
+
+
+
+    function makeLampGroup(side: 'left' | 'right', index: number): LampGroup {
+      const isLeft = side === 'left'
+      const lampX = isLeft ? -4.35 : 4.35
+      const armDir = isLeft ? LAMP_ARM : -LAMP_ARM
+      const armEndX = lampX + armDir
+
+      const group = new THREE.Group()
+
+      // Pole
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.065, LAMP_HEIGHT, 6), poleMat)
+      pole.position.set(lampX, LAMP_HEIGHT / 2, 0)
+      pole.castShadow = true
+      group.add(pole)
+
+      // Arm
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(Math.abs(armDir), 0.06, 0.06), armMat)
+      arm.position.set(lampX + armDir / 2, LAMP_HEIGHT + 0.05, 0)
+      group.add(arm)
+
+      // Fixture cone (inverted)
+      const fixture = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.22, 8), fixtureMat)
+      fixture.rotation.x = Math.PI
+      fixture.position.set(armEndX, LAMP_HEIGHT - 0.1, 0)
+      group.add(fixture)
+
+      // Bulb
+      const bulbClone = bulbMat.clone()
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), bulbClone)
+      bulb.position.set(armEndX, LAMP_HEIGHT, 0)
+      group.add(bulb)
+
+      const point = new THREE.PointLight(0xffd060, 18, 13, 2)
+      point.position.set(armEndX, LAMP_HEIGHT, 0)
+      point.castShadow = true
+      point.shadow.mapSize.width = 256
+      point.shadow.mapSize.height = 256
+      group.add(point)
+
+      // Ground pool — two soft layers: tight bright core + wide ambient halo
+      const poolMatInner = new THREE.MeshBasicMaterial({
+        map: poolTex, transparent: true, opacity: 0.75,
+        depthWrite: false, blending: THREE.AdditiveBlending
+      })
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), poolMatInner)
+      pool.rotation.x = -Math.PI / 2
+      pool.position.set(armEndX * 0.3, 0.012, 0)
+      group.add(pool)
+
+      // Wide ambient halo
+      const poolMatOuter = new THREE.MeshBasicMaterial({
+        map: poolTex, transparent: true, opacity: 0.28,
+        depthWrite: false, blending: THREE.AdditiveBlending
+      })
+      const poolOuter = new THREE.Mesh(new THREE.PlaneGeometry(26, 26), poolMatOuter)
+      poolOuter.rotation.x = -Math.PI / 2
+      poolOuter.position.set(armEndX * 0.25, 0.011, 0)
+      group.add(poolOuter)
+
+      // Stagger: left starts at 0, right starts at LAMP_SPACING/2
+      const zOffset = side === 'right' ? LAMP_SPACING / 2 : 0
+      group.position.set(0, 0, -index * LAMP_SPACING - zOffset - 8)
+      scene.add(group)
+
+      return { group, point, bulb, pool, poolOuter, index, side }
+    }
+
+    for (let i = 0; i < LAMP_COUNT; i++) {
+      lampGroupsL.push(makeLampGroup('left', i))
+      lampGroupsR.push(makeLampGroup('right', i))
+    }
+
+    // ── Caption ────────────────────────────────────────────────────────────
+    const caption = document.createElement('div')
+    caption.style.cssText = `
+      position:absolute;bottom:28px;left:0;right:0;text-align:center;
+      color:rgba(255,255,255,0.45);font:12px/1 Inter,sans-serif;
+      pointer-events:none;letter-spacing:0.04em;
+    `
+    caption.textContent = 'the corridor stays ahead — the citizen never notices'
+    container.style.position = 'relative'
+    container.appendChild(caption)
+
+    // ── Resize ─────────────────────────────────────────────────────────────
+    const ro = new ResizeObserver(() => {
+      const w = container.clientWidth, h = container.clientHeight
+      camera.aspect = w / h
+      camera.updateProjectionMatrix()
+      renderer.setSize(w, h)
+    })
+    ro.observe(container)
+
+    // ── Animation loop ─────────────────────────────────────────────────────
+    let rafId = 0
+    let lastT = performance.now()
+    let scrollZ = 0        // world units scrolled so far
+
+    function animate() {
+      rafId = requestAnimationFrame(animate)
+      const now = performance.now()
+      const dt = Math.min((now - lastT) / 1000, 0.05)
+      lastT = now
+
+      // Ensure tracked pedestrian exists
+      if (!trackedRef.current) {
+        trackedRef.current = agentsRef.current.find(a => a.type === 'ped') || spawnPed()
+      }
+      const agent = trackedRef.current
+
+      const speed = agent ? Math.max(0.1, Math.hypot(agent.vx, agent.vy)) : PED_SPEED
+      const sp = speed / METERS_PER_PIXEL  // px/s → m/s
+      const realSpeed = sp * METERS_PER_PIXEL  // back to m/s
+      const stride = agent?.stride ?? 0
+
+      // Advance world scroll (camera stays at 0; objects move toward +Z)
+      if (!pausedRef.current) {
+        scrollZ += realSpeed * dt
+      }
+
+      // Head-bob
+      camera.position.y = 1.7 + Math.sin(stride) * 0.04
+      camera.position.x = Math.sin(stride * 0.5) * 0.012
+
+      // ── Corridor brightness per lamp ──────────────────────────────────
+      const lookaheadDist = Math.max(10, lookaheadRef.current * 8)
+      const fadeLen = 10
+      const baseBri = baselineRef.current * MAX_VISUAL_BRI
+
+      function getBri(zWorld: number): number {
+        // zWorld is distance ahead of camera (positive = in front)
+        if (zWorld <= 0) {
+          // Behind camera: fade based on distance behind
+          const distBehind = Math.abs(zWorld)
+          const behindFade = Math.max(0, 1 - distBehind / 8)
+          return baseBri + (MAX_VISUAL_BRI - baseBri) * behindFade
+        }
+        if (zWorld <= lookaheadDist) return MAX_VISUAL_BRI
+        const distPast = zWorld - lookaheadDist
+        const t = Math.min(1, distPast / fadeLen)
+        return MAX_VISUAL_BRI * (1 - t) + baseBri * t
+      }
+
+      // ── Recycle & update lamps ────────────────────────────────────────
+      const allLampGroups = [...lampGroupsL, ...lampGroupsR]
+      const totalLampRange = LAMP_COUNT * LAMP_SPACING
+
+      for (const lg of allLampGroups) {
+        // Move group with world scroll
+        if (!pausedRef.current) lg.group.position.z += realSpeed * dt
+
+        // Recycle: if lamp passed camera (z > 5), wrap to far end
+        if (lg.group.position.z > 5) {
+          lg.group.position.z -= totalLampRange
+        }
+
+        // Distance ahead of camera (camera is at z=0, objects at negative z are ahead)
+        const distAhead = -lg.group.position.z
+        const bri = getBri(distAhead)
+
+        // Apply brightness
+        lg.point.intensity = bri * 16
+        ;(lg.bulb.material as THREE.MeshStandardMaterial).emissiveIntensity = bri * 4.5
+        ;(lg.pool.material as THREE.MeshBasicMaterial).opacity = bri * 0.70
+        ;(lg.poolOuter.material as THREE.MeshBasicMaterial).opacity = bri * 0.25
+
+        // Only cast shadows for close lamps (performance)
+        lg.point.castShadow = distAhead < 25 && distAhead > -2
+      }
+
+      // ── Recycle & update buildings ────────────────────────────────────
+      const allBldgs = [...bldgsL, ...bldgsR]
+      const totalBldgRange = BLDG_COUNT * BLDG_SPACING
+
+      for (const bg of allBldgs) {
+        if (!pausedRef.current) bg.group.position.z += realSpeed * dt
+        if (bg.group.position.z > 12) {
+          bg.group.position.z -= totalBldgRange
+        }
+      }
+
+      // ── Update adaptive interstitial lamps ────────────────────────────
+      for (const al of adaptiveLamps) {
+        const worldZ = al.parentGroup.position.z + al.localZOffset
+        const distAhead = -worldZ
+        const bri = getBri(distAhead)
+
+        // Apply dynamic brightness
+        al.point.intensity = bri * al.maxIntensity
+        if (al.bulb) {
+          (al.bulb.material as THREE.MeshStandardMaterial).emissiveIntensity = bri * 4.5
+        }
+        if (al.ledMesh) {
+          (al.ledMesh.material as THREE.MeshBasicMaterial).opacity = 0.3 + bri * 0.7
+        }
+        (al.pool.material as THREE.MeshBasicMaterial).opacity = bri * al.maxPoolOpacity
+
+        // Only cast shadows for close lamps
+        al.point.castShadow = distAhead < 25 && distAhead > -2
+      }
+
+      // ── Recycle & update trees ────────────────────────────────────────
+      const allTrees = [...treeGroupsL, ...treeGroupsR]
+      const totalTreeRange = TREE_COUNT * TREE_SPACING
+
+      for (const tg of allTrees) {
+        if (!pausedRef.current) tg.group.position.z += realSpeed * dt
+        if (tg.group.position.z > 8) {
+          tg.group.position.z -= totalTreeRange
+        }
+      }
+
+      // ── Recycle centre dashes ─────────────────────────────────────────
+      for (const d of dashes) {
+        if (!pausedRef.current) d.position.z += realSpeed * dt
+        if (d.position.z > 4) d.position.z -= DASH_COUNT * DASH_SPACING
+      }
+
+      renderer.render(scene, camera)
+    }
+    animate()
+
+    return () => {
+      cancelAnimationFrame(rafId)
+      ro.disconnect()
+      renderer.dispose()
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
+      if (container.contains(caption)) container.removeChild(caption)
+    }
+  }, [])
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+    />
+  )
+}

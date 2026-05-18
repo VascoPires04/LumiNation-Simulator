@@ -1,0 +1,310 @@
+================================================================================
+  LumiNation Simulator — Three.js FPV (Citizen View) Implementation Roadmap
+================================================================================
+Date: 2026-05-18
+Author: Claude Code
+Goal: Replace the Canvas 2D drawFPV() function with a fully 3D WebGL scene
+      using Three.js, while keeping ALL existing simulation logic intact.
+
+================================================================================
+  WHY THREE.JS?
+================================================================================
+The current Canvas 2D FPV uses manual perspective projection (projX/projY helpers).
+Every object (building, lamp pole, light cone) is hand-drawn with 2D ctx calls
+that approximate 3D. This gives a flat, blocky, "cyberpunk 80s" look because:
+  - No real depth testing (painter's algorithm breaks at oblique views)
+  - No real lighting (gradients fake light; they don't react to geometry)
+  - No atmospheric depth (fogging is just opacity tricks)
+  - No shadows, no ambient occlusion, no physical material response
+
+Three.js gives us:
+  - True WebGL perspective + depth buffer (no painter's algorithm needed)
+  - Real PointLights / SpotLights that cast actual light on road + building surfaces
+  - THREE.FogExp2 for organic depth haze (distant lamps glow realistically)
+  - MeshStandardMaterial with PBR roughness/metalness
+  - True 3D geometry (BoxGeometry buildings, CylinderGeometry poles)
+
+================================================================================
+  CONSTRAINT: ALL SIMULATION LOGIC MUST BE PRESERVED
+================================================================================
+These values flow from CitySimulator.tsx refs into the FPV component as props:
+  - lampsRef      → the real lamp array (brightness, position)
+  - trackedRef    → the pedestrian the camera follows
+  - lookaheadRef  → slider 0–5 (seconds) → controls corridor length
+  - baselineRef   → slider 0.15–1.0 → controls dim brightness floor
+  - agentsRef     → all agents (for spawning a ped if none exists)
+
+The corridor logic in FPV is:
+  - Virtual streetlights scroll toward camera at walker speed
+  - If lamp.z < lookaheadZ → brightness = MAX_VISUAL_BRI (0.85)
+  - If lamp.z > lookaheadZ → fade from MAX_VISUAL_BRI down to baseline × MAX_VISUAL_BRI
+  - This must map 1:1 into Three.js PointLight.intensity
+
+================================================================================
+  STEP 0 — INSTALL DEPENDENCIES
+================================================================================
+Run in project root:
+  npm install three @types/three
+
+No other dependencies needed. Three.js is self-contained.
+
+================================================================================
+  STEP 1 — ARCHITECTURE OVERVIEW
+================================================================================
+New file: src/FPV3D.tsx
+  - React functional component
+  - Mounts a Three.js WebGLRenderer into a <div ref> via useEffect
+  - Runs its own requestAnimationFrame loop (independent of Canvas loop)
+  - Receives simulation refs as props
+  - Returns an absolutely-positioned <div> that fills the parent container
+
+Modified: src/CitySimulator.tsx
+  - Import FPV3D
+  - In JSX, render <FPV3D> when mode === 'fpv', absolutely positioned over canvas
+  - The existing canvas loop continues but drawFPV(ctx) is never called (unused)
+  - Pass refs as props: lampsRef, trackedRef, lookaheadRef, baselineRef, agentsRef
+
+Props interface for FPV3D:
+  interface FPV3DProps {
+    lampsRef: React.MutableRefObject<Lamp[]>
+    trackedRef: React.MutableRefObject<Agent | null>
+    lookaheadRef: React.MutableRefObject<number>
+    baselineRef: React.MutableRefObject<number>
+    agentsRef: React.MutableRefObject<Agent[]>
+    spawnAgent: (x: number, y: number, type: AgentType) => Agent | null
+    dimsRef: React.MutableRefObject<{ W: number; H: number }>
+  }
+
+================================================================================
+  STEP 2 — THREE.JS SCENE SETUP
+================================================================================
+Camera:
+  - PerspectiveCamera(75, aspect, 0.1, 300)
+  - Position: (0, 1.7, 0)        ← eye level 1.7m
+  - lookAt: (0, 1.7, -100)       ← looking straight down street
+  - Head-bob: camera.position.y = 1.7 + sin(stride * π) * 0.04
+
+Renderer:
+  - WebGLRenderer({ antialias: true, alpha: false })
+  - setPixelRatio(devicePixelRatio)
+  - setSize(width, height)
+  - shadowMap.enabled = true
+  - shadowMap.type = THREE.PCFSoftShadowMap
+  - toneMapping = THREE.ReinhardToneMapping
+  - toneMappingExposure = 1.2
+  - Background color: 0x020205
+
+Scene:
+  - THREE.Scene()
+  - scene.background = new THREE.Color(0x020205)
+  - scene.fog = new THREE.FogExp2(0x020a1a, 0.018)
+    (exponential fog: starts subtle, builds quickly at 50–100m depth)
+
+Ambient light:
+  - THREE.AmbientLight(0x08080f, 0.4)   ← very dim blue-black fill
+
+================================================================================
+  STEP 3 — GROUND PLANE (ROAD + SIDEWALKS)
+================================================================================
+Road:
+  - PlaneGeometry(8, 400)               ← 8m wide, 400m long
+  - Rotate -90° on X axis (lie flat)
+  - Position: (0, 0, -200)              ← extends from camera far into distance
+  - MeshStandardMaterial({ color: 0x0e0e18, roughness: 0.95, metalness: 0.0 })
+  - receiveShadow = true
+
+Left sidewalk:
+  - PlaneGeometry(2, 400)
+  - Position: (-5, 0.02, -200)          ← slightly above road to avoid z-fight
+  - MeshStandardMaterial({ color: 0x13131e, roughness: 0.9 })
+  - receiveShadow = true
+
+Right sidewalk:
+  - Same, position (5, 0.02, -200)
+
+Road centre dashes:
+  - Series of BoxGeometry(0.12, 0.01, 2) white boxes
+  - Pooled: 30 boxes, z positions cycle from -2 to -200
+  - Material: MeshBasicMaterial({ color: 0x444455 })
+  - These scroll: each frame, move all dashes forward; if dash.z > 1 wrap to -200
+
+Curb lines (left + right):
+  - BoxGeometry(0.05, 0.1, 400) at x = ±4.0, y = 0.05
+  - MeshStandardMaterial({ color: 0x1a1a2e })
+
+================================================================================
+  STEP 4 — BUILDING POOL (INFINITE SCROLLING)
+================================================================================
+Pool size: 16 buildings per side (8 left + 8 right)
+Building spacing: 15m (Z direction)
+Building width: 10m, depth: 12m
+
+Geometry per building:
+  BoxGeometry(10, height, 12)
+  height = seededRng(index) → random between 8 and 22m
+
+Materials:
+  - Main walls: MeshStandardMaterial with color per btype:
+      residential → 0x1a1015 (warm dark)
+      commercial  → 0x0f1428 (cool blue-dark)
+      office      → 0x0e1816 (teal-dark)
+    roughness: 0.85, metalness: 0.05
+  - Window overlay: a canvas texture (512×512) with amber dots for lit windows
+    (15% lit, same seeded logic as current). Applied as emissiveMap so it
+    glows in darkness without needing a separate light.
+
+Position:
+  - Left buildings: x = -9 (center of 10m wide block, edge at -4 curb)
+  - Right buildings: x = +9
+  - Y offset: height/2 (so base sits on y=0)
+  - Z: starts at -7.5, -22.5, -37.5, ... (7.5 + i*15)
+
+Recycling logic:
+  Each frame: if building.position.z > camera.position.z + 5:
+    → wrap to camera.position.z - (maxDepth)
+    → assign new seeded height/material
+
+================================================================================
+  STEP 5 — STREETLIGHT POOL (INFINITE SCROLLING + CORRIDOR BRIGHTNESS)
+================================================================================
+Pool size: 24 lamps (12 left + 12 right)
+Lamp spacing: 25m (Z direction) — staggered: left at z=0, 50, 100... right at 25, 75, 125...
+
+Per lamp group (Three.js Group):
+  a) Pole — CylinderGeometry(0.04, 0.06, 6, 6)
+     Material: MeshStandardMaterial({ color: 0x8c8ca0, roughness: 0.6 })
+     Position: (lampX, 3, z)    ← lampX = ±4.1 (sidewalk edge)
+
+  b) Arm — BoxGeometry(1.2, 0.06, 0.06)
+     Position: angled from pole top toward road center
+     For left lamp: arm extends +0.6 toward street (x = lampX + 0.6)
+
+  c) Fixture/hood — CylinderGeometry(0.18, 0.25, 0.15, 8)
+     Inverted cone shape, at end of arm, y=6.0
+     Material: MeshStandardMaterial({ color: 0x4a4a5a })
+
+  d) Bulb — SphereGeometry(0.08, 8, 6)
+     MeshStandardMaterial({ emissive: 0xffeebb, emissiveIntensity: driven by bri })
+     Position: inside fixture
+
+  e) PointLight — color 0xffd060, distance 20, decay 2
+     Position: at fixture tip, (lampX ± 0.6, 6.0, z)
+     intensity: computed from corridor logic (see Step 6)
+     castShadow = true (only for close lamps, z < 20)
+
+  f) Ground pool — CircleGeometry(3, 16) horizontal at y=0.01
+     MeshBasicMaterial with emissive amber, transparent, opacity driven by bri
+     Emulates the pool of light on the road
+
+Recycling: same pattern as buildings. If lamp.z > camera.z + 5 → wrap to far end
+
+================================================================================
+  STEP 6 — CORRIDOR BRIGHTNESS LOGIC (MAPS FROM SIMULATION TO THREE.JS)
+================================================================================
+This must match the existing drawFPV logic exactly:
+
+  const lookaheadZ = lookaheadRef.current * 8.0
+    (8.0 scale: 1 second of lookahead ≈ 8m of corridor in world units)
+
+  For each virtual lamp at world Z position zWorld:
+    const zFromCamera = Math.abs(zWorld - camera.position.z)
+    const lookaheadDist = Math.max(12, lookaheadZ)
+    const fadeLength = 10  // meters of fade zone
+
+    let bri
+    if (zFromCamera <= lookaheadDist) {
+      bri = MAX_VISUAL_BRI  // 0.85 — fully lit corridor
+    } else {
+      const distPast = zFromCamera - lookaheadDist
+      const fadeFactor = Math.min(1, distPast / fadeLength)
+      const baseBri = baselineRef.current * MAX_VISUAL_BRI
+      bri = MAX_VISUAL_BRI * (1 - fadeFactor) + baseBri * fadeFactor
+    }
+
+Map bri → Three.js values:
+  - PointLight.intensity = bri * 40       (0 → 34 range)
+  - bulb.material.emissiveIntensity = bri * 3
+  - groundPool.material.opacity = bri * 0.6
+  - fixture emissive color alpha: bri
+
+================================================================================
+  STEP 7 — STARS + SKY
+================================================================================
+Stars:
+  - 80 SphereGeometry(0.15, 4, 4) or Points with PointsMaterial
+  - Placed randomly in upper hemisphere at r=200
+  - y > 20 only (above horizon)
+  - MeshBasicMaterial({ color: 0xffffff }), opacity random 0.3–1.0
+
+Horizon glow (city light pollution):
+  - Semi-transparent plane at y=1.6, z=-200, width=400, height=60
+  - MeshBasicMaterial({ color: 0x0a1020 }) — very faint blue
+  - Adds depth and separates sky from road plane
+
+================================================================================
+  STEP 8 — CAMERA ANIMATION (HEAD-BOB + FORWARD MOVEMENT)
+================================================================================
+The virtual camera is always at (0, 1.7, z) looking forward.
+z doesn't actually move — instead, buildings and lamps scroll toward z=0.
+
+But: stride animation drives head-bob:
+  camera.position.y = 1.7 + Math.sin(stridePhase * Math.PI * 2) * 0.04
+  camera.position.x = Math.sin(stridePhase * Math.PI) * 0.015  // slight sway
+
+stridePhase: updated each frame by += (deltaTime * PED_SPEED / strideLength)
+   PED_SPEED = 1.4 m/s
+   strideLength = 0.75m
+
+================================================================================
+  STEP 9 — IMPLEMENTATION ORDER
+================================================================================
+1. npm install three @types/three
+2. Create src/FPV3D.tsx:
+   a. Scene + camera + renderer setup in useEffect
+   b. Ambient light + fog
+   c. Road plane + sidewalks + curb lines
+   d. Road centre dash pool (30 segments, recycled)
+   e. Building pool (16 total, recycled)
+   f. Window texture generation (canvas → Three.js texture)
+   g. Lamp pool (24 total, PointLights + visuals, recycled)
+   h. Stars
+   i. Animation loop: update positions, corridor brightness, head-bob, render
+   j. Resize handler
+3. Modify CitySimulator.tsx:
+   a. Import FPV3D
+   b. Export or lift: spawnAgent, dimsRef, Lamp/Agent types
+   c. In JSX: conditionally render <FPV3D> when mode === 'fpv'
+   d. Pass refs as props
+4. Verify: switch to Citizen View → should show 3D scene
+5. Verify: lookahead slider → corridor length changes
+6. Verify: baseline slider → dim lamp intensity changes
+7. Verify: pause button stops movement
+
+================================================================================
+  STEP 10 — VALUES REFERENCE TABLE
+================================================================================
+Camera Y (eye height):     1.7 m
+FOV:                       75°
+Near clip:                 0.1 m
+Far clip:                  300 m
+FogExp2 density:           0.018
+Building spacing:          15 m
+Lamp spacing:              25 m (staggered: 12.5 offset per side)
+Lamp height:               6 m
+Lamp arm length:           1.2 m
+Lamp arm direction:        toward road center
+PointLight distance:       20 m
+PointLight decay:          2 (physically correct)
+Head-bob amplitude:        0.04 m
+Head-bob sway:             0.015 m
+Lookahead scale:           8 m/sec
+MAX_VISUAL_BRI:            0.85
+PointLight max intensity:  40 (at bri=0.85 → 34)
+Road width:                8 m  (−4 to +4)
+Sidewalk width:            2 m  (−6 to −4, +4 to +6)
+Building X center:         ±9 m
+Building Z depth:          12 m
+
+================================================================================
+  END OF ROADMAP
+================================================================================
