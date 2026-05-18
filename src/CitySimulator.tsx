@@ -135,6 +135,7 @@ export default function CitySimulator({ mode }: Props) {
   const [lookaheadSec, setLookaheadSec] = useState(4.0)
   const [scenario, setScenario] = useState<'manual' | 'quiet' | 'busy' | 'mixed'>('manual')
   const [paused, setPaused] = useState(false)
+  const [lisbon, setLisbon] = useState(false)
   const [stats, setStats] = useState({
     powerNow: 0,
     powerPct: 0,
@@ -143,7 +144,58 @@ export default function CitySimulator({ mode }: Props) {
     co2Saved: 0,
     peds: 0,
     cars: 0,
+    lampCount: 0,
+    fullPower: 0,
   })
+
+  // ── Power history ring buffer (60s at 0.5s intervals = 120 entries) ──────
+  const powerHistoryRef = useRef<{ lumi: number; full: number }[]>([])
+  const histTickRef = useRef(0)
+  const chartRef = useRef<HTMLCanvasElement>(null)
+
+  // Redraw chart whenever stats update
+  useEffect(() => {
+    const canvas = chartRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const w = canvas.width, h = canvas.height
+    const buf = powerHistoryRef.current
+    ctx.clearRect(0, 0, w, h)
+    if (buf.length < 2) return
+
+    const maxV = Math.max(...buf.map(p => p.full), 1)
+    const toY = (v: number) => h - (v / maxV) * h * 0.88 - h * 0.06
+    const toX = (i: number) => (i / (buf.length - 1)) * w
+
+    // Always-on shadow line
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+    ctx.lineWidth = 1
+    ctx.setLineDash([3, 4])
+    ctx.beginPath()
+    buf.forEach((p, i) => { i === 0 ? ctx.moveTo(toX(i), toY(p.full)) : ctx.lineTo(toX(i), toY(p.full)) })
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // LumiNation filled area
+    const grad = ctx.createLinearGradient(0, 0, 0, h)
+    grad.addColorStop(0, 'rgba(250,199,117,0.28)')
+    grad.addColorStop(1, 'rgba(250,199,117,0.02)')
+    ctx.beginPath()
+    buf.forEach((p, i) => { i === 0 ? ctx.moveTo(toX(i), toY(p.lumi)) : ctx.lineTo(toX(i), toY(p.lumi)) })
+    ctx.lineTo(toX(buf.length - 1), h)
+    ctx.lineTo(0, h)
+    ctx.closePath()
+    ctx.fillStyle = grad
+    ctx.fill()
+
+    // LumiNation line
+    ctx.strokeStyle = '#FAC775'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    buf.forEach((p, i) => { i === 0 ? ctx.moveTo(toX(i), toY(p.lumi)) : ctx.lineTo(toX(i), toY(p.lumi)) })
+    ctx.stroke()
+  }, [stats])
 
   const baselineRef = useRef(baselinePct)
   baselineRef.current = baselinePct
@@ -1149,11 +1201,14 @@ export default function CitySimulator({ mode }: Props) {
     const resize = () => {
       const rect = stage.getBoundingClientRect()
       const W = rect.width, H = rect.height
+      const prevW = dimsRef.current.W
       dimsRef.current = { W, H }
       canvas.width = W * dpr
       canvas.height = H * dpr
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      layoutCity(W, H)
+      // Only re-layout city when width changes — height changes (e.g. sidebar growing)
+      // should not reset the simulation layout.
+      if (W !== prevW) layoutCity(W, H)
     }
     resize()
     const ro = new ResizeObserver(resize)
@@ -1189,7 +1244,18 @@ export default function CitySimulator({ mode }: Props) {
           co2Saved: Math.round(annualKwh * CO2_PER_KWH),
           peds: agentsRef.current.filter(a => a.type === 'ped').length,
           cars: agentsRef.current.filter(a => a.type === 'car').length,
+          lampCount: N,
+          fullPower: full,
         })
+      }
+
+      // Power history ring buffer — push every 0.5s
+      histTickRef.current += dt
+      if (histTickRef.current >= 0.5) {
+        histTickRef.current = 0
+        const buf = powerHistoryRef.current
+        buf.push({ lumi: power.luminationPower, full: power.fullPower })
+        if (buf.length > 120) buf.shift()
       }
     }
     raf = requestAnimationFrame(loop)
@@ -1223,8 +1289,9 @@ export default function CitySimulator({ mode }: Props) {
             agentsRef={agentsRef}
             pausedRef={pausedRef}
             spawnPed={() => {
-              const { W, H } = dimsRef.current
-              return spawnAgent(W * 0.5, H * 0.5, 'ped')
+              spawnRandomEdge('ped')
+              const arr = agentsRef.current
+              return arr[arr.length - 1] ?? null
             }}
           />
         )}
@@ -1239,41 +1306,83 @@ export default function CitySimulator({ mode }: Props) {
       </div>
 
       <aside className="sidebar">
-        <div className="card">
-          <div className="card-label">Power now</div>
-          <div className="metric-row">
-            <span className="metric-value">{stats.powerNow.toLocaleString()}</span>
-            <span className="metric-unit">W</span>
-            <span className="metric-aux">{stats.powerPct}% of always-on</span>
-          </div>
-        </div>
+        {(() => {
+          const scale = lisbon ? 70_000 / Math.max(stats.lampCount, 1) : 1
+          const scaledPower = stats.powerNow * scale
+          const scaledFull  = stats.fullPower * scale
+          const scaledEur   = stats.eurSaved  * scale
+          const scaledCo2   = stats.co2Saved  * scale
+          const scaledKwh   = stats.kwhSaved  * scale
 
-        <div className="card">
-          <div className="card-label">Energy saved (session)</div>
-          <div className="metric-row">
-            <span className="metric-value">{stats.kwhSaved.toFixed(3)}</span>
-            <span className="metric-unit">kWh</span>
-          </div>
-        </div>
+          const fmtW = (w: number) =>
+            w >= 1_000_000 ? (w / 1_000_000).toFixed(2) + ' MW'
+            : w >= 1_000   ? (w / 1_000).toFixed(1) + ' kW'
+            : Math.round(w) + ' W'
 
-        <div className="card">
-          <div className="card-label">Projected annual savings</div>
-          <div className="metric-row">
-            <span className="metric-unit">€</span>
-            <span className="metric-value">{stats.eurSaved.toLocaleString()}</span>
-            <span className="metric-aux">{stats.co2Saved.toLocaleString()} kg CO₂/yr</span>
-          </div>
-        </div>
+          const fmtEur = (e: number) =>
+            e >= 1_000_000 ? '€' + (e / 1_000_000).toFixed(1) + 'M'
+            : e >= 1_000   ? '€' + (e / 1_000).toFixed(0) + 'k'
+            : '€' + Math.round(e).toLocaleString()
 
-        <div className="card">
-          <div className="card-label">Agents</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
-            <span>Pedestrians</span><span style={{ fontWeight: 500 }}>{stats.peds}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
-            <span>Vehicles</span><span style={{ fontWeight: 500 }}>{stats.cars}</span>
-          </div>
-        </div>
+          const fmtCo2 = (kg: number) =>
+            kg >= 1_000 ? (kg / 1_000).toFixed(1) + ' t CO₂/yr'
+            : Math.round(kg).toLocaleString() + ' kg CO₂/yr'
+
+          return <>
+            {lisbon && (
+              <div style={{ background: '#FAC77522', border: '1px solid #FAC77566', borderRadius: 8, padding: '6px 10px', marginBottom: 6, fontSize: 12, color: '#FAC775', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 15 }}>🏙</span>
+                <span><strong>Lisbon scale</strong> · 70,000 lamps</span>
+              </div>
+            )}
+
+            <div className="card">
+              <div className="card-label">Power now</div>
+              <div className="metric-row">
+                <span className="metric-value">{fmtW(scaledPower)}</span>
+                <span className="metric-aux">{stats.powerPct}% of always-on{lisbon ? ` (always-on = ${fmtW(scaledFull)})` : ''}</span>
+              </div>
+            </div>
+
+            <div className="card" style={{ paddingBottom: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="card-label" style={{ marginBottom: 0 }}>Power · last 60s</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', gap: 8 }}>
+                  <span style={{ color: '#FAC775' }}>— LumiNation</span>
+                  <span style={{ color: 'rgba(255,255,255,0.35)' }}>- - Always-on</span>
+                </div>
+              </div>
+              <canvas ref={chartRef} width={220} height={64}
+                style={{ width: '100%', height: 64, marginTop: 6, borderRadius: 4 }} />
+            </div>
+
+            <div className="card">
+              <div className="card-label">Energy saved (session)</div>
+              <div className="metric-row">
+                <span className="metric-value">{scaledKwh.toFixed(lisbon ? 1 : 3)}</span>
+                <span className="metric-unit">kWh</span>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-label">Projected annual savings</div>
+              <div className="metric-row">
+                <span className="metric-value">{fmtEur(scaledEur)}</span>
+                <span className="metric-aux">{fmtCo2(scaledCo2)}</span>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-label">Agents</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
+                <span>Pedestrians</span><span style={{ fontWeight: 500 }}>{stats.peds}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
+                <span>Vehicles</span><span style={{ fontWeight: 500 }}>{stats.cars}</span>
+              </div>
+            </div>
+          </>
+        })()}
 
         <div className="card controls">
           <div className="card-label">Scenario</div>
@@ -1293,9 +1402,22 @@ export default function CitySimulator({ mode }: Props) {
             onChange={e => setLookaheadSec(parseInt(e.target.value, 10) / 10)} />
 
           <div className="button-row">
-            <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0 }}>Clear</button>
+            <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0; powerHistoryRef.current = [] }}>Clear</button>
             <button onClick={() => setPaused(p => !p)}>{paused ? 'Resume' : 'Pause'}</button>
           </div>
+          <button
+            onClick={() => setLisbon(l => !l)}
+            style={{
+              marginTop: 8, width: '100%', padding: '7px 0',
+              background: lisbon ? '#FAC775' : 'transparent',
+              color: lisbon ? '#0a0a12' : '#FAC775',
+              border: '1px solid #FAC775',
+              borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            🏙 {lisbon ? 'Lisbon scale ON · 70k lamps' : 'Lisbon scale (70,000 lamps)'}
+          </button>
         </div>
       </aside>
     </div>

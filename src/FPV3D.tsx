@@ -96,8 +96,8 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
     // ── Scene ──────────────────────────────────────────────────────────────
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x020205)
-    scene.fog = new THREE.FogExp2(0x020a18, 0.009)
+    scene.background = new THREE.Color(0x050810)
+    scene.fog = new THREE.FogExp2(0x0a1428, 0.006)
 
     // ── Camera ─────────────────────────────────────────────────────────────
     const camera = new THREE.PerspectiveCamera(72, W / H, 0.1, 300)
@@ -228,6 +228,88 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     ]
     const AWNING_COLORS = [0xb81820, 0x1a4aaa, 0x1a7830, 0x884400, 0x6a1a8a, 0x186878]
     const SIGN_COLORS   = [0xd02020, 0x2060cc, 0x20aa40, 0xcc8800, 0x8830cc, 0x20aacc]
+
+    // ── NPC materials ───────────────────────────────────────────────────────
+    const npcSkinMat  = new THREE.MeshStandardMaterial({ color: 0xb07850, roughness: 0.80 })
+    const npcHairMat  = new THREE.MeshStandardMaterial({ color: 0x1a1008, roughness: 0.90 })
+    const npcBodyMat  = new THREE.MeshStandardMaterial({ color: 0x2a3245, roughness: 0.92 })
+    const npcLegMat   = new THREE.MeshStandardMaterial({ color: 0x1e2030, roughness: 0.95 })
+    const npcEyeMat   = new THREE.MeshBasicMaterial({ color: 0x080404 })  // always visible
+    const npcDogMat   = new THREE.MeshStandardMaterial({ color: 0x6b4c30, roughness: 0.88 })
+
+    // Adds hair + eyes + nose to a head sphere already in the group.
+    // Face direction is local -Z (walker group has rotation.y=π so local -Z → world +Z = camera)
+    function addFaceFeatures(g: THREE.Group, headY: number) {
+      // Hair — squished sphere covering top + back of head
+      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.138, 7, 5), npcHairMat)
+      hair.scale.y = 0.58
+      hair.position.set(0, headY + 0.042, 0.01)
+      g.add(hair)
+      // Eyes
+      const eyeGeo = new THREE.SphereGeometry(0.022, 4, 3)
+      const eyeL = new THREE.Mesh(eyeGeo, npcEyeMat)
+      eyeL.position.set(-0.046, headY + 0.005, -0.120)
+      g.add(eyeL)
+      const eyeR = new THREE.Mesh(eyeGeo, npcEyeMat)
+      eyeR.position.set( 0.046, headY + 0.005, -0.120)
+      g.add(eyeR)
+      // Nose
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.020, 0.030), npcSkinMat)
+      nose.position.set(0, headY - 0.018, -0.128)
+      g.add(nose)
+    }
+
+    function makeWalkerMesh(): { group: THREE.Group; limbs: WalkerLimbs } {
+      const g = new THREE.Group()
+
+      // Head + face
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 7, 6), npcSkinMat)
+      head.position.set(0, 1.63, 0)
+      g.add(head)
+      addFaceFeatures(g, 1.63)
+
+      // Torso
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.50, 0.20), npcBodyMat)
+      torso.position.set(0, 1.16, 0)
+      g.add(torso)
+
+      // Helper: make a limb pivot. pivot positioned at joint, geometry hangs downward.
+      function makeLimbPivot(pivotY: number, pivotX: number, geo: THREE.BufferGeometry, mat: THREE.Material, meshOffY: number): THREE.Group {
+        const pivot = new THREE.Group()
+        pivot.position.set(pivotX, pivotY, 0)
+        const mesh = new THREE.Mesh(geo, mat)
+        mesh.position.set(0, meshOffY, 0)
+        pivot.add(mesh)
+        return pivot
+      }
+
+      // Legs — pivot at hip, leg box hangs down
+      const legGeo = new THREE.BoxGeometry(0.14, 0.52, 0.16)
+      const legL = makeLimbPivot(0.90, -0.10, legGeo, npcLegMat, -0.26)
+      const legR = makeLimbPivot(0.90,  0.10, legGeo, npcLegMat, -0.26)
+      g.add(legL); g.add(legR)
+
+      // Arms — pivot at shoulder, arm box hangs down (skin-coloured hand appended)
+      const upperArmGeo = new THREE.BoxGeometry(0.11, 0.26, 0.13)
+      const foreArmGeo  = new THREE.BoxGeometry(0.09, 0.22, 0.11)
+      function makeArm(side: number): THREE.Group {
+        const shoulder = new THREE.Group()
+        shoulder.position.set(side * 0.245, 1.38, 0)
+        const upper = new THREE.Mesh(upperArmGeo, npcBodyMat)
+        upper.position.set(0, -0.13, 0)
+        shoulder.add(upper)
+        const fore = new THREE.Mesh(foreArmGeo, npcSkinMat)
+        fore.position.set(0, -0.35, 0)
+        shoulder.add(fore)
+        return shoulder
+      }
+      const armL = makeArm(-1)
+      const armR = makeArm( 1)
+      g.add(armL); g.add(armR)
+
+      return { group: g, limbs: { armL, armR, legL, legR } }
+    }
+
 
     // ── Shared window materials (reused across ALL buildings — saves 1000+ GPU state changes) ──
     const sharedLitWinMat = new THREE.MeshStandardMaterial({
@@ -484,6 +566,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         bench.position.set(outDir * 2.0, 0, -1.8)
         bench.rotation.y = isLeft ? -Math.PI / 2 : Math.PI / 2
         group.add(bench)
+
 
         // Wall-mounted cozy pocket park warm LED light
         const wallLamp = new THREE.Group()
@@ -1041,6 +1124,137 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       bldgsR.push(makeBuildingGroup('right', i))
     }
 
+    // ── NPC walker pool ────────────────────────────────────────────────────
+    // 3 silhouettes: 2 regular walkers + 1 dog walker, coming toward camera
+    // They do NOT affect lamps — purely decorative
+    const NPC_WALK_SPEED = 1.1  // m/s their own walking speed (toward camera)
+    interface WalkerLimbs {
+      armL: THREE.Group; armR: THREE.Group
+      legL: THREE.Group; legR: THREE.Group
+    }
+    interface NpcEntry {
+      group: THREE.Group
+      stridePhase: number
+      isDogWalker: boolean
+      walkerLimbs: WalkerLimbs | null
+      dogGroup: THREE.Group | null
+      dogLegs: THREE.Group[]   // [frontL, frontR, backL, backR]
+      leashPosAttr: THREE.BufferAttribute | null
+      dogSniffOffset: number
+    }
+    const npcEntries: NpcEntry[] = []
+    const npcRng = seededRng(4242)
+
+    // Place them at irregular intervals far ahead so they feel sporadic
+    const npcStartZs = [-35, -145, -270]  // meters ahead of camera at start
+    const npcSides   = [1, -1, 1]         // left (+) or right (-) sidewalk
+
+    for (let i = 0; i < 3; i++) {
+      const group = new THREE.Group()
+      const isDogWalker = i === 1
+      const sidewalkX = npcSides[i] * 5.2
+
+      // Walker body
+      const { group: walkerGroup, limbs: walkerLimbs } = makeWalkerMesh()
+      group.add(walkerGroup)
+
+      let dogGroup: THREE.Group | null = null
+      let leashPosAttr: THREE.BufferAttribute | null = null
+
+      const dogLegs: THREE.Group[] = []
+
+      if (isDogWalker) {
+        dogGroup = new THREE.Group()
+
+        // Rounded body — sphere scaled to oval
+        const dBody = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), npcDogMat)
+        dBody.scale.set(1.0, 0.85, 1.45)
+        dBody.position.set(0, 0.32, 0)
+        dogGroup.add(dBody)
+
+        // Head — sphere
+        const dHead = new THREE.Mesh(new THREE.SphereGeometry(0.11, 7, 6), npcDogMat)
+        dHead.position.set(0, 0.44, 0.24)
+        dogGroup.add(dHead)
+
+        // Snout — small squashed sphere
+        const dSnout = new THREE.Mesh(new THREE.SphereGeometry(0.065, 6, 4), npcDogMat)
+        dSnout.scale.set(0.9, 0.7, 0.9)
+        dSnout.position.set(0, 0.40, 0.33)
+        dogGroup.add(dSnout)
+
+        // Nose — tiny dark sphere
+        const npcNoseMat = new THREE.MeshStandardMaterial({ color: 0x1a0f0a, roughness: 0.6 })
+        const dNose = new THREE.Mesh(new THREE.SphereGeometry(0.022, 5, 4), npcNoseMat)
+        dNose.position.set(0, 0.415, 0.365)
+        dogGroup.add(dNose)
+
+        // Ears — two small flat spheres
+        for (const ex of [-0.085, 0.085]) {
+          const dEar = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 4), npcDogMat)
+          dEar.scale.set(0.6, 1.1, 0.55)
+          dEar.rotation.z = ex < 0 ? 0.4 : -0.4
+          dEar.position.set(ex, 0.52, 0.21)
+          dogGroup.add(dEar)
+        }
+
+        // Tail — tapered cylinder curled upward
+        const dTail = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.028, 0.20, 5), npcDogMat)
+        dTail.rotation.x = -1.1   // curves up and back
+        dTail.position.set(0, 0.42, -0.23)
+        dogGroup.add(dTail)
+
+        // Legs — Group pivots at body attachment so rotation animates correctly
+        // order: [frontL, frontR, backL, backR]  (front = positive Z in dogGroup local space)
+        const legConfigs: [number, number][] = [[-0.09, 0.14], [0.09, 0.14], [-0.09, -0.14], [0.09, -0.14]]
+        for (const [lx, lz] of legConfigs) {
+          const pivot = new THREE.Group()
+          pivot.position.set(lx, 0.28, lz)  // attachment at body underside
+          const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.016, 0.24, 5), npcDogMat)
+          legMesh.position.set(0, -0.12, 0)  // hangs downward from pivot
+          pivot.add(legMesh)
+          // Small paw — sphere at bottom of leg
+          const paw = new THREE.Mesh(new THREE.SphereGeometry(0.030, 5, 4), npcDogMat)
+          paw.scale.set(1.1, 0.6, 1.3)
+          paw.position.set(0, -0.24, 0.01)
+          pivot.add(paw)
+          dogGroup.add(pivot)
+          dogLegs.push(pivot)
+        }
+
+        // Dog ahead of walker toward camera (local -Z = world +Z because group.rotation.y=π)
+        // dogGroup.rotation.y=π cancels the parent's π so dog faces same world direction as walker
+        dogGroup.rotation.y = Math.PI
+        dogGroup.position.set(npcSides[i] * 0.5, 0, -1.3)
+        group.add(dogGroup)
+
+        // Leash: Line from hand to dog collar — updateable each frame
+        const leashPts = new Float32Array([
+          npcSides[i] * 0.20, 0.90, -0.05,  // hand (near walker body)
+          npcSides[i] * 0.50, 0.40, -1.30   // dog collar
+        ])
+        const leashGeo = new THREE.BufferGeometry()
+        leashPosAttr = new THREE.BufferAttribute(leashPts, 3)
+        leashGeo.setAttribute('position', leashPosAttr)
+        const leash = new THREE.Line(leashGeo, new THREE.LineBasicMaterial({ color: 0x4a4040 }))
+        group.add(leash)
+      }
+
+      group.position.set(sidewalkX, 0, npcStartZs[i])
+      group.rotation.y = Math.PI  // face toward camera
+      scene.add(group)
+
+      npcEntries.push({
+        group, isDogWalker, walkerLimbs,
+        stridePhase: npcRng() * Math.PI * 2,
+        dogGroup, dogLegs, leashPosAttr,
+        dogSniffOffset: npcRng() * Math.PI * 2
+      })
+    }
+
+    // Total Z range for recycling: distance between first and last + some buffer
+    const NPC_TOTAL_RANGE = 320
+
     // ── Tree pool ──────────────────────────────────────────────────────────
     const TREE_COUNT = 11    // per side
     const TREE_SPACING = 48  // metres
@@ -1357,6 +1571,54 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         if (!pausedRef.current) tg.group.position.z += realSpeed * dt
         if (tg.group.position.z > 240) {
           tg.group.position.z -= totalTreeRange
+        }
+      }
+
+      // ── Update NPC walkers ────────────────────────────────────────────
+      for (const npc of npcEntries) {
+        if (!pausedRef.current) {
+          // Move toward camera: scene scroll + their own walking speed
+          npc.group.position.z += (realSpeed + NPC_WALK_SPEED) * dt
+          npc.stridePhase += NPC_WALK_SPEED / 0.75 * dt
+          npc.dogSniffOffset += 2.1 * dt
+        }
+        // Recycle when they pass the camera
+        if (npc.group.position.z > 6) npc.group.position.z -= NPC_TOTAL_RANGE
+
+        // Subtle head bob
+        npc.group.position.y = Math.sin(npc.stridePhase * Math.PI * 2) * 0.022
+
+        // Human gait: left arm + right leg swing forward together, right arm + left leg oppose
+        if (npc.walkerLimbs) {
+          const gait = npc.stridePhase * Math.PI * 2
+          const legAmp = 0.52   // radians — leg swing
+          const armAmp = 0.38   // radians — arm swing (less than legs, as in real walking)
+          npc.walkerLimbs.legL.rotation.x =  Math.sin(gait) * legAmp
+          npc.walkerLimbs.legR.rotation.x = -Math.sin(gait) * legAmp
+          npc.walkerLimbs.armL.rotation.x = -Math.sin(gait) * armAmp  // opposite to legL
+          npc.walkerLimbs.armR.rotation.x =  Math.sin(gait) * armAmp  // opposite to legR
+        }
+
+        // Dog sniff + leg animation
+        if (npc.dogGroup && npc.leashPosAttr) {
+          const sniffZ = Math.sin(npc.dogSniffOffset * 1.3) * 0.12
+          const sniffY = Math.abs(Math.sin(npc.dogSniffOffset * 1.8)) * 0.06
+          npc.dogGroup.position.z = -1.3 + sniffZ
+          npc.dogGroup.position.y = sniffY
+          // Animate legs: front pair and back pair alternate (trot gait)
+          // dogLegs order: [frontL, frontR, backL, backR]
+          if (npc.dogLegs.length === 4) {
+            const gait = npc.stridePhase * Math.PI * 2
+            const amp = 0.45  // radians of leg swing
+            npc.dogLegs[0].rotation.x =  Math.sin(gait) * amp         // frontL
+            npc.dogLegs[1].rotation.x = -Math.sin(gait) * amp         // frontR (opposite)
+            npc.dogLegs[2].rotation.x = -Math.sin(gait) * amp         // backL (opposes frontL)
+            npc.dogLegs[3].rotation.x =  Math.sin(gait) * amp         // backR
+          }
+          // Update leash end point (index 1) to follow dog collar
+          const side = npc.group.position.x < 0 ? -1 : 1
+          npc.leashPosAttr.setXYZ(1, side * 0.50, 0.40 + sniffY, -1.3 + sniffZ)
+          npc.leashPosAttr.needsUpdate = true
         }
       }
 
