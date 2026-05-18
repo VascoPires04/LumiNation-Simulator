@@ -137,6 +137,7 @@ export default function CitySimulator({ mode }: Props) {
   const [lookaheadSec, setLookaheadSec] = useState(4.0)
   const [scenario, setScenario] = useState<'manual' | 'quiet' | 'busy' | 'mixed'>('manual')
   const [paused, setPaused] = useState(false)
+  const [spawnMode, setSpawnMode] = useState<'ped' | 'car'>('ped')
   const [lisbon, setLisbon] = useState(false)
   const [controlsOpen, setControlsOpen] = useState(false)
   const [stats, setStats] = useState({
@@ -1290,7 +1291,7 @@ export default function CitySimulator({ mode }: Props) {
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = touch.clientX - rect.left
     const y = touch.clientY - rect.top
-    const a = spawnAgent(x, y, 'ped')
+    const a = spawnAgent(x, y, spawnMode)
     if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
   }
 
@@ -1326,7 +1327,21 @@ export default function CitySimulator({ mode }: Props) {
         )}
         {mode !== 'fpv' && (
           <div className="stage-hint">
-            {isMobile ? 'tap a street to add a pedestrian' : 'click a street to add a pedestrian · shift+click for a car'}
+            {isMobile ? (
+              <>
+                <button
+                  className={`spawn-toggle ${spawnMode === 'ped' ? 'active' : ''}`}
+                  onTouchEnd={e => { e.stopPropagation(); setSpawnMode('ped') }}
+                  onClick={() => setSpawnMode('ped')}
+                >🚶 Ped</button>
+                <button
+                  className={`spawn-toggle ${spawnMode === 'car' ? 'active' : ''}`}
+                  onTouchEnd={e => { e.stopPropagation(); setSpawnMode('car') }}
+                  onClick={() => setSpawnMode('car')}
+                >🚗 Car</button>
+                <span className="spawn-hint-text">tap a street to add</span>
+              </>
+            ) : 'click a street to add a pedestrian · shift+click for a car'}
           </div>
         )}
       </div>
