@@ -300,3 +300,119 @@ input[type="range"] {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* ── First-Person View UI Overlay ── */
+.fpv-overlay {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 10;
+  gap: 16px;
+  font-family: var(--font);
+}
+
+.fpv-overlay * {
+  pointer-events: auto;
+}
+
+.fpv-card {
+  background: rgba(14, 14, 22, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  color: var(--text);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 280px;
+}
+
+.fpv-card-title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--amber);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+}
+
+.fpv-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.fpv-stat-label {
+  color: var(--text-muted);
+}
+
+.fpv-stat-value {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fpv-button-group {
+  display: flex;
+  gap: 8px;
+}
+
+.fpv-btn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.fpv-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.fpv-btn.active {
+  background: var(--amber);
+  color: var(--amber-deep);
+  border-color: var(--amber);
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(250, 199, 117, 0.3);
+}
+
+.fpv-btn-pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(250, 199, 117, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(250, 199, 117, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(250, 199, 117, 0); }
+}
+
+@media (max-width: 768px) {
+  .fpv-overlay {
+    flex-direction: column;
+    align-items: stretch;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+  }
+}

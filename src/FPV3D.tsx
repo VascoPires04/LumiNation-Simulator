@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 
 interface Agent {
@@ -59,10 +59,40 @@ function makeWindowTexture(seed: number): THREE.CanvasTexture {
 export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef, agentsRef, pausedRef, spawnPed }: FPV3DProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
+  const [speedMult, setSpeedMult] = useState(1.0)
+  const [realSpeed, setRealSpeed] = useState(1.4)
+  const [corridorLength, setCorridorLength] = useState(24.0)
+
+  const speedMultRef = useRef(1.0)
+
+  const handleSpeedChange = (mult: number) => {
+    setSpeedMult(mult)
+    speedMultRef.current = mult
+  }
+
   useEffect(() => {
     const container = containerRef.current!
     const W = container.clientWidth
     const H = container.clientHeight
+
+    // ── Key Listeners for Sprinting ────────────────────────────────────────
+    const keys = { Shift: false }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        keys.Shift = true
+        speedMultRef.current = 3.0
+        setSpeedMult(3.0)
+      }
+    }
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        keys.Shift = false
+        speedMultRef.current = 1.0
+        setSpeedMult(1.0)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
 
     // ── Scene ──────────────────────────────────────────────────────────────
     const scene = new THREE.Scene()
@@ -89,33 +119,33 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
     // ── Ground ─────────────────────────────────────────────────────────────
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.95, metalness: 0.0 })
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(8, 600), roadMat)
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(8, 800), roadMat)
     road.rotation.x = -Math.PI / 2
-    road.position.set(0, 0, -300)
+    road.position.set(0, 0, -100)
     road.receiveShadow = true
     scene.add(road)
 
     const swMat = new THREE.MeshStandardMaterial({ color: 0x181816, roughness: 0.92 })
-    const swL = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 600), swMat)
-    swL.rotation.x = -Math.PI / 2; swL.position.set(-6.25, 0.005, -300); swL.receiveShadow = true; scene.add(swL)
-    const swR = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 600), swMat)
-    swR.rotation.x = -Math.PI / 2; swR.position.set(6.25, 0.005, -300); swR.receiveShadow = true; scene.add(swR)
+    const swL = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 800), swMat)
+    swL.rotation.x = -Math.PI / 2; swL.position.set(-6.25, 0.005, -100); swL.receiveShadow = true; scene.add(swL)
+    const swR = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 800), swMat)
+    swR.rotation.x = -Math.PI / 2; swR.position.set(6.25, 0.005, -100); swR.receiveShadow = true; scene.add(swR)
 
     // Curb edges
     const curbMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28 })
-    const curbGeo = new THREE.BoxGeometry(0.14, 0.14, 600)
-    const curbL = new THREE.Mesh(curbGeo, curbMat); curbL.position.set(-4.06, 0.07, -300); scene.add(curbL)
-    const curbR = new THREE.Mesh(curbGeo, curbMat); curbR.position.set(4.06, 0.07, -300); scene.add(curbR)
+    const curbGeo = new THREE.BoxGeometry(0.14, 0.14, 800)
+    const curbL = new THREE.Mesh(curbGeo, curbMat); curbL.position.set(-4.06, 0.07, -100); scene.add(curbL)
+    const curbR = new THREE.Mesh(curbGeo, curbMat); curbR.position.set(4.06, 0.07, -100); scene.add(curbR)
 
     // Road centre dashes — pooled, recycled
-    const DASH_COUNT = 40
+    const DASH_COUNT = 63
     const DASH_SPACING = 8
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xe8e8e8 })
     const dashGeo = new THREE.BoxGeometry(0.12, 0.01, 3.2)
     const dashes: THREE.Mesh[] = []
     for (let i = 0; i < DASH_COUNT; i++) {
       const m = new THREE.Mesh(dashGeo, dashMat)
-      m.position.set(0, 0.01, -i * DASH_SPACING)
+      m.position.set(0, 0.01, -i * DASH_SPACING + 200)
       scene.add(m); dashes.push(m)
     }
 
@@ -130,7 +160,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       starPos.push(
         r * Math.sin(phi) * Math.cos(theta),
         r * Math.cos(phi) + 30,
-        r * Math.sin(phi) * Math.sin(theta) - 80
+        r * Math.sin(phi) * Math.sin(theta)
       )
     }
     starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3))
@@ -138,7 +168,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     scene.add(new THREE.Points(starGeo, starMat))
 
     // ── Building pool ──────────────────────────────────────────────────────
-    const BLDG_COUNT = 10     // per side
+    const BLDG_COUNT = 23     // per side
     const BLDG_SPACING = 22   // metres between building groups
     const BLDG_DEPTH = 14     // Z depth of each block
     const BLDG_WIDTH = 11
@@ -198,6 +228,17 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     ]
     const AWNING_COLORS = [0xb81820, 0x1a4aaa, 0x1a7830, 0x884400, 0x6a1a8a, 0x186878]
     const SIGN_COLORS   = [0xd02020, 0x2060cc, 0x20aa40, 0xcc8800, 0x8830cc, 0x20aacc]
+
+    // ── Shared window materials (reused across ALL buildings — saves 1000+ GPU state changes) ──
+    const sharedLitWinMat = new THREE.MeshStandardMaterial({
+      color: 0xffc56c, roughness: 0.3, metalness: 0.0,
+      emissive: new THREE.Color(0xff8c1a), emissiveIntensity: 1.5,
+    })
+    const sharedUnlitWinMat = new THREE.MeshStandardMaterial({
+      color: 0x0a0c10, roughness: 0.05, metalness: 0.9,
+    })
+    // Shared wing-window geometry used in park/playground/parking slots
+    const sharedWingWinGeo = new THREE.PlaneGeometry(0.8, 1.2)
 
     function makeBuildingGroup(side: 'left' | 'right', index: number): BldgGroup {
       const rng  = seededRng(index * 73  + (side === 'left' ? 0 : 333))
@@ -261,14 +302,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           for (let c = 0; c < cols; c++) {
             for (let r = 0; r < rows; r++) {
               const lit  = wRng() < 0.18
-              const winMat = new THREE.MeshStandardMaterial({
-                color:           lit ? 0xffc56c : 0x0a0c10,
-                roughness:       lit ? 0.3      : 0.05,
-                metalness:       lit ? 0.0      : 0.9,
-                emissive:        lit ? new THREE.Color(0xff8c1a) : new THREE.Color(0x000000),
-                emissiveIntensity: lit ? 1.5    : 0.0,
-              })
-              const win = new THREE.Mesh(new THREE.PlaneGeometry(winH, winW), winMat)
+              const win = new THREE.Mesh(new THREE.PlaneGeometry(winH, winW), lit ? sharedLitWinMat : sharedUnlitWinMat)
               win.rotation.y = rotY
               const wz = localZ - depth / 2 + (c + 0.5) * (depth / cols)
               const wy = 3.5 + (r + 0.5) * ((h - 3.5) / rows)
@@ -382,24 +416,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         group.add(wingR)
 
         // Add lit windows on the Z-facing facades of the wings
-        const winGeo = new THREE.PlaneGeometry(0.8, 1.2)
-        const litWinMat = new THREE.MeshStandardMaterial({
-          color: 0xffc56c,
-          roughness: 0.3,
-          emissive: new THREE.Color(0xff8c1a),
-          emissiveIntensity: 1.5
-        })
-        const unlitWinMat = new THREE.MeshStandardMaterial({
-          color: 0x0a0c10,
-          roughness: 0.05,
-          metalness: 0.9
-        })
-
         // Left wing windows (at Z = -4.95, facing +Z)
         for (const wx of [outDir * -2.0, outDir * -6.0]) {
           for (const wy of [3.2, 7.2]) {
-            const lit = rng2() < 0.25
-            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
+            const wMesh = new THREE.Mesh(sharedWingWinGeo, rng2() < 0.25 ? sharedLitWinMat : sharedUnlitWinMat)
             wMesh.position.set(wx, wy, -4.99)
             group.add(wMesh)
           }
@@ -408,9 +428,8 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         // Right wing windows (at Z = 4.95, facing -Z)
         for (const wx of [outDir * -2.0, outDir * -6.0]) {
           for (const wy of [3.2, 7.2]) {
-            const lit = rng2() < 0.25
-            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
-            wMesh.rotation.y = Math.PI // face the other way
+            const wMesh = new THREE.Mesh(sharedWingWinGeo, rng2() < 0.25 ? sharedLitWinMat : sharedUnlitWinMat)
+            wMesh.rotation.y = Math.PI
             wMesh.position.set(wx, wy, 4.99)
             group.add(wMesh)
           }
@@ -487,9 +506,6 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
         const parkPointLight = new THREE.PointLight(0xffb040, 15, 12, 2)
         parkPointLight.position.set(0, -0.15, 0.45)
-        parkPointLight.castShadow = true
-        parkPointLight.shadow.mapSize.width = 128
-        parkPointLight.shadow.mapSize.height = 128
         wallLamp.add(parkPointLight)
 
         const parkPoolMat = new THREE.MeshBasicMaterial({
@@ -541,24 +557,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         group.add(wingR)
 
         // Add lit windows on the Z-facing facades of the wings
-        const winGeo = new THREE.PlaneGeometry(0.8, 1.2)
-        const litWinMat = new THREE.MeshStandardMaterial({
-          color: 0xffc56c,
-          roughness: 0.3,
-          emissive: new THREE.Color(0xff8c1a),
-          emissiveIntensity: 1.5
-        })
-        const unlitWinMat = new THREE.MeshStandardMaterial({
-          color: 0x0a0c10,
-          roughness: 0.05,
-          metalness: 0.9
-        })
-
         // Left wing windows (at Z = -4.95, facing +Z)
         for (const wx of [outDir * -2.0, outDir * -6.0]) {
           for (const wy of [3.2, 7.2]) {
-            const lit = rng2() < 0.25
-            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
+            const wMesh = new THREE.Mesh(sharedWingWinGeo, rng2() < 0.25 ? sharedLitWinMat : sharedUnlitWinMat)
             wMesh.position.set(wx, wy, -4.99)
             group.add(wMesh)
           }
@@ -567,9 +569,8 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         // Right wing windows (at Z = 4.95, facing -Z)
         for (const wx of [outDir * -2.0, outDir * -6.0]) {
           for (const wy of [3.2, 7.2]) {
-            const lit = rng2() < 0.25
-            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
-            wMesh.rotation.y = Math.PI // face the other way
+            const wMesh = new THREE.Mesh(sharedWingWinGeo, rng2() < 0.25 ? sharedLitWinMat : sharedUnlitWinMat)
+            wMesh.rotation.y = Math.PI
             wMesh.position.set(wx, wy, 4.99)
             group.add(wMesh)
           }
@@ -784,9 +785,6 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
         const playPointLight = new THREE.PointLight(0xffea9f, 10, 9, 2)
         playPointLight.position.set(0, 3.2, 0)
-        playPointLight.castShadow = true
-        playPointLight.shadow.mapSize.width = 128
-        playPointLight.shadow.mapSize.height = 128
         playLamp.add(playPointLight)
 
         const playPoolMat = new THREE.MeshBasicMaterial({
@@ -837,25 +835,11 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         wingR.castShadow = true; wingR.receiveShadow = true
         group.add(wingR)
 
-        // Add lit windows on the Z-facing facades of the wings to make them look ultra premium
-        const winGeo = new THREE.PlaneGeometry(0.8, 1.2)
-        const litWinMat = new THREE.MeshStandardMaterial({
-          color: 0xffc56c,
-          roughness: 0.3,
-          emissive: new THREE.Color(0xff8c1a),
-          emissiveIntensity: 1.5
-        })
-        const unlitWinMat = new THREE.MeshStandardMaterial({
-          color: 0x0a0c10,
-          roughness: 0.05,
-          metalness: 0.9
-        })
-
+        // Add lit windows on the Z-facing facades of the wings
         // Left wing windows (at Z = -4.95, facing +Z)
         for (const wx of [outDir * -2.0, outDir * -6.0]) {
           for (const wy of [3.2, 7.2]) {
-            const lit = rng2() < 0.25
-            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
+            const wMesh = new THREE.Mesh(sharedWingWinGeo, rng2() < 0.25 ? sharedLitWinMat : sharedUnlitWinMat)
             wMesh.position.set(wx, wy, -4.99)
             group.add(wMesh)
           }
@@ -864,9 +848,8 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         // Right wing windows (at Z = 4.95, facing -Z)
         for (const wx of [outDir * -2.0, outDir * -6.0]) {
           for (const wy of [3.2, 7.2]) {
-            const lit = rng2() < 0.25
-            const wMesh = new THREE.Mesh(winGeo, lit ? litWinMat : unlitWinMat)
-            wMesh.rotation.y = Math.PI // face the other way
+            const wMesh = new THREE.Mesh(sharedWingWinGeo, rng2() < 0.25 ? sharedLitWinMat : sharedUnlitWinMat)
+            wMesh.rotation.y = Math.PI
             wMesh.position.set(wx, wy, 4.99)
             group.add(wMesh)
           }
@@ -974,9 +957,6 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
         const alleyPointLight = new THREE.PointLight(0xffb040, 15, 12, 2)
         alleyPointLight.position.set(0, -0.15, 0.45)
-        alleyPointLight.castShadow = true
-        alleyPointLight.shadow.mapSize.width = 128
-        alleyPointLight.shadow.mapSize.height = 128
         wallLamp.add(alleyPointLight)
 
         const alleyPoolMat = new THREE.MeshBasicMaterial({
@@ -1006,14 +986,14 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       }
 
       // ── Sidewalk Bollards (Pilaretes de Passeio) ───────────────────────────
-      // Sparser, localized safety bollards only at park, playground, and parking slot boundaries!
       let bollardZPositions: number[] = []
       if (slotType === 'park' || slotType === 'playground') {
-        // Protect the open green lawns with 3 beautifully spaced bollards
-        bollardZPositions = [-3.5, 0, 3.5]
+        bollardZPositions = [-5.5, -2.5, 0, 2.5, 5.5]
       } else if (slotType === 'parking') {
-        // Mark the edges of the parking entrance wing walls
-        bollardZPositions = [-5.2, 5.2]
+        bollardZPositions = [-5.5, 5.5]
+      } else {
+        // Building slots: two bollards at slot boundaries (mark the block edges)
+        bollardZPositions = [-5.5, 5.5]
       }
 
       if (bollardZPositions.length > 0) {
@@ -1051,7 +1031,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       }
 
       const xPos = side === 'left' ? BLDG_X_L : BLDG_X_R
-      group.position.set(xPos, 0, -index * BLDG_SPACING - BLDG_DEPTH / 2)
+      group.position.set(xPos, 0, -index * BLDG_SPACING - BLDG_DEPTH / 2 + 200)
       scene.add(group)
       return { group, index }
     }
@@ -1062,7 +1042,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     }
 
     // ── Tree pool ──────────────────────────────────────────────────────────
-    const TREE_COUNT = 8    // per side
+    const TREE_COUNT = 11    // per side
     const TREE_SPACING = 48  // metres
     interface TreeGroup {
       group: THREE.Group
@@ -1103,7 +1083,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
       // Stagger: left starts at 0, right starts at TREE_SPACING/2
       const zOffset = side === 'right' ? TREE_SPACING / 2 : 0
-      group.position.set(treeX, 0, -index * TREE_SPACING - zOffset - 4)
+      group.position.set(treeX, 0, -index * TREE_SPACING - zOffset - 4 + 200)
       scene.add(group)
 
       return { group, index, side }
@@ -1115,7 +1095,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     }
 
     // ── Streetlight pool ───────────────────────────────────────────────────
-    const LAMP_COUNT = 32    // per side
+    const LAMP_COUNT = 46    // per side
     const LAMP_SPACING = 11  // metres — dense urban spacing
     const LAMP_HEIGHT = 6.0
     const LAMP_ARM = 1.4     // arm toward road
@@ -1168,8 +1148,8 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       const point = new THREE.PointLight(0xffd060, 18, 13, 2)
       point.position.set(armEndX, LAMP_HEIGHT, 0)
       point.castShadow = true
-      point.shadow.mapSize.width = 256
-      point.shadow.mapSize.height = 256
+      point.shadow.mapSize.width = 128
+      point.shadow.mapSize.height = 128
       group.add(point)
 
       // Ground pool — two soft layers: tight bright core + wide ambient halo
@@ -1194,7 +1174,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
       // Stagger: left starts at 0, right starts at LAMP_SPACING/2
       const zOffset = side === 'right' ? LAMP_SPACING / 2 : 0
-      group.position.set(0, 0, -index * LAMP_SPACING - zOffset - 8)
+      group.position.set(0, 0, -index * LAMP_SPACING - zOffset - 8 + 200)
       scene.add(group)
 
       return { group, point, bulb, pool, poolOuter, index, side }
@@ -1225,10 +1205,24 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     })
     ro.observe(container)
 
+    // ── Pre-allocated loop arrays (outside animate to avoid GC pressure) ──────
+    const allLampGroups = [...lampGroupsL, ...lampGroupsR]
+    const allBldgs = [...bldgsL, ...bldgsR]
+    const allTrees = [...treeGroupsL, ...treeGroupsR]
+    const totalLampRange = LAMP_COUNT * LAMP_SPACING
+    const totalBldgRange = BLDG_COUNT * BLDG_SPACING
+    const totalTreeRange = TREE_COUNT * TREE_SPACING
+
     // ── Animation loop ─────────────────────────────────────────────────────
     let rafId = 0
     let lastT = performance.now()
-    let scrollZ = 0        // world units scrolled so far
+    let scrollZ = 0
+    let currentSpeedMult = 1.0
+    // corridorSpeedMult lags behind currentSpeedMult — the system only widens
+    // the corridor after it has observed the pedestrian moving faster for a while
+    let corridorSpeedMult = 1.0
+    let lastStateRealSpeed = 1.4
+    let lastStateCorridor = 24.0
 
     function animate() {
       rafId = requestAnimationFrame(animate)
@@ -1242,10 +1236,27 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       }
       const agent = trackedRef.current
 
+      // Read target speed mult from ref or keyboard listeners
+      let targetSpeedMult = speedMultRef.current
+      if (keys.Shift) {
+        targetSpeedMult = 3.0
+      }
+
+      // Smoothly interpolate speed multiplier
+      currentSpeedMult += (targetSpeedMult - currentSpeedMult) * 0.08
+
+      // Write back to tracked pedestrian velocity in 2D so they speed up on the 2D map in sync!
+      if (agent) {
+        const dirX = agent.vx === 0 ? 0 : Math.sign(agent.vx)
+        const dirY = agent.vy === 0 ? 0 : Math.sign(agent.vy)
+        agent.vx = dirX * PED_SPEED * currentSpeedMult
+        agent.vy = dirY * PED_SPEED * currentSpeedMult
+      }
+
       const speed = agent ? Math.max(0.1, Math.hypot(agent.vx, agent.vy)) : PED_SPEED
       const sp = speed / METERS_PER_PIXEL  // px/s → m/s
       const realSpeed = sp * METERS_PER_PIXEL  // back to m/s
-      const stride = agent?.stride ?? 0
+      const stride = (agent?.stride ?? 0) * (currentSpeedMult > 1.2 ? 1.4 : 1.0) // speed up head-bob bobbing when running
 
       // Advance world scroll (camera stays at 0; objects move toward +Z)
       if (!pausedRef.current) {
@@ -1257,17 +1268,34 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       camera.position.x = Math.sin(stride * 0.5) * 0.012
 
       // ── Corridor brightness per lamp ──────────────────────────────────
-      const lookaheadDist = Math.max(10, lookaheadRef.current * 8)
+      // corridorSpeedMult follows currentSpeedMult slowly — the system only
+      // widens the corridor after observing sustained higher speed (reactive, not instant)
+      corridorSpeedMult += (currentSpeedMult - corridorSpeedMult) * 0.012
+
+      const baseLookahead = Math.max(10, lookaheadRef.current * 8)
+      const lookaheadDist = baseLookahead * corridorSpeedMult
       const fadeLen = 10
       const baseBri = baselineRef.current * MAX_VISUAL_BRI
+
+      // Sync variables to React state for real-time stats overlay
+      if (Math.abs(realSpeed - lastStateRealSpeed) > 0.05) {
+        setRealSpeed(realSpeed)
+        lastStateRealSpeed = realSpeed
+      }
+      if (Math.abs(lookaheadDist - lastStateCorridor) > 0.5) {
+        setCorridorLength(lookaheadDist)
+        lastStateCorridor = lookaheadDist
+      }
 
       function getBri(zWorld: number): number {
         // zWorld is distance ahead of camera (positive = in front)
         if (zWorld <= 0) {
-          // Behind camera: fade based on distance behind
+          // Behind camera: fade based on distance behind (21.6 meters)
           const distBehind = Math.abs(zWorld)
-          const behindFade = Math.max(0, 1 - distBehind / 8)
-          return baseBri + (MAX_VISUAL_BRI - baseBri) * behindFade
+          if (distBehind <= 12) return MAX_VISUAL_BRI // fully lit for 12m behind
+          const fadePast = distBehind - 12
+          const t = Math.min(1, fadePast / 10) // fade out over 10m
+          return MAX_VISUAL_BRI * (1 - t) + baseBri * t
         }
         if (zWorld <= lookaheadDist) return MAX_VISUAL_BRI
         const distPast = zWorld - lookaheadDist
@@ -1276,19 +1304,16 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       }
 
       // ── Recycle & update lamps ────────────────────────────────────────
-      const allLampGroups = [...lampGroupsL, ...lampGroupsR]
-      const totalLampRange = LAMP_COUNT * LAMP_SPACING
-
       for (const lg of allLampGroups) {
         // Move group with world scroll
         if (!pausedRef.current) lg.group.position.z += realSpeed * dt
 
-        // Recycle: if lamp passed camera (z > 5), wrap to far end
-        if (lg.group.position.z > 5) {
+        // Recycle: if lamp passed camera (z > 240), wrap to far end
+        if (lg.group.position.z > 240) {
           lg.group.position.z -= totalLampRange
         }
 
-        // Distance ahead of camera (camera is at z=0, objects at negative z are ahead)
+        // Distance ahead of camera (camera is at z=0, looking forward)
         const distAhead = -lg.group.position.z
         const bri = getBri(distAhead)
 
@@ -1298,17 +1323,14 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         ;(lg.pool.material as THREE.MeshBasicMaterial).opacity = bri * 0.70
         ;(lg.poolOuter.material as THREE.MeshBasicMaterial).opacity = bri * 0.25
 
-        // Only cast shadows for close lamps (performance)
-        lg.point.castShadow = distAhead < 25 && distAhead > -2
+        // Only cast shadows for the 1-2 closest lamps per side
+        lg.point.castShadow = distAhead < 14 && distAhead > -2
       }
 
       // ── Recycle & update buildings ────────────────────────────────────
-      const allBldgs = [...bldgsL, ...bldgsR]
-      const totalBldgRange = BLDG_COUNT * BLDG_SPACING
-
       for (const bg of allBldgs) {
         if (!pausedRef.current) bg.group.position.z += realSpeed * dt
-        if (bg.group.position.z > 12) {
+        if (bg.group.position.z > 240) {
           bg.group.position.z -= totalBldgRange
         }
       }
@@ -1328,18 +1350,12 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           (al.ledMesh.material as THREE.MeshBasicMaterial).opacity = 0.3 + bri * 0.7
         }
         (al.pool.material as THREE.MeshBasicMaterial).opacity = bri * al.maxPoolOpacity
-
-        // Only cast shadows for close lamps
-        al.point.castShadow = distAhead < 25 && distAhead > -2
       }
 
       // ── Recycle & update trees ────────────────────────────────────────
-      const allTrees = [...treeGroupsL, ...treeGroupsR]
-      const totalTreeRange = TREE_COUNT * TREE_SPACING
-
       for (const tg of allTrees) {
         if (!pausedRef.current) tg.group.position.z += realSpeed * dt
-        if (tg.group.position.z > 8) {
+        if (tg.group.position.z > 240) {
           tg.group.position.z -= totalTreeRange
         }
       }
@@ -1347,7 +1363,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       // ── Recycle centre dashes ─────────────────────────────────────────
       for (const d of dashes) {
         if (!pausedRef.current) d.position.z += realSpeed * dt
-        if (d.position.z > 4) d.position.z -= DASH_COUNT * DASH_SPACING
+        if (d.position.z > 240) d.position.z -= DASH_COUNT * DASH_SPACING
       }
 
       renderer.render(scene, camera)
@@ -1358,15 +1374,81 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       cancelAnimationFrame(rafId)
       ro.disconnect()
       renderer.dispose()
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
       if (container.contains(caption)) container.removeChild(caption)
     }
   }, [])
 
   return (
-    <div
-      ref={containerRef}
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-    />
+    <div style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+      <div
+        ref={containerRef}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+      />
+
+      {/* Floating Glassmorphic UI Panel */}
+      <div className="fpv-overlay">
+        {/* Left Side: Citizen Dashboard */}
+        <div className="fpv-card">
+          <div className="fpv-card-title">🏃 Citizen Dashboard</div>
+          
+          <div className="fpv-stat-row">
+            <span className="fpv-stat-label">Velocity</span>
+            <span className="fpv-stat-value">
+              {realSpeed.toFixed(1)} m/s ({Math.round(realSpeed * 3.6)} km/h)
+            </span>
+          </div>
+
+          <div className="fpv-stat-row">
+            <span className="fpv-stat-label">Lookahead Corridor</span>
+            <span className="fpv-stat-value">{corridorLength.toFixed(0)} meters</span>
+          </div>
+
+          <div className="fpv-stat-row">
+            <span className="fpv-stat-label">Light Frequency</span>
+            <span className="fpv-stat-value" style={{ color: speedMult > 1.5 ? '#f59e0b' : '#3b82f6' }}>
+              {speedMult > 1.5 ? '⚡ HIGH (Running Mode)' : '🚶 NORMAL (Walking Mode)'}
+            </span>
+          </div>
+
+          <div className="fpv-stat-row" style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
+            <span>* Warning Constant</span>
+            <span style={{ color: '#f59e0b' }}>17.1 seconds</span>
+          </div>
+        </div>
+
+        {/* Right Side: Speed Controls */}
+        <div className="fpv-card" style={{ minWidth: '300px' }}>
+          <div className="fpv-card-title">⚙️ Citizen Controls</div>
+
+          <div className="fpv-button-group">
+            <button
+              className={`fpv-btn ${speedMult === 1.0 ? 'active' : ''}`}
+              onClick={() => handleSpeedChange(1.0)}
+            >
+              🚶 Walk (1.0x)
+            </button>
+            <button
+              className={`fpv-btn ${speedMult === 2.0 ? 'active' : ''}`}
+              onClick={() => handleSpeedChange(2.0)}
+            >
+              🏃 Jog (2.0x)
+            </button>
+            <button
+              className={`fpv-btn ${speedMult === 3.0 ? 'active' : ''}`}
+              onClick={() => handleSpeedChange(3.0)}
+            >
+              ⚡ Sprint (3.0x)
+            </button>
+          </div>
+
+          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 4 }}>
+            Pro Tip: Hold <b>SHIFT</b> to sprint on keyboard!
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
