@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import FPV3D from './FPV3D'
 import { useIsMobile } from './hooks/useIsMobile'
+import SimControls from './components/SimControls'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 type AgentType = 'ped' | 'car'
@@ -44,6 +45,10 @@ interface ParkZone { x: number; y: number; w: number; h: number }
 
 interface Props {
   mode: Mode
+  variant?: 'full' | 'compact' | 'ambient'
+  interactive?: boolean
+  autoplay?: 'none' | 'sparse'
+  dimmed?: boolean
 }
 
 // Constants — tweak these and the whole sim re-balances
@@ -118,10 +123,22 @@ function buildCityBlocks(W: number, H: number): Building[] {
   return buildings
 }
 
-export default function CitySimulator({ mode }: Props) {
+export default function CitySimulator({
+  mode,
+  variant = 'full',
+  interactive = true,
+  autoplay = 'none',
+  dimmed = false,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const isMobile = useIsMobile()
+
+  // Variant/autoplay refs — readable inside RAF loop without stale closure
+  const variantRef  = useRef(variant);  variantRef.current  = variant
+  const autoplayRef = useRef(autoplay); autoplayRef.current = autoplay
+  // Sparse autoplay timer (seconds until next auto-spawn)
+  const sparseTimerRef = useRef(2 + Math.random() * 3)
 
   // Sim state lives in refs so the render loop never re-mounts
   const lampsRef = useRef<Lamp[]>([])
@@ -130,8 +147,10 @@ export default function CitySimulator({ mode }: Props) {
   const trackedRef = useRef<Agent | null>(null)
   const dimsRef = useRef({ W: 0, H: 0 })
 
-  const modeRef = useRef(mode)
-  modeRef.current = mode
+  // ambient forces lumination mode so the corridor is always visible as backdrop
+  const effectiveMode: Mode = variant === 'ambient' ? 'lumination' : mode
+  const modeRef = useRef<Mode>(effectiveMode)
+  modeRef.current = effectiveMode
 
   const [baselinePct, setBaselinePct] = useState(0.30)
   const [lookaheadSec, setLookaheadSec] = useState(4.0)
@@ -1190,6 +1209,17 @@ export default function CitySimulator({ mode }: Props) {
 
   // --- Scenario auto-spawn ---
   function handleScenario(dt: number) {
+    // Sparse autoplay — runs regardless of scenario picker, caps agents at 4
+    if (autoplayRef.current === 'sparse') {
+      sparseTimerRef.current -= dt
+      if (sparseTimerRef.current <= 0) {
+        sparseTimerRef.current = 2 + Math.random() * 3
+        if (agentsRef.current.length < 4) {
+          spawnRandomEdge(Math.random() < 0.75 ? 'ped' : 'car')
+        }
+      }
+    }
+
     if (scenarioRef.current === 'manual') return
     scenarioTimerRef.current -= dt
     if (scenarioTimerRef.current > 0) return
@@ -1230,11 +1260,15 @@ export default function CitySimulator({ mode }: Props) {
     ro.observe(stage)
 
     let lastTick = performance.now()
+    let lastAmbientFrame = 0
     let raf = 0
     let statsTick = 0
 
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop)
+      // Throttle ambient to 20fps — it's a backdrop, not the main interaction
+      if (variantRef.current === 'ambient' && now - lastAmbientFrame < 50) return
+      if (variantRef.current === 'ambient') lastAmbientFrame = now
       const dt = Math.min(0.1, (now - lastTick) / 1000)
       lastTick = now
       if (pausedRef.current) return
@@ -1305,16 +1339,21 @@ export default function CitySimulator({ mode }: Props) {
   }
 
   // --- Render ---
+  const dimmedActual = dimmed || variant === 'ambient'
+
   return (
-    <div className="main">
-      <div className="stage" ref={stageRef}>
+    <div className={`main${variant === 'ambient' ? ' main--ambient' : ''}`}>
+      <div className={`stage${dimmedActual ? ' stage--dimmed' : ''}`} ref={stageRef}>
         <canvas
           ref={canvasRef}
-          onClick={handleClick}
-          onTouchEnd={handleTouchEnd}
-          style={{ display: mode === 'fpv' ? 'none' : undefined, touchAction: 'none' }}
+          onClick={interactive ? handleClick : undefined}
+          onTouchEnd={interactive ? handleTouchEnd : undefined}
+          style={{
+            display: effectiveMode === 'fpv' ? 'none' : undefined,
+            touchAction: interactive ? 'none' : 'auto',
+          }}
         />
-        {mode === 'fpv' && (
+        {variant !== 'ambient' && effectiveMode === 'fpv' && (
           <FPV3D
             lampsRef={lampsRef}
             trackedRef={trackedRef}
@@ -1329,12 +1368,12 @@ export default function CitySimulator({ mode }: Props) {
             }}
           />
         )}
-        {mode === 'compare' && (
+        {variant !== 'ambient' && effectiveMode === 'compare' && (
           <div className="stage-label-row">
             <span>Always-on</span><span>LumiNation</span>
           </div>
         )}
-        {mode !== 'fpv' && (
+        {variant !== 'ambient' && effectiveMode !== 'fpv' && interactive && (
           <div className="stage-hint">
             {isMobile ? (
               <>
@@ -1355,7 +1394,7 @@ export default function CitySimulator({ mode }: Props) {
         )}
       </div>
 
-      <aside className="sidebar">
+      {variant !== 'ambient' && <aside className="sidebar">
         {(() => {
           const scale = lisbon ? 70_000 / Math.max(stats.lampCount, 1) : 1
           const scaledPower = stats.powerNow * scale
@@ -1452,13 +1491,12 @@ export default function CitySimulator({ mode }: Props) {
               <option value="mixed">Mixed traffic · 11pm</option>
             </select>
 
-            <div className="row"><span>Baseline brightness</span><span>{Math.round(baselinePct * 100)}%</span></div>
-            <input type="range" min={15} max={100} step={1} value={Math.round(baselinePct * 100)}
-              onChange={e => setBaselinePct(parseInt(e.target.value, 10) / 100)} />
-
-            <div className="row"><span>Lookahead</span><span>{lookaheadSec.toFixed(1)}s</span></div>
-            <input type="range" min={20} max={80} step={1} value={Math.round(lookaheadSec * 10)}
-              onChange={e => setLookaheadSec(parseInt(e.target.value, 10) / 10)} />
+            <SimControls
+              baselinePct={baselinePct}
+              onBaselineChange={setBaselinePct}
+              lookaheadSec={lookaheadSec}
+              onLookaheadChange={setLookaheadSec}
+            />
 
             <div className="button-row">
               <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0; powerHistoryRef.current = [] }}>Clear</button>
@@ -1479,7 +1517,7 @@ export default function CitySimulator({ mode }: Props) {
             </button>
           </div>
         </div>
-      </aside>
+      </aside>}
     </div>
   )
 }
