@@ -105,18 +105,20 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
 
+    // ── Mobile detection (used throughout scene setup) ─────────────────────
+    const isMob = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || W <= 768
+
     // ── Scene ──────────────────────────────────────────────────────────────
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x050810)
-    scene.fog = new THREE.FogExp2(0x0a1428, 0.006)
+    scene.fog = new THREE.FogExp2(0x0a1428, isMob ? 0.022 : 0.006)
 
     // ── Camera ─────────────────────────────────────────────────────────────
-    const camera = new THREE.PerspectiveCamera(computeFOV(W / H), W / H, 0.1, 300)
+    const camera = new THREE.PerspectiveCamera(computeFOV(W / H), W / H, 0.1, isMob ? 120 : 300)
     camera.position.set(0, 1.7, 0)
     camera.lookAt(0, 1.7, -100)
 
     // ── Renderer ───────────────────────────────────────────────────────────
-    const isMob = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || W <= 768
     const renderer = new THREE.WebGLRenderer({ antialias: !isMob })
     renderer.setPixelRatio(isMob ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2))
     renderer.setSize(W, H)
@@ -135,27 +137,27 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     scene.add(new THREE.AmbientLight(0x0a0c12, 0.3))
 
     // ── Ground ─────────────────────────────────────────────────────────────
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.95, metalness: 0.0 })
+    const roadMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x0e0e0e }) : new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.95, metalness: 0.0 })
     const road = new THREE.Mesh(new THREE.PlaneGeometry(8, 800), roadMat)
     road.rotation.x = -Math.PI / 2
     road.position.set(0, 0, -100)
-    road.receiveShadow = true
+    road.receiveShadow = !isMob
     scene.add(road)
 
-    const swMat = new THREE.MeshStandardMaterial({ color: 0x181816, roughness: 0.92 })
+    const swMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x181816 }) : new THREE.MeshStandardMaterial({ color: 0x181816, roughness: 0.92 })
     const swL = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 800), swMat)
-    swL.rotation.x = -Math.PI / 2; swL.position.set(-6.25, 0.005, -100); swL.receiveShadow = true; scene.add(swL)
+    swL.rotation.x = -Math.PI / 2; swL.position.set(-6.25, 0.005, -100); scene.add(swL)
     const swR = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 800), swMat)
-    swR.rotation.x = -Math.PI / 2; swR.position.set(6.25, 0.005, -100); swR.receiveShadow = true; scene.add(swR)
+    swR.rotation.x = -Math.PI / 2; swR.position.set(6.25, 0.005, -100); scene.add(swR)
 
     // Curb edges
-    const curbMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28 })
+    const curbMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x2a2a28 }) : new THREE.MeshStandardMaterial({ color: 0x2a2a28 })
     const curbGeo = new THREE.BoxGeometry(0.14, 0.14, 800)
     const curbL = new THREE.Mesh(curbGeo, curbMat); curbL.position.set(-4.06, 0.07, -100); scene.add(curbL)
     const curbR = new THREE.Mesh(curbGeo, curbMat); curbR.position.set(4.06, 0.07, -100); scene.add(curbR)
 
     // Road centre dashes — pooled, recycled
-    const DASH_COUNT = 63
+    const DASH_COUNT = isMob ? 20 : 63
     const DASH_SPACING = 8
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xe8e8e8 })
     const dashGeo = new THREE.BoxGeometry(0.12, 0.01, 3.2)
@@ -170,7 +172,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const starGeo = new THREE.BufferGeometry()
     const starPos: number[] = []
     const starRng = seededRng(777)
-    for (let i = 0; i < 280; i++) {
+    for (let i = 0; i < (isMob ? 80 : 280); i++) {
       const theta = starRng() * Math.PI * 2
       const phi = starRng() * Math.PI * 0.48   // upper hemisphere
       const r = 180
@@ -185,7 +187,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     scene.add(new THREE.Points(starGeo, starMat))
 
     // ── Building pool ──────────────────────────────────────────────────────
-    const BLDG_COUNT = 23     // per side
+    const BLDG_COUNT = isMob ? 10 : 23  // per side
     const BLDG_SPACING = 22   // metres between building groups
     const BLDG_DEPTH = 14     // Z depth of each block
     const BLDG_WIDTH = 11
@@ -208,13 +210,15 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     }
     const adaptiveLamps: AdaptiveLamp[] = []
 
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x2e1d15, roughness: 0.92 })
-    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x0a2e12, roughness: 0.88 })
+    const trunkMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x2e1d15 }) : new THREE.MeshStandardMaterial({ color: 0x2e1d15, roughness: 0.92 })
+    const foliageMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x0a2e12 }) : new THREE.MeshStandardMaterial({ color: 0x0a2e12, roughness: 0.88 })
 
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0x888898, roughness: 0.6 })
-    const armMat = new THREE.MeshStandardMaterial({ color: 0x777788, roughness: 0.6 })
-    const fixtureMat = new THREE.MeshStandardMaterial({ color: 0x444455, roughness: 0.5 })
-    const bulbMat = new THREE.MeshStandardMaterial({ emissive: new THREE.Color(0xffeebb), emissiveIntensity: 3, color: 0x111111 })
+    const poleMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x888898 }) : new THREE.MeshStandardMaterial({ color: 0x888898, roughness: 0.6 })
+    const armMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x777788 }) : new THREE.MeshStandardMaterial({ color: 0x777788, roughness: 0.6 })
+    const fixtureMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x444455 }) : new THREE.MeshStandardMaterial({ color: 0x444455, roughness: 0.5 })
+    const bulbMat = isMob
+      ? new THREE.MeshLambertMaterial({ emissive: new THREE.Color(0xffeebb), emissiveIntensity: 3, color: 0x111111 })
+      : new THREE.MeshStandardMaterial({ emissive: new THREE.Color(0xffeebb), emissiveIntensity: 3, color: 0x111111 })
 
     // Soft radial gradient texture for ground pool — avoids hard circle edge
     function makeSoftPoolTexture(): THREE.CanvasTexture {
@@ -247,12 +251,12 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const SIGN_COLORS   = [0xd02020, 0x2060cc, 0x20aa40, 0xcc8800, 0x8830cc, 0x20aacc]
 
     // ── NPC materials ───────────────────────────────────────────────────────
-    const npcSkinMat  = new THREE.MeshStandardMaterial({ color: 0xb07850, roughness: 0.80 })
-    const npcHairMat  = new THREE.MeshStandardMaterial({ color: 0x1a1008, roughness: 0.90 })
-    const npcBodyMat  = new THREE.MeshStandardMaterial({ color: 0x2a3245, roughness: 0.92 })
-    const npcLegMat   = new THREE.MeshStandardMaterial({ color: 0x1e2030, roughness: 0.95 })
+    const npcSkinMat  = isMob ? new THREE.MeshLambertMaterial({ color: 0xb07850 }) : new THREE.MeshStandardMaterial({ color: 0xb07850, roughness: 0.80 })
+    const npcHairMat  = isMob ? new THREE.MeshLambertMaterial({ color: 0x1a1008 }) : new THREE.MeshStandardMaterial({ color: 0x1a1008, roughness: 0.90 })
+    const npcBodyMat  = isMob ? new THREE.MeshLambertMaterial({ color: 0x2a3245 }) : new THREE.MeshStandardMaterial({ color: 0x2a3245, roughness: 0.92 })
+    const npcLegMat   = isMob ? new THREE.MeshLambertMaterial({ color: 0x1e2030 }) : new THREE.MeshStandardMaterial({ color: 0x1e2030, roughness: 0.95 })
     const npcEyeMat   = new THREE.MeshBasicMaterial({ color: 0x080404 })  // always visible
-    const npcDogMat   = new THREE.MeshStandardMaterial({ color: 0x6b4c30, roughness: 0.88 })
+    const npcDogMat   = isMob ? new THREE.MeshLambertMaterial({ color: 0x6b4c30 }) : new THREE.MeshStandardMaterial({ color: 0x6b4c30, roughness: 0.88 })
 
     // Adds hair + eyes + nose to a head sphere already in the group.
     // Face direction is local -Z (walker group has rotation.y=π so local -Z → world +Z = camera)
@@ -350,7 +354,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
       const slotTypeVal = rng()
       let slotType: 'building' | 'park' | 'playground' | 'parking' = 'building'
-      if (index > 0 && index < BLDG_COUNT - 1) {
+      if (!isMob && index > 0 && index < BLDG_COUNT - 1) {
         // Deterministically check if the previous slot (index - 1) was chosen as an interstitial
         const prevRng = seededRng((index - 1) * 73 + (side === 'left' ? 0 : 333))
         const prevSlotVal = prevRng()
@@ -382,31 +386,32 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         const zB =  BLDG_DEPTH / 2 - depthB / 2
 
         const addSubBuilding = (h: number, depth: number, color: number, localZ: number, seed: number) => {
-          const wallMat = new THREE.MeshStandardMaterial({ color, roughness: 0.88, metalness: 0.03 })
+          const wallMat = isMob ? new THREE.MeshLambertMaterial({ color }) : new THREE.MeshStandardMaterial({ color, roughness: 0.88, metalness: 0.03 })
           const geo  = new THREE.BoxGeometry(BLDG_WIDTH, h, depth)
           const mesh = new THREE.Mesh(geo, wallMat)
           mesh.castShadow = true; mesh.receiveShadow = true
           mesh.position.set(0, h / 2, localZ)
           group.add(mesh)
 
-          // Real glass window panes on the street-facing side
-          const wRng   = seededRng(seed)
-          const cols   = Math.max(2, Math.round(depth / 2.8))
-          const rows   = Math.max(2, Math.round((h - 3.5) / 3.0))
-          const winW   = (depth / cols) * 0.52
-          const winH   = ((h - 3.5) / rows) * 0.55
-          // PlaneGeometry faces +Z; rotate so it faces ±X (street side)
-          const rotY   = isLeft ? Math.PI / 2 : -Math.PI / 2
+          // Real glass window panes on the street-facing side (skip on mobile — too many draw calls)
+          if (!isMob) {
+            const wRng   = seededRng(seed)
+            const cols   = Math.max(2, Math.round(depth / 2.8))
+            const rows   = Math.max(2, Math.round((h - 3.5) / 3.0))
+            const winW   = (depth / cols) * 0.52
+            const winH   = ((h - 3.5) / rows) * 0.55
+            const rotY   = isLeft ? Math.PI / 2 : -Math.PI / 2
 
-          for (let c = 0; c < cols; c++) {
-            for (let r = 0; r < rows; r++) {
-              const lit  = wRng() < 0.18
-              const win = new THREE.Mesh(new THREE.PlaneGeometry(winH, winW), lit ? sharedLitWinMat : sharedUnlitWinMat)
-              win.rotation.y = rotY
-              const wz = localZ - depth / 2 + (c + 0.5) * (depth / cols)
-              const wy = 3.5 + (r + 0.5) * ((h - 3.5) / rows)
-              win.position.set(faceX + outDir * 0.06, wy, wz)
-              group.add(win)
+            for (let c = 0; c < cols; c++) {
+              for (let r = 0; r < rows; r++) {
+                const lit  = wRng() < 0.18
+                const win = new THREE.Mesh(new THREE.PlaneGeometry(winH, winW), lit ? sharedLitWinMat : sharedUnlitWinMat)
+                win.rotation.y = rotY
+                const wz = localZ - depth / 2 + (c + 0.5) * (depth / cols)
+                const wy = 3.5 + (r + 0.5) * ((h - 3.5) / rows)
+                win.position.set(faceX + outDir * 0.06, wy, wz)
+                group.add(win)
+              }
             }
           }
         }
@@ -435,11 +440,13 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           group.add(handle)
         }
 
+        if (!isMob) {
         addDoor(zA)
         addDoor(zB)
+        }
 
-        // Shopfront for sub-building A (40% chance)
-        const hasShop = rng2() < 0.40
+        // Shopfront for sub-building A (40% chance) — skip on mobile
+        const hasShop = !isMob && rng2() < 0.40
         if (hasShop) {
           const glassMat = new THREE.MeshStandardMaterial({
             color: 0x0c1520, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.55
@@ -450,8 +457,8 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           group.add(glass)
         }
 
-        // Awning for sub-building B (38% chance)
-        const hasAwning = rng2() < 0.38
+        // Awning for sub-building B (38% chance) — skip on mobile
+        const hasAwning = !isMob && rng2() < 0.38
         if (hasAwning) {
           const awningMat = new THREE.MeshStandardMaterial({
             color: AWNING_COLORS[Math.floor(rng2() * AWNING_COLORS.length)],
@@ -464,7 +471,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           group.add(awning)
         }
 
-        // Café tables (20% chance, only if has shopfront)
+        // Café tables (20% chance, only if has shopfront) — skipped on mobile via hasShop=false
         const hasCafe = hasShop && rng2() < 0.40
         if (hasCafe) {
           const fMat = new THREE.MeshStandardMaterial({ color: 0x1a1208, roughness: 0.85 })
@@ -1096,7 +1103,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         bollardZPositions = [-5.5, 5.5]
       }
 
-      if (bollardZPositions.length > 0) {
+      if (!isMob && bollardZPositions.length > 0) {
         const bollardMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, roughness: 0.9, metalness: 0.05 })
         const bollardBaseGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.65, 8)
         const bollardCapGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.08, 8)
@@ -1273,7 +1280,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const NPC_TOTAL_RANGE = 320
 
     // ── Tree pool ──────────────────────────────────────────────────────────
-    const TREE_COUNT = 11    // per side
+    const TREE_COUNT = isMob ? 5 : 11   // per side
     const TREE_SPACING = 48  // metres
     interface TreeGroup {
       group: THREE.Group
@@ -1326,7 +1333,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     }
 
     // ── Streetlight pool ───────────────────────────────────────────────────
-    const LAMP_COUNT = 46    // per side
+    const LAMP_COUNT = isMob ? 10 : 46  // per side
     const LAMP_SPACING = 11  // metres — dense urban spacing
     const LAMP_HEIGHT = 6.0
     const LAMP_ARM = 1.4     // arm toward road
