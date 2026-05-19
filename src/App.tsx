@@ -1,12 +1,15 @@
-// App.tsx — V2 architecture: one persistent fixed canvas, scrollable overlay curtain.
+// App.tsx — V2 architecture: one persistent fixed canvas (full variant), scrollable curtain on top.
 //
-// Layer stack (z-index):
-//   0  canvas-layer    — position: fixed, CitySimulator variant="ambient", always running
-//   1  canvas-dim-veil — position: fixed, semi-transparent black that fades on scroll
-//   2  landing-gradient-veil — inside LandingCurtain, fades on scroll
-//   3  landing-text-layer    — inside LandingCurtain, lifts on scroll
-//   4  scroll-doc      — position: relative, provides scroll height; sections have no bg
-//  100 topbar           — position: fixed, fades in on scroll
+// Z-index stack (bottom → top):
+//   0   canvas-layer      — position:fixed, inset:0 — full CitySimulator, always interactive
+//   1   canvas-dim-veil   — position:fixed, pointer-events:none — flat rgba dim, fades on scroll
+//   2   landing-gradient-veil — position:fixed, pointer-events:none — textured dim, fades on scroll
+//   3   landing-text-layer    — position:fixed, pointer-events:none — wordmark/slogan/cue, lifts on scroll
+//   4   scroll-doc        — position:relative, pointer-events:none — transparent, drives scroll height
+//   100 topbar            — position:fixed — fades in on scroll, interactive when visible
+//
+// Curtain layers (1, 2, 3) are all pointer-events:none.
+// Clicks pass straight through to the full simulator at z-index 0.
 
 import { useEffect, useState } from 'react'
 import { motion, MotionConfig, useScroll, useTransform } from 'framer-motion'
@@ -15,24 +18,22 @@ import LandingCurtain from './sections/LandingSection'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 
-// Full curtain lift completes over this many px of scroll (matches LandingSection constant)
+// Curtain lift completes over LIFT px of scroll
 const LIFT = 600
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('lumination')
   const { scrollY } = useScroll()
 
-  // ── Canvas layer — pull-in zoom effect (Effect C) ───────────────────────
-  // Starts slightly zoomed in (1.04), settles to exact-fit (1.0) as curtain lifts.
-  // translateY 20→0 gives a "moving forward into the city" feel.
+  // ── Canvas layer — pull-in zoom (Effect C) ────────────────────────────────
+  // scale 1.04→1.0, translateY 20→0: "moving into the city" on curtain lift.
   const canvasScale = useTransform(scrollY, [0, LIFT], [1.04, 1.0])
   const canvasY     = useTransform(scrollY, [0, LIFT], [20, 0])
 
-  // Dim veil over canvas — separate from the gradient veil in LandingCurtain.
-  // This one is purely a flat rgba layer that fades as canvas un-dims.
+  // ── Flat dim veil — fades independently of gradient veil ──────────────────
   const dimVeilOpacity = useTransform(scrollY, [0, LIFT * 0.75], [1, 0])
 
-  // ── Topbar — fades in as curtain lifts (Effect E via brand-mark spring) ─
+  // ── Topbar — fades in as curtain lifts (Effect E) ─────────────────────────
   const topbarOpacity = useTransform(scrollY, [LIFT * 0.25, LIFT * 0.6], [0, 1])
   const [topbarVisible, setTopbarVisible] = useState(false)
 
@@ -41,42 +42,34 @@ export default function App() {
   }, [scrollY])
 
   return (
-    // MotionConfig respects prefers-reduced-motion: all FM animations instant when set
     <MotionConfig reducedMotion="user">
       <div className="app app--v2">
 
-        {/* ── Layer 0: persistent fixed canvas ─────────────────────────── */}
+        {/* ── Layer 0: persistent fixed canvas — FULL simulator, always interactive ── */}
+        {/* Not aria-hidden: the simulator is the primary interactive content. */}
         <motion.div
           className="canvas-layer"
           style={{ scale: canvasScale, y: canvasY }}
-          aria-hidden="true"
         >
-          <CitySimulator
-            mode={mode}
-            variant="ambient"
-            autoplay="sparse"
-            dimmed={false}
-            interactive={false}
-          />
+          <CitySimulator mode={mode} variant="full" />
         </motion.div>
 
-        {/* ── Layer 0.5: dim veil — softens canvas at landing state ─────── */}
+        {/* ── Layer 1: flat dim veil — softens canvas at landing state ──────── */}
         <motion.div
           className="canvas-dim-veil"
           style={{ opacity: dimVeilOpacity }}
           aria-hidden="true"
         />
 
-        {/* ── Layers 2–3: landing curtain (gradient veil + text) ────────── */}
+        {/* ── Layers 2–3: curtain — gradient veil + text, all pointer-events:none ── */}
         <LandingCurtain />
 
-        {/* ── Layer 4: scrollable document — drives scroll height ───────── */}
+        {/* ── Layer 4: scroll-doc — transparent, provides scroll height only ── */}
         <div className="scroll-doc">
-          {/* Landing spacer — transparent, sets height for curtain lift */}
+          {/* Landing spacer — transparent, height drives curtain lift distance */}
           <div className="landing-spacer" aria-hidden="true" />
 
-          {/* Phase 3: SimulatorSection will be mounted here */}
-          {/* Placeholder so the page has content after the landing */}
+          {/* Phase 3: SimulatorSection mounts here (controls overlay on fixed canvas) */}
           <div className="sim-section-placeholder" />
 
           <footer className="footer">
@@ -85,7 +78,7 @@ export default function App() {
           </footer>
         </div>
 
-        {/* ── Layer 100: topbar — fixed, fades in on scroll ─────────────── */}
+        {/* ── Layer 100: topbar — fixed, glassmorphic, fades in on scroll ───── */}
         <motion.header
           className="topbar"
           style={{
@@ -94,7 +87,7 @@ export default function App() {
           }}
         >
           <div className="brand">
-            {/* Effect E: brand mark scales in with a spring bounce, one-shot */}
+            {/* Effect E: brand mark bounces in, one-shot, on topbar appearance */}
             <motion.div
               className="brand-mark"
               initial={{ scale: 0.6 }}

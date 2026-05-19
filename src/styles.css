@@ -108,7 +108,7 @@ input[type="range"] {
 
 /* ── V2 fixed layers ────────────────────────────────────────────────────── */
 
-/* Layer 0: persistent canvas — always on, behind everything */
+/* Layer 0: persistent canvas — full CitySimulator, always interactive */
 .canvas-layer {
   position: fixed;
   inset: 0;
@@ -117,16 +117,18 @@ input[type="range"] {
   /* overflow:hidden clips the 1.04× zoom edges cleanly */
   overflow: hidden;
 }
-/* CitySimulator ambient fills the canvas-layer fully */
+/* variant="full" .main fills the canvas-layer completely */
+.canvas-layer .main {
+  height: 100%;
+  width: 100%;
+  /* Override the default padding so the simulator fills the viewport */
+  padding: 16px 24px 24px;
+}
+/* variant="ambient" also supported (for future Dashboard use) */
 .canvas-layer .main--ambient {
   height: 100%;
   width: 100%;
-}
-.canvas-layer .main--ambient .stage {
-  height: 100%;
-  min-height: 0;
-  border: none;
-  border-radius: 0;
+  padding: 0;
 }
 
 /* Layer 0.5: flat dim veil — fades out as curtain lifts */
