@@ -96,14 +96,49 @@ input[type="range"] {
   flex-direction: column;
 }
 
-/* V2: scrollable single-page layout */
+/* V2: scrollable single-page layout.
+   .app--v2 is the scroll container; fixed children use viewport as reference. */
 .app--v2 {
   height: auto;
   min-height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
+  position: relative; /* stacking context for z-index children */
 }
 
+/* ── V2 fixed layers ────────────────────────────────────────────────────── */
+
+/* Layer 0: persistent canvas — always on, behind everything */
+.canvas-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  transform-origin: center center;
+  /* overflow:hidden clips the 1.04× zoom edges cleanly */
+  overflow: hidden;
+}
+/* CitySimulator ambient fills the canvas-layer fully */
+.canvas-layer .main--ambient {
+  height: 100%;
+  width: 100%;
+}
+.canvas-layer .main--ambient .stage {
+  height: 100%;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+}
+
+/* Layer 0.5: flat dim veil — fades out as curtain lifts */
+.canvas-dim-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: rgba(5, 5, 8, 0.30);
+  pointer-events: none;
+}
+
+/* Layer 100: topbar — fixed, glassmorphic */
 .topbar {
   display: flex;
   align-items: center;
@@ -113,13 +148,13 @@ input[type="range"] {
   flex-wrap: wrap;
   gap: 12px;
 }
-
-/* V2: topbar sticky + glassmorphic */
 .app--v2 .topbar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 100;
-  background: rgba(5, 5, 8, 0.80);
+  background: rgba(5, 5, 8, 0.82);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -688,13 +723,13 @@ input[type="range"] {
   }
 }
 
-/* ── V2: variant="ambient" + dimmed ─────────────────────────────────────── */
-
-/* ambient: canvas fills its container, no sidebar grid */
+/* ── V2: variant="ambient" — canvas fills its fixed wrapper ─────────────── */
 .main--ambient {
   display: block;
   padding: 0;
   gap: 0;
+  height: 100%;
+  width: 100%;
 }
 .main--ambient .stage {
   border: none;
@@ -704,7 +739,7 @@ input[type="range"] {
   height: 100%;
 }
 
-/* dimmed overlay — pure CSS, never touches canvas pixels */
+/* dimmed — kept for non-canvas-layer usage */
 .stage--dimmed canvas {
   opacity: 0.72;
 }
@@ -747,51 +782,31 @@ input[type="range"] {
   margin-top: 4px;
 }
 
-/* ── V2: Landing section ────────────────────────────────────────────────── */
+/* ── V2: Landing curtain — fixed overlay layers ─────────────────────────── */
 
-.landing-section {
-  position: relative;
-  width: 100%;
-  height: 100vh;
-  height: 100svh;
-  overflow: hidden;
+/* Gradient veil (z-index 2) — dims canvas at landing state, fades on scroll */
+.landing-gradient-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(to bottom, rgba(5,5,8,0.50) 0%, transparent 28%, transparent 72%, rgba(5,5,8,0.65) 100%),
+    radial-gradient(ellipse 80% 55% at 50% 50%, transparent 25%, rgba(5,5,8,0.40) 100%);
+  pointer-events: none;
+}
+
+/* Text layer (z-index 3) — wordmark + slogan + scroll cue */
+.landing-text-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-/* Ambient canvas — fills the full section behind the hero */
-.landing-canvas-wrap {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-}
-
-/* Make the ambient CitySimulator fill its wrapper */
-.landing-canvas-wrap .main--ambient {
-  height: 100%;
-}
-.landing-canvas-wrap .main--ambient .stage {
-  height: 100%;
-  min-height: 0;
-}
-
-/* Gradient overlay — pure CSS ::after, never touches canvas pixels */
-.landing-canvas-wrap::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(to bottom, rgba(5,5,8,0.55) 0%, transparent 30%, transparent 70%, rgba(5,5,8,0.72) 100%),
-    radial-gradient(ellipse 80% 60% at 50% 50%, transparent 30%, rgba(5,5,8,0.45) 100%);
   pointer-events: none;
-  z-index: 1;
 }
 
-/* Hero content — above the canvas + its overlay */
 .landing-hero {
-  position: relative;
-  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -800,7 +815,7 @@ input[type="range"] {
   gap: 0;
 }
 
-/* Giant amber wordmark */
+/* Giant amber wordmark — Effect D: glow breathes while at rest */
 .landing-wordmark {
   font-family: var(--font-heading);
   font-weight: 800;
@@ -808,11 +823,22 @@ input[type="range"] {
   color: var(--amber);
   letter-spacing: -0.04em;
   line-height: 1;
-  text-shadow:
-    0 0 60px rgba(250, 199, 117, 0.35),
-    0 0 120px rgba(250, 199, 117, 0.15);
   margin-bottom: 28px;
-  will-change: opacity, transform;
+  will-change: transform;
+  animation: wordmark-breathe 4s ease-in-out infinite;
+}
+/* Effect D: ambient amber glow pulsing — "the word is a streetlamp" */
+@keyframes wordmark-breathe {
+  0%, 100% {
+    text-shadow:
+      0 0 30px rgba(250, 199, 117, 0.30),
+      0 0 80px  rgba(250, 199, 117, 0.12);
+  }
+  50% {
+    text-shadow:
+      0 0 40px rgba(250, 199, 117, 0.50),
+      0 0 100px rgba(250, 199, 117, 0.22);
+  }
 }
 
 /* Tagline lines */
@@ -837,6 +863,9 @@ input[type="range"] {
 /* Scroll cue */
 .landing-scroll-cue {
   margin-top: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 .landing-scroll-label {
   display: block;
@@ -844,50 +873,82 @@ input[type="range"] {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-dim);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
-.landing-scroll-arrow {
-  color: var(--text-dim);
+
+/* Effect F: drip line — amber drops downward in a loop */
+.landing-scroll-drip {
+  width: 1px;
+  height: 28px;
+  position: relative;
+  overflow: visible;
+}
+.landing-scroll-drip::after {
+  content: '';
   display: block;
-  margin: 0 auto;
-  animation: scroll-bob 2s ease-in-out infinite;
+  width: 1px;
+  height: 28px;
+  background: linear-gradient(to bottom, var(--amber), transparent);
+  animation: drip-drop 1.8s ease-in-out infinite;
 }
-@keyframes scroll-bob {
-  0%, 100% { transform: translateY(0); }
-  50%       { transform: translateY(5px); }
-}
-
-/* ── V2: Simulator section ──────────────────────────────────────────────── */
-
-.sim-section {
-  /* Contains the CitySimulator with its own overflow/resize logic */
-  overflow: hidden;
-  height: 100vh;
-  height: 100svh;
-  display: flex;
-  flex-direction: column;
+@keyframes drip-drop {
+  0%   { transform: translateY(-10px); opacity: 0; }
+  18%  { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { transform: translateY(10px);  opacity: 0; }
 }
 
-/* Inside sim-section, the .app--v2 scroll container shouldn't propagate */
-.sim-section .main {
-  flex: 1;
-  min-height: 0;
+/* ── V2: Scrollable document ────────────────────────────────────────────── */
+
+/* scroll-doc sits on top of fixed layers (z-index 4) but is transparent */
+.scroll-doc {
+  position: relative;
+  z-index: 4;
+  pointer-events: none; /* children opt-in with pointer-events: auto */
 }
 
-/* ── V2: mobile overrides for landing ──────────────────────────────────── */
+/* Landing spacer — transparent, just provides scroll height for curtain lift */
+.landing-spacer {
+  height: 110vh;
+  height: 110svh;
+}
+
+/* Placeholder for Phase 3 SimulatorSection */
+.sim-section-placeholder {
+  height: 50vh;
+}
+
+/* Footer — re-enable pointer events for links */
+.scroll-doc .footer {
+  pointer-events: auto;
+  background: rgba(5, 5, 8, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ── V2: mobile overrides ───────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .landing-wordmark {
-    font-size: clamp(3rem, 18vw, 5rem);
+    font-size: clamp(2.8rem, 16vw, 5rem);
     margin-bottom: 20px;
   }
   .landing-line {
-    font-size: clamp(0.95rem, 4.5vw, 1.2rem);
+    font-size: clamp(0.92rem, 4.5vw, 1.2rem);
   }
   .landing-scroll-cue {
     margin-top: 36px;
   }
-  .sim-section {
-    height: auto;
-    min-height: 100vh;
+  .landing-spacer {
+    height: 105vh;
+    height: 105svh;
   }
+}
+
+/* ── prefers-reduced-motion ─────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .landing-wordmark,
+  .landing-scroll-drip::after {
+    animation: none !important;
+  }
+  /* Framer Motion animations are handled by MotionConfig reducedMotion="user" */
 }

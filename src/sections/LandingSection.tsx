@@ -1,88 +1,118 @@
-// LandingSection — Phase 2: full-viewport hero with ambient city background.
+// LandingSection — Phase 2 revision: pure curtain overlay, NO canvas.
 //
-// Stagger timings (committed values):
-//   line 1 (first headline):  0ms delay
-//   line 2 (second headline): 150ms delay
-//   scroll cue:               400ms delay
+// Architecture: the persistent canvas lives in App.tsx (position: fixed, z-index: 0).
+// This file renders only the fixed overlay elements that lift away as the user scrolls.
 //
-// Wordmark → topbar transition: giant wordmark fades out on scroll (no morphing).
-// Gradient overlay: pure CSS ::after on .landing-canvas-wrap (never painted in canvas).
+// Stagger timings (committed):
+//   wordmark entrance:  0ms
+//   line 1 (slogan):   0ms
+//   line 2 (slogan):  150ms
+//   scroll cue:        400ms
+//
+// Effects implemented:
+//   A. Curtain lift — text translates up + fades, gradient veil fades
+//   D. Wordmark glow breathing — CSS animation while at rest
+//   F. Scroll cue drip — CSS animation (amber line drips downward)
+//
+// prefers-reduced-motion: Framer Motion respects it via MotionConfig in App.
+// CSS animations disabled via @media (prefers-reduced-motion: reduce) in styles.css.
 
 import { motion, useScroll, useTransform } from 'framer-motion'
-import CitySimulator from '../CitySimulator'
 
-export default function LandingSection() {
+// Full curtain lift completes over this many pixels of scroll
+const LIFT = 600
+
+export default function LandingCurtain() {
   const { scrollY } = useScroll()
 
-  // Wordmark + scroll cue fade out as user scrolls
-  const heroOpacity = useTransform(scrollY, [0, 280], [1, 0])
-  const heroY       = useTransform(scrollY, [0, 280], [0, -32])
+  // ── Gradient veil — darkens canvas at rest, fades as curtain lifts ──────
+  const veilOpacity = useTransform(scrollY, [0, LIFT * 0.85], [1, 0])
+
+  // ── Text layer — whole block fades out ───────────────────────────────────
+  const textLayerOpacity = useTransform(scrollY, [0, LIFT * 0.65], [1, 0])
+
+  // ── Wordmark — lifts up, scales down, subtle rotateX perspective tilt ───
+  const wordmarkY        = useTransform(scrollY, [0, LIFT], [0, -90])
+  const wordmarkScale    = useTransform(scrollY, [0, LIFT], [1, 0.85])
+  const wordmarkRotateX  = useTransform(scrollY, [0, LIFT], [0, -8])
+
+  // ── Slogan — lags 15% behind wordmark (softer parallax) ─────────────────
+  const sloganY = useTransform(scrollY, [0, LIFT], [0, -55])
+
+  // ── Scroll cue — fades out first, before the rest ────────────────────────
+  const cueFade = useTransform(scrollY, [0, LIFT * 0.28], [1, 0])
 
   return (
-    <section className="landing-section">
-      {/* Ambient city canvas — fills the section, CSS gradient overlay via ::after */}
-      <div className="landing-canvas-wrap">
-        <CitySimulator
-          mode="lumination"
-          variant="ambient"
-          autoplay="sparse"
-          dimmed
-          interactive={false}
-        />
-      </div>
+    <>
+      {/* Fixed gradient veil — dims the canvas in landing state */}
+      <motion.div
+        className="landing-gradient-veil"
+        style={{ opacity: veilOpacity }}
+        aria-hidden="true"
+      />
 
-      {/* Hero content — layered above canvas */}
-      <div className="landing-hero">
-        {/* Giant wordmark — fades out on scroll, no initial animation */}
-        <motion.div
-          className="landing-wordmark"
-          style={{ opacity: heroOpacity, y: heroY }}
-          aria-hidden="true"
-        >
-          LumiNation
-        </motion.div>
+      {/* Fixed text layer — entire block fades + individual elements lift */}
+      <motion.div
+        className="landing-text-layer"
+        style={{ opacity: textLayerOpacity }}
+        aria-hidden="false"
+      >
+        <div className="landing-hero">
 
-        {/* Slogan line 1 — 0ms */}
-        <motion.p
-          className="landing-line"
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: 'easeOut', delay: 0 }}
-        >
-          We are not turning the lights off,
-        </motion.p>
-
-        {/* Slogan line 2 — 150ms */}
-        <motion.p
-          className="landing-line landing-line-em"
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: 'easeOut', delay: 0.15 }}
-        >
-          we are turning them on <em>intelligently.</em>
-        </motion.p>
-
-        {/* Scroll cue — 400ms, then fades with the hero on scroll */}
-        <motion.div
-          className="landing-scroll-cue"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.6, ease: 'easeOut', delay: 0.4 }}
-        >
-          <motion.div style={{ opacity: heroOpacity }}>
-            <span className="landing-scroll-label">scroll to explore</span>
-            <svg
-              className="landing-scroll-arrow"
-              width="16" height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path d="M8 2v12M3 9l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+          {/* Giant wordmark — parallax lift with perspective tilt */}
+          <motion.div
+            className="landing-wordmark"
+            style={{
+              y: wordmarkY,
+              scale: wordmarkScale,
+              rotateX: wordmarkRotateX,
+              transformPerspective: 900,
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+          >
+            LumiNation
           </motion.div>
-        </motion.div>
-      </div>
-    </section>
+
+          {/* Slogan line 1 — 0ms, lifts with lag */}
+          <motion.p
+            className="landing-line"
+            style={{ y: sloganY }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.7, ease: 'easeOut', delay: 0 }}
+          >
+            We are not turning the lights off,
+          </motion.p>
+
+          {/* Slogan line 2 — 150ms, same lift */}
+          <motion.p
+            className="landing-line landing-line-em"
+            style={{ y: sloganY }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.7, ease: 'easeOut', delay: 0.15 }}
+          >
+            we are turning them on <em>intelligently.</em>
+          </motion.p>
+
+          {/* Scroll cue — 400ms, fades out earlier than the rest */}
+          <motion.div style={{ opacity: cueFade }}>
+            <motion.div
+              className="landing-scroll-cue"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.6, ease: 'easeOut', delay: 0.4 }}
+            >
+              <span className="landing-scroll-label">scroll to explore</span>
+              {/* Drip line (Effect F) — CSS animation in styles.css */}
+              <div className="landing-scroll-drip" aria-hidden="true" />
+            </motion.div>
+          </motion.div>
+
+        </div>
+      </motion.div>
+    </>
   )
 }

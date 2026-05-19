@@ -63,7 +63,7 @@ const LAMP_REACH_PED = 180
 const LAMP_REACH_CAR = 300
 const LAMP_REACH_BEHIND_PED = 260
 const LAMP_REACH_BEHIND_CAR = 200
-const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
+const MAX_VISUAL_BRI = 0.72  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const PARK_CI = 1
 const PARK_RI = 2
 
@@ -177,6 +177,11 @@ export default function CitySimulator({
   const powerHistoryRef = useRef<{ lumi: number; full: number }[]>([])
   const histTickRef = useRef(0)
   const chartRef = useRef<HTMLCanvasElement>(null)
+
+  // ── Comm-line pulse phase (wall-clock seconds, updated per frame) ─────────
+  // pulsePhase advances each frame; each street-row gets a seeded phase offset
+  // so pulses travel at different times. Full cycle = 2.5s.
+  const pulsePhaseRef = useRef(0)
 
   // Redraw chart whenever stats update
   useEffect(() => {
@@ -689,7 +694,7 @@ export default function CitySimulator({
       ctx.beginPath(); ctx.arc(t.x - 2, t.y - 2, 3, 0, Math.PI * 2); ctx.fill()
     }
 
-    // Communication mesh — opacity reacts to lamp brightness
+    // Communication mesh — opacity reacts to lamp brightness + amber pulse
     ctx.lineWidth = 1
     const byStreet = new Map<string, Lamp[]>()
     lampsRef.current.forEach(l => {
@@ -697,14 +702,41 @@ export default function CitySimulator({
       if (!byStreet.has(key)) byStreet.set(key, [])
       byStreet.get(key)!.push(l)
     })
+    const globalPhase = pulsePhaseRef.current
+    let streetIdx = 0
     byStreet.forEach(arr => {
       arr.sort((a, b) => (a.x + a.y) - (b.x + b.y))
+      // Each street row gets a seeded phase offset so pulses travel at different times
+      const rowOffset = (streetIdx * 0.17) % 1
+      streetIdx++
       for (let i = 0; i < arr.length - 1; i++) {
         const avgB = useBaseline ? MAX_VISUAL_BRI : ((arr[i].brightness + arr[i + 1].brightness) / 2) * MAX_VISUAL_BRI
-        ctx.strokeStyle = `rgba(250, 199, 117, ${0.02 + avgB * 0.08})`
+        const baseAlpha = 0.02 + avgB * 0.08
+        // Draw base line
+        ctx.strokeStyle = `rgba(250, 199, 117, ${baseAlpha})`
         ctx.beginPath()
         ctx.moveTo(arr[i].x, arr[i].y); ctx.lineTo(arr[i + 1].x, arr[i + 1].y)
         ctx.stroke()
+
+        // Pulse: a bright spot travels from lamp i to lamp i+1 over the full phase cycle
+        // Each segment gets its own offset based on row + segment index
+        const segOffset = ((rowOffset + i * 0.09) % 1)
+        // Shift phase so pulse travels sequentially along the row
+        const travelPhase = (globalPhase + segOffset) % 1
+        // Pulse envelope: sharp bell near travelPhase = 0.5, zero elsewhere
+        const dist = Math.abs(travelPhase - 0.5)
+        const pulse = dist < 0.12 ? (1 - dist / 0.12) : 0
+        if (pulse > 0) {
+          const t = travelPhase  // 0=lampA, 1=lampB
+          const px = arr[i].x + (arr[i + 1].x - arr[i].x) * t
+          const py = arr[i].y + (arr[i + 1].y - arr[i].y) * t
+          const pulseAlpha = pulse * 0.35
+          const grd = ctx.createRadialGradient(px, py, 0, px, py, 6)
+          grd.addColorStop(0, `rgba(255, 215, 100, ${pulseAlpha})`)
+          grd.addColorStop(1, 'rgba(255, 215, 100, 0)')
+          ctx.fillStyle = grd
+          ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill()
+        }
       }
     })
 
@@ -1278,6 +1310,8 @@ export default function CitySimulator({
       if (variantRef.current === 'ambient') lastAmbientFrame = now
       const dt = Math.min(0.1, (now - lastTick) / 1000)
       lastTick = now
+      // Pulse phase advances in wall-clock seconds; full cycle = 2.5s
+      pulsePhaseRef.current = (pulsePhaseRef.current + dt / 2.5) % 1
       if (pausedRef.current) return
       handleScenario(dt)
       const power = step(dt)
