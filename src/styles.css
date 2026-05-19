@@ -96,6 +96,14 @@ input[type="range"] {
   flex-direction: column;
 }
 
+/* V2: scrollable single-page layout */
+.app--v2 {
+  height: auto;
+  min-height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -104,6 +112,16 @@ input[type="range"] {
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   gap: 12px;
+}
+
+/* V2: topbar sticky + glassmorphic */
+.app--v2 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(5, 5, 8, 0.80);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .brand {
@@ -727,4 +745,149 @@ input[type="range"] {
   font-size: 12px;
   color: var(--text-dim);
   margin-top: 4px;
+}
+
+/* ── V2: Landing section ────────────────────────────────────────────────── */
+
+.landing-section {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Ambient canvas — fills the full section behind the hero */
+.landing-canvas-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* Make the ambient CitySimulator fill its wrapper */
+.landing-canvas-wrap .main--ambient {
+  height: 100%;
+}
+.landing-canvas-wrap .main--ambient .stage {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Gradient overlay — pure CSS ::after, never touches canvas pixels */
+.landing-canvas-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(5,5,8,0.55) 0%, transparent 30%, transparent 70%, rgba(5,5,8,0.72) 100%),
+    radial-gradient(ellipse 80% 60% at 50% 50%, transparent 30%, rgba(5,5,8,0.45) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Hero content — above the canvas + its overlay */
+.landing-hero {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 24px;
+  gap: 0;
+}
+
+/* Giant amber wordmark */
+.landing-wordmark {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: clamp(3.5rem, 14vw, 9rem);
+  color: var(--amber);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  text-shadow:
+    0 0 60px rgba(250, 199, 117, 0.35),
+    0 0 120px rgba(250, 199, 117, 0.15);
+  margin-bottom: 28px;
+  will-change: opacity, transform;
+}
+
+/* Tagline lines */
+.landing-line {
+  font-family: var(--font-heading);
+  font-size: clamp(1.05rem, 2.8vw, 1.55rem);
+  font-weight: 400;
+  color: rgba(240, 240, 245, 0.88);
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.landing-line-em em {
+  color: var(--amber);
+  font-style: normal;
+  font-weight: 600;
+}
+.landing-line + .landing-line {
+  margin-top: 6px;
+}
+
+/* Scroll cue */
+.landing-scroll-cue {
+  margin-top: 52px;
+}
+.landing-scroll-label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.landing-scroll-arrow {
+  color: var(--text-dim);
+  display: block;
+  margin: 0 auto;
+  animation: scroll-bob 2s ease-in-out infinite;
+}
+@keyframes scroll-bob {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(5px); }
+}
+
+/* ── V2: Simulator section ──────────────────────────────────────────────── */
+
+.sim-section {
+  /* Contains the CitySimulator with its own overflow/resize logic */
+  overflow: hidden;
+  height: 100vh;
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Inside sim-section, the .app--v2 scroll container shouldn't propagate */
+.sim-section .main {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── V2: mobile overrides for landing ──────────────────────────────────── */
+@media (max-width: 768px) {
+  .landing-wordmark {
+    font-size: clamp(3rem, 18vw, 5rem);
+    margin-bottom: 20px;
+  }
+  .landing-line {
+    font-size: clamp(0.95rem, 4.5vw, 1.2rem);
+  }
+  .landing-scroll-cue {
+    margin-top: 36px;
+  }
+  .sim-section {
+    height: auto;
+    min-height: 100vh;
+  }
 }

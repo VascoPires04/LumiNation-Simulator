@@ -135,8 +135,9 @@ export default function CitySimulator({
   const isMobile = useIsMobile()
 
   // Variant/autoplay refs — readable inside RAF loop without stale closure
-  const variantRef  = useRef(variant);  variantRef.current  = variant
-  const autoplayRef = useRef(autoplay); autoplayRef.current = autoplay
+  const variantRef   = useRef(variant);   variantRef.current   = variant
+  const autoplayRef  = useRef(autoplay);  autoplayRef.current  = autoplay
+  const isMobileRef  = useRef(isMobile);  isMobileRef.current  = isMobile
   // Sparse autoplay timer (seconds until next auto-spawn)
   const sparseTimerRef = useRef(2 + Math.random() * 3)
 
@@ -1214,8 +1215,14 @@ export default function CitySimulator({
       sparseTimerRef.current -= dt
       if (sparseTimerRef.current <= 0) {
         sparseTimerRef.current = 2 + Math.random() * 3
-        if (agentsRef.current.length < 4) {
-          spawnRandomEdge(Math.random() < 0.75 ? 'ped' : 'car')
+        const agents = agentsRef.current
+        const pedCount = agents.filter(a => a.type === 'ped').length
+        const carCount = agents.filter(a => a.type === 'car').length
+        const maxPeds = isMobileRef.current ? 2 : 3
+        if (Math.random() < 0.75) {
+          if (pedCount < maxPeds) spawnRandomEdge('ped')
+        } else {
+          if (carCount < 1) spawnRandomEdge('car')
         }
       }
     }
