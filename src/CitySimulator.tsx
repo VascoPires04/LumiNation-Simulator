@@ -428,7 +428,7 @@ export default function CitySimulator({
       // lookaheadPx: visual scale proportional to agent speed — a car at 11 m/s
       // gets ~7.8× more corridor than a pedestrian at 1.4 m/s, reflecting the
       // real predictive need: faster agents need lights further ahead.
-      const lookaheadPx = lookaheadRef.current * 40 * (sp / PED_SPEED)
+      const lookaheadPx = lookaheadRef.current * 10 * (sp / PED_SPEED)
       // Both forward and rear reach scale with lookahead slider.
       const reachAhead  = (isCar ? LAMP_REACH_CAR  : LAMP_REACH_PED)  + lookaheadPx
       const reachBehind = ((isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) + lookaheadPx * 0.6) * backScale
