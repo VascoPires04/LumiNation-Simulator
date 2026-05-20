@@ -931,12 +931,12 @@ input[type="range"] {
 .sim-compact-sidebar {
   position: fixed;
   top: 96px;
-  right: clamp(24px, 3vw, 56px);
+  right: clamp(48px, 6vw, 120px);
   z-index: 2;
-  width: clamp(180px, 16vw, 220px);
+  width: clamp(240px, 22vw, 320px);
   display: flex;
   flex-direction: column;
-  gap: 48px;
+  gap: 56px;
   pointer-events: none; /* toggled via inline style in App.tsx */
 }
 
@@ -946,26 +946,26 @@ input[type="range"] {
   padding: 0;
 }
 .sim-compact-sidebar .headline-metric-value {
-  font-size: clamp(3rem, 5vw, 4.5rem);
+  font-size: clamp(4rem, 7vw, 6.5rem);
   font-weight: 500;
-  line-height: 0.95;
-  letter-spacing: -0.02em;
-  text-shadow: 0 1px 16px rgba(0, 0, 0, 0.7), 0 0 32px rgba(250, 199, 117, 0.15);
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  text-shadow: 0 1px 16px rgba(0, 0, 0, 0.7), 0 0 48px rgba(250, 199, 117, 0.2);
 }
 .sim-compact-sidebar .headline-metric-label {
-  font-size: 16px;
+  font-size: 18px;
   color: rgba(240, 240, 245, 0.95);
   font-weight: 400;
-  margin-top: 8px;
+  margin-top: 10px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
 }
 .sim-compact-sidebar .headline-metric-sublabel {
-  font-size: 13px;
+  font-size: 14px;
   color: rgba(240, 240, 245, 0.7);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-top: 4px;
+  margin-top: 5px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.8);
 }
 
@@ -976,8 +976,8 @@ input[type="range"] {
   gap: 6px;
 }
 .sim-compact-modes button {
-  padding: 8px 14px;
-  font-size: 15px;
+  padding: 10px 16px;
+  font-size: 17px;
   font-family: var(--font-heading);
   font-weight: 400;
   background: transparent;
@@ -1011,7 +1011,7 @@ input[type="range"] {
 .sim-compact-label {
   display: flex;
   justify-content: space-between;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 400;
   color: rgba(240, 240, 245, 0.85);
   margin-bottom: 3px;
@@ -1020,7 +1020,7 @@ input[type="range"] {
 .sim-compact-value {
   color: #f0f0f5;
   font-weight: 500;
-  font-size: 14px;
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
 }
@@ -1036,7 +1036,7 @@ input[type="range"] {
   gap: 6px;
   padding: 6px 12px;
   font-family: var(--font-heading);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--amber);
   background: transparent;
