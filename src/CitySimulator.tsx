@@ -422,12 +422,14 @@ export default function CitySimulator({
     for (const l of lampsRef.current) l.target = baselineRef.current
     for (const a of agentsRef.current) {
       const isCar = a.type === 'car'
-      const reachAhead = isCar ? LAMP_REACH_CAR : LAMP_REACH_PED          // full-size forward reach
-      const reachBehind = (isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) * backScale
       const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))
       const dx = a.vx / sp
       const dy = a.vy / sp
       const lookaheadPx = (sp * lookaheadRef.current) / METERS_PER_PIXEL
+      // Both forward reach and rear reach scale with lookahead — min cap keeps a
+      // small safe zone even at slider minimum so street never feels abruptly cut.
+      const reachAhead  = (isCar ? LAMP_REACH_CAR  : LAMP_REACH_PED)  + lookaheadPx * 0.3
+      const reachBehind = ((isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) + lookaheadPx * 0.5) * backScale
       const fx = a.x + dx * lookaheadPx
       const fy = a.y + dy * lookaheadPx
       const agentStreetId = streetsRef.current.indexOf(a.street)
@@ -1413,6 +1415,8 @@ if (pausedRef.current) return
               const arr = agentsRef.current
               return arr[arr.length - 1] ?? null
             }}
+            onBaselineChange={onBaselineChange ?? setBaselinePctLocal}
+            onLookaheadChange={onLookaheadChange ?? setLookaheadSecLocal}
           />
         )}
         {variant !== 'ambient' && effectiveMode === 'compare' && (

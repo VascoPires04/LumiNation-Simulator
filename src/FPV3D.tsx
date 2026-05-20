@@ -22,6 +22,8 @@ interface FPV3DProps {
   agentsRef: React.MutableRefObject<Agent[]>
   pausedRef: React.MutableRefObject<boolean>
   spawnPed: () => Agent | null
+  onBaselineChange?: (v: number) => void
+  onLookaheadChange?: (v: number) => void
 }
 
 const MAX_VISUAL_BRI = 0.68
@@ -57,7 +59,7 @@ function makeWindowTexture(seed: number): THREE.CanvasTexture {
   return new THREE.CanvasTexture(canvas)
 }
 
-export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef, agentsRef, pausedRef, spawnPed }: FPV3DProps) {
+export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef, agentsRef, pausedRef, spawnPed, onBaselineChange, onLookaheadChange }: FPV3DProps) {
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -1706,7 +1708,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           </div>
         </div>
 
-        {/* Right Side: Speed Controls */}
+        {/* Right Side: Speed Controls + sliders */}
         <div className="fpv-card" style={isMobile ? undefined : { minWidth: '300px' }}>
           <div className="fpv-card-title">⚙️ Citizen Controls</div>
 
@@ -1734,6 +1736,34 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           {!isMobile && (
             <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 4 }}>
               Pro Tip: Hold <b>SHIFT</b> to sprint on keyboard!
+            </div>
+          )}
+
+          {onBaselineChange && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>
+                <span>Baseline brightness</span>
+                <span style={{ color: '#FAC775' }}>{Math.round(baselineRef.current * 100)}%</span>
+              </div>
+              <input type="range" min={0} max={100}
+                defaultValue={Math.round(baselineRef.current * 100)}
+                style={{ width: '100%', accentColor: '#FAC775' }}
+                onChange={e => onBaselineChange(Number(e.target.value) / 100)}
+              />
+            </div>
+          )}
+
+          {onLookaheadChange && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>
+                <span>Lookahead</span>
+                <span style={{ color: '#FAC775' }}>{lookaheadRef.current.toFixed(1)}s</span>
+              </div>
+              <input type="range" min={0.5} max={8} step={0.5}
+                defaultValue={lookaheadRef.current}
+                style={{ width: '100%', accentColor: '#FAC775' }}
+                onChange={e => onLookaheadChange(Number(e.target.value))}
+              />
             </div>
           )}
         </div>
