@@ -70,7 +70,7 @@ const CAR_SPEED = 11
 const METERS_PER_PIXEL = 0.35
 const LAMP_REACH_PED = 60
 const LAMP_REACH_CAR = 25
-const LAMP_REACH_BEHIND_PED = 40
+const LAMP_REACH_BEHIND_PED = 70
 const LAMP_REACH_BEHIND_CAR = 60
 const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const PARK_CI = 1
