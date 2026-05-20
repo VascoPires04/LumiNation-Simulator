@@ -528,12 +528,15 @@ input[type="range"] {
 @media (max-width: 768px) {
   /* ── App shell ── */
   .app {
-    height: auto;
-    min-height: 100dvh;
-    min-height: 100svh;
-    min-height: 100vh;
-    overflow-y: auto;
+    position: fixed; /* Fixa o app na janela de visualização */
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow-y: auto; /* Permite o scroll dentro do app */
     overflow-x: hidden;
+    height: 100%; /* Garante que ocupa a altura toda */
+    -webkit-overflow-scrolling: touch; /* Melhora a experiência de scroll em iOS */
   }
 
   /* ── Topbar (legacy non-v2 layout) ── */
