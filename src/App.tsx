@@ -51,7 +51,7 @@ export default function App() {
           className="canvas-layer"
           style={{ scale: canvasScale, y: canvasY }}
         >
-          <CitySimulator mode={mode} variant="full" />
+          <CitySimulator mode={mode} variant="full" autoplay="sparse" />
         </motion.div>
 
         {/* ── Layer 1: flat dim veil — softens canvas at landing state ──────── */}
