@@ -68,8 +68,8 @@ const HOURS_PER_YEAR_NIGHT = 4100
 const PED_SPEED = 1.4
 const CAR_SPEED = 11
 const METERS_PER_PIXEL = 0.35
-const LAMP_REACH_PED = 180
-const LAMP_REACH_CAR = 300
+const LAMP_REACH_PED = 60
+const LAMP_REACH_CAR = 90
 const LAMP_REACH_BEHIND_PED = 260
 const LAMP_REACH_BEHIND_CAR = 200
 const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)

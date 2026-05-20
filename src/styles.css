@@ -930,7 +930,7 @@ input[type="range"] {
    Blocks stacked tightly from top, gap 32px — concentrated in upper ~60% of viewport. */
 .sim-compact-sidebar {
   position: fixed;
-  top: 96px;
+  top: 140px;
   right: clamp(48px, 6vw, 120px);
   z-index: 2;
   width: clamp(240px, 22vw, 320px);

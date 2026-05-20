@@ -143,7 +143,7 @@ export default function App() {
                 <span className="sim-compact-value">{Math.round(baselinePct * 100)}%</span>
               </label>
               <input
-                type="range" min={15} max={100}
+                type="range" min={0} max={100}
                 value={Math.round(baselinePct * 100)}
                 onChange={e => setBaselinePct(Number(e.target.value) / 100)}
               />
@@ -153,7 +153,7 @@ export default function App() {
                 <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
               </label>
               <input
-                type="range" min={1} max={8} step={0.5}
+                type="range" min={0.5} max={8} step={0.5}
                 value={lookaheadSec}
                 onChange={e => setLookaheadSec(Number(e.target.value))}
               />
