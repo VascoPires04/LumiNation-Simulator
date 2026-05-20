@@ -117,12 +117,13 @@ input[type="range"] {
   /* overflow:hidden clips the 1.04× zoom edges cleanly */
   overflow: hidden;
 }
-/* variant="full" .main fills the canvas-layer completely */
+/* variant="full" .main fills the canvas-layer completely.
+   padding-top = topbar height (70px) so the grid never hides behind the topbar.
+   This also pushes the map+sidebar down below the curtain text area. */
 .canvas-layer .main {
   height: 100%;
   width: 100%;
-  /* Override the default padding so the simulator fills the viewport */
-  padding: 16px 24px 24px;
+  padding: 70px 24px 24px 24px;
 }
 /* variant="ambient" also supported (for future Dashboard use) */
 .canvas-layer .main--ambient {
