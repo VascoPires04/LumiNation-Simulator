@@ -188,12 +188,12 @@ input[type="range"] {
 .brand-name {
   font-family: var(--font-heading);
   font-weight: 700;
-  font-size: 19px;
+  font-size: clamp(1rem, 1.8vw, 1.25rem);
   letter-spacing: -0.03em;
 }
 
 .brand-tag {
-  font-size: 12px;
+  font-size: clamp(0.65rem, 1.2vw, 0.78rem);
   color: var(--text-muted);
 }
 
@@ -824,7 +824,7 @@ input[type="range"] {
 .landing-wordmark {
   font-family: var(--font-heading);
   font-weight: 800;
-  font-size: clamp(3.5rem, 14vw, 9rem);
+  font-size: clamp(3rem, 12vw, 8rem);
   color: var(--amber);
   letter-spacing: -0.04em;
   line-height: 1;
@@ -849,7 +849,7 @@ input[type="range"] {
 /* Tagline lines */
 .landing-line {
   font-family: var(--font-heading);
-  font-size: clamp(1.05rem, 2.8vw, 1.55rem);
+  font-size: clamp(1rem, 2.5vw, 1.6rem);
   font-weight: 400;
   color: rgba(240, 240, 245, 0.88);
   line-height: 1.4;
@@ -918,90 +918,95 @@ input[type="range"] {
   height: 110svh;
 }
 
-/* ── Phase 3: HUD sidebar — no container, no background, floats over canvas ── */
+/* ── Phase 3: HUD — two fixed elements, no background, pure text over canvas ── */
 
-/* Spacer inside scroll-doc so page is long enough to scroll past sim context */
-.sim-section-spacer {
-  height: 100vh;
-}
+/* Spacer keeps scroll height for curtain lift + sidebar context */
+.sim-section-spacer { height: 100vh; }
 
-/* Floating HUD — z=2 between dim-veil and curtain.
-   No background, no blur, no border. Pure text over canvas.
-   Blocks stacked tightly from top, gap 32px — concentrated in upper ~60% of viewport. */
-.sim-compact-sidebar {
+/* ── Base (desktop ≥ 768px): both elements right-side ── */
+.hud-headline,
+.hud-controls {
   position: fixed;
-  top: 140px;
-  right: clamp(48px, 6vw, 120px);
   z-index: 2;
-  width: clamp(240px, 22vw, 320px);
-  display: flex;
-  flex-direction: column;
-  gap: 72px;
-  pointer-events: none; /* container always passthrough — only children get auto */
+  pointer-events: none;
+  right: clamp(48px, 6vw, 120px);
+  width: clamp(200px, 20vw, 280px);
 }
 
-/* Headline metric — big, left-aligned, amber glow */
-.sim-compact-sidebar .headline-metric {
+/* Headline — top of the right column */
+.hud-headline {
+  top: 140px;
+}
+.hud-headline .headline-metric {
   text-align: left;
   padding: 0;
 }
-.sim-compact-sidebar .headline-metric-value {
-  font-size: clamp(4rem, 7vw, 6.5rem);
+.hud-headline .headline-metric-value {
+  font-size: clamp(2.5rem, 5.5vw, 6rem);
   font-weight: 500;
   line-height: 0.9;
   letter-spacing: -0.03em;
-  text-shadow: 0 1px 16px rgba(0, 0, 0, 0.7), 0 0 48px rgba(250, 199, 117, 0.2);
+  text-shadow: 0 1px 16px rgba(0,0,0,0.7), 0 0 48px rgba(250,199,117,0.2);
 }
-.sim-compact-sidebar .headline-metric-label {
-  font-size: 18px;
-  color: rgba(240, 240, 245, 0.95);
+.hud-headline .headline-metric-label {
+  font-size: clamp(0.8rem, 1.5vw, 1.1rem);
+  color: rgba(240,240,245,0.95);
   font-weight: 400;
   margin-top: 10px;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
 }
-.sim-compact-sidebar .headline-metric-sublabel {
-  font-size: 14px;
-  color: rgba(240, 240, 245, 0.7);
+.hud-headline .headline-metric-sublabel {
+  font-size: clamp(0.65rem, 1.2vw, 0.85rem);
+  color: rgba(240,240,245,0.7);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin-top: 5px;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.8);
 }
 
-/* Mode buttons — vertical stack, fully transparent active */
+/* Controls — stacked below headline */
+.hud-controls {
+  top: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 52px;
+}
+
+/* Mode buttons — vertical stack on desktop */
 .sim-compact-modes {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  pointer-events: none; /* passthrough on the group; buttons get auto below */
+  pointer-events: none;
 }
 .sim-compact-modes button {
   pointer-events: auto;
+  min-height: 44px;
   padding: 10px 16px;
-  font-size: 17px;
+  font-size: clamp(0.8rem, 1.4vw, 1.05rem);
   font-family: var(--font-heading);
   font-weight: 400;
   background: transparent;
-  color: rgba(240, 240, 245, 0.85);
-  border: 0.5px solid rgba(240, 240, 245, 0.25);
+  color: rgba(240,240,245,0.85);
+  border: 0.5px solid rgba(240,240,245,0.25);
   border-radius: 4px;
   cursor: pointer;
   text-align: left;
   transition: border-color 0.15s, color 0.15s;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
   white-space: nowrap;
 }
 .sim-compact-modes button:hover {
-  border-color: rgba(240, 240, 245, 0.5);
-  color: rgba(240, 240, 245, 0.95);
+  border-color: rgba(240,240,245,0.5);
+  color: rgba(240,240,245,0.95);
 }
 .sim-compact-modes button.active {
   background: transparent;
   color: #FAC775;
   border: 1px solid #FAC775;
   font-weight: 500;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
 }
 
 /* Sliders */
@@ -1009,51 +1014,146 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  pointer-events: none; /* passthrough; inputs/labels get auto below */
+  pointer-events: none;
 }
 .sim-compact-label {
   display: flex;
   justify-content: space-between;
-  font-size: 16px;
+  font-size: clamp(0.8rem, 1.4vw, 1rem);
   font-weight: 400;
-  color: rgba(240, 240, 245, 0.85);
+  color: rgba(240,240,245,0.85);
   margin-bottom: 3px;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
 }
 .sim-compact-value {
   color: #f0f0f5;
   font-weight: 500;
-  font-size: 16px;
+  font-size: clamp(0.8rem, 1.4vw, 1rem);
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
 }
 .sim-compact-controls input[type='range'] {
   width: 100%;
+  height: 20px;
   accent-color: var(--amber);
   pointer-events: auto;
 }
 
-/* CTA button */
+/* CTA */
 .sim-cta {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 10px 16px;
+  min-height: 44px;
   font-family: var(--font-heading);
-  font-size: 16px;
+  font-size: clamp(0.8rem, 1.4vw, 1rem);
   font-weight: 500;
   color: var(--amber);
   background: transparent;
   border: 0.5px solid #FAC775;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background 0.15s;
   pointer-events: auto;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
   align-self: flex-start;
 }
-.sim-cta:hover {
-  background: rgba(250, 199, 117, 0.1);
+.sim-cta:hover { background: rgba(250,199,117,0.1); }
+
+/* ── Tablet (768–1024px): narrower HUD ── */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .hud-headline,
+  .hud-controls {
+    right: 24px;
+    width: clamp(160px, 17vw, 210px);
+  }
+  .hud-controls { top: 320px; gap: 36px; }
+}
+
+/* ── Mobile (<= 768px): headline top-center, controls bottom bar ── */
+@media (max-width: 768px) {
+  /* Headline: fixed top, centred across full width */
+  .hud-headline {
+    top: 72px;
+    right: 0;
+    left: 0;
+    width: 100%;
+    padding: 0 24px;
+    text-align: center;
+  }
+  .hud-headline .headline-metric { text-align: center; padding: 0; }
+  .hud-headline .headline-metric-value {
+    font-size: clamp(2rem, 10vw, 3.5rem);
+  }
+  .hud-headline .headline-metric-label {
+    font-size: clamp(0.75rem, 3.5vw, 0.95rem);
+    margin-top: 6px;
+  }
+  .hud-headline .headline-metric-sublabel {
+    font-size: clamp(0.65rem, 2.8vw, 0.8rem);
+    margin-top: 3px;
+  }
+
+  /* Controls: full-width bottom bar with glassmorphic background */
+  .hud-controls {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 20px calc(14px + env(safe-area-inset-bottom, 0px));
+    background: rgba(5,5,8,0.93);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    pointer-events: auto;
+  }
+
+  /* Mode buttons: horizontal row */
+  .sim-compact-modes {
+    flex-direction: row;
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .sim-compact-modes button {
+    flex: 1;
+    text-align: center;
+    min-height: 44px;
+    font-size: clamp(0.72rem, 3.2vw, 0.9rem);
+    padding: 8px 4px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  /* Sliders row */
+  .sim-compact-controls {
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .sim-compact-label {
+    font-size: clamp(0.78rem, 3.2vw, 0.92rem);
+  }
+  .sim-compact-value {
+    font-size: clamp(0.78rem, 3.2vw, 0.92rem);
+  }
+
+  /* CTA full-width */
+  .sim-cta {
+    align-self: stretch;
+    justify-content: center;
+    font-size: clamp(0.8rem, 3.5vw, 0.95rem);
+  }
+}
+
+/* ── Mobile portrait (<480px): tighter ── */
+@media (max-width: 480px) {
+  .hud-headline { top: 68px; padding: 0 16px; }
+  .hud-headline .headline-metric-value { font-size: clamp(1.8rem, 12vw, 2.8rem); }
+  .hud-controls { padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px)); gap: 10px; }
+  .sim-compact-modes button { font-size: clamp(0.68rem, 3vw, 0.82rem); min-height: 40px; }
 }
 
 /* Dashboard placeholder — transparent, canvas visible behind */
@@ -1071,37 +1171,28 @@ input[type="range"] {
   -webkit-backdrop-filter: blur(8px);
 }
 
-/* ── V2: mobile overrides ───────────────────────────────────────────────── */
+/* ── V2: topbar + landing curtain mobile ────────────────────────────────── */
 @media (max-width: 768px) {
+  /* Topbar — condensed */
+  .app--v2 .topbar { padding: 10px 16px; gap: 8px; }
+  .brand-tag { display: none; }
+
+  /* Landing curtain */
   .landing-wordmark {
-    font-size: clamp(2.8rem, 16vw, 5rem);
+    font-size: clamp(2.8rem, 14vw, 5rem);
     margin-bottom: 20px;
   }
-  .landing-line {
-    font-size: clamp(0.92rem, 4.5vw, 1.2rem);
-  }
-  .landing-scroll-cue {
-    margin-top: 36px;
-  }
+  .landing-line { font-size: clamp(0.9rem, 4vw, 1.2rem); }
+  .landing-scroll-cue { margin-top: 36px; }
+  .landing-hero { padding: 0 24px; }
+  .landing-spacer { height: 105vh; height: 105svh; }
+}
 
-  /* Compact sidebar — bottom-right on mobile, capped height */
-  .sim-compact-sidebar {
-    top: auto;
-    bottom: 16px;
-    right: 16px;
-    width: clamp(160px, 44vw, 200px);
-    height: auto;
-    justify-content: flex-start;
-    gap: 12px;
-  }
-  .sim-compact-sidebar .headline-metric-value {
-    font-size: clamp(2rem, 10vw, 2.75rem);
-  }
-
-  .landing-spacer {
-    height: 105vh;
-    height: 105svh;
-  }
+/* Topbar on very small screens — hide wordmark text, keep mark + button */
+@media (max-width: 480px) {
+  .brand-name { display: none; }
+  .app--v2 .topbar { padding: 8px 12px; }
+  .brand-mark { width: 30px; height: 30px; font-size: 15px; }
 }
 
 /* ── prefers-reduced-motion ─────────────────────────────────────────────── */
