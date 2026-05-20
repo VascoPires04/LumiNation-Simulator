@@ -926,74 +926,80 @@ input[type="range"] {
 }
 
 /* Floating HUD — z=2 between dim-veil and curtain.
-   No background, no blur, no border. Pure text over canvas. */
+   No background, no blur, no border. Pure text over canvas.
+   Blocks stacked tightly from top, gap 32px — concentrated in upper ~60% of viewport. */
 .sim-compact-sidebar {
   position: fixed;
-  top: 60px;
-  right: 24px;
+  top: 96px;
+  right: clamp(24px, 3vw, 56px);
   z-index: 2;
-  width: clamp(140px, 14vw, 180px);
+  width: clamp(180px, 16vw, 220px);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 32px;
   pointer-events: none; /* toggled via inline style in App.tsx */
 }
 
-/* Headline metric — HUD overrides (base .headline-metric styles kept) */
+/* Headline metric — big, left-aligned, amber glow */
 .sim-compact-sidebar .headline-metric {
   text-align: left;
   padding: 0;
 }
 .sim-compact-sidebar .headline-metric-value {
-  font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+  font-size: clamp(2.5rem, 4vw, 3.75rem);
   font-weight: 500;
-  letter-spacing: -0.01em;
-  text-shadow: 0 0 10px rgba(0, 0, 0, 0.65);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  text-shadow: 0 1px 16px rgba(0, 0, 0, 0.7), 0 0 32px rgba(250, 199, 117, 0.15);
 }
 .sim-compact-sidebar .headline-metric-label {
-  font-size: 11px;
-  opacity: 0.75;
-  margin-top: 4px;
-  text-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+  font-size: 14px;
+  color: rgba(240, 240, 245, 0.95);
+  font-weight: 400;
+  margin-top: 8px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
 }
 .sim-compact-sidebar .headline-metric-sublabel {
-  font-size: 9px;
-  opacity: 0.55;
-  letter-spacing: 0.05em;
+  font-size: 11px;
+  color: rgba(240, 240, 245, 0.7);
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-top: 2px;
-  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+  margin-top: 4px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.8);
 }
 
-/* Mode buttons — vertical stack */
+/* Mode buttons — vertical stack, fully transparent active */
 .sim-compact-modes {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 .sim-compact-modes button {
-  padding: 5px 10px;
-  font-size: 11px;
+  padding: 8px 14px;
+  font-size: 13px;
   font-family: var(--font-heading);
+  font-weight: 400;
   background: transparent;
-  color: rgba(240, 240, 245, 0.9);
-  border: 0.5px solid rgba(240, 240, 245, 0.3);
-  border-radius: 3px;
+  color: rgba(240, 240, 245, 0.85);
+  border: 0.5px solid rgba(240, 240, 245, 0.25);
+  border-radius: 4px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
-  text-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+  transition: border-color 0.15s, color 0.15s;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
   white-space: nowrap;
 }
 .sim-compact-modes button:hover {
-  background: rgba(250, 199, 117, 0.08);
+  border-color: rgba(240, 240, 245, 0.5);
+  color: rgba(240, 240, 245, 0.95);
 }
 .sim-compact-modes button.active {
-  background: #FAC775;
-  color: #412402;
-  border-color: #FAC775;
+  background: transparent;
+  color: #FAC775;
+  border: 1px solid #FAC775;
   font-weight: 500;
-  text-shadow: 0 0 10px rgba(0, 0, 0, 0.65);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
 }
 
 /* Sliders */
@@ -1005,15 +1011,17 @@ input[type="range"] {
 .sim-compact-label {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  color: rgba(240, 240, 245, 0.75);
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(240, 240, 245, 0.85);
   margin-bottom: 3px;
-  text-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
 }
 .sim-compact-value {
-  color: var(--amber);
+  color: #f0f0f5;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 10px rgba(0, 0, 0, 0.65);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
 }
 .sim-compact-controls input[type='range'] {
   width: 100%;
@@ -1027,7 +1035,8 @@ input[type="range"] {
   gap: 6px;
   padding: 6px 12px;
   font-family: var(--font-heading);
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--amber);
   background: transparent;
   border: 0.5px solid #FAC775;
@@ -1035,7 +1044,8 @@ input[type="range"] {
   cursor: pointer;
   transition: background 0.15s;
   pointer-events: auto;
-  text-shadow: 0 0 10px rgba(0, 0, 0, 0.65);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
+  align-self: flex-start;
 }
 .sim-cta:hover {
   background: rgba(250, 199, 117, 0.1);
@@ -1069,13 +1079,18 @@ input[type="range"] {
     margin-top: 36px;
   }
 
-  /* Compact sidebar — bottom-right on mobile, narrower width */
+  /* Compact sidebar — bottom-right on mobile, capped height */
   .sim-compact-sidebar {
     top: auto;
     bottom: 16px;
     right: 16px;
-    width: clamp(130px, 40vw, 160px);
-    gap: 10px;
+    width: clamp(160px, 44vw, 200px);
+    height: auto;
+    justify-content: flex-start;
+    gap: 12px;
+  }
+  .sim-compact-sidebar .headline-metric-value {
+    font-size: clamp(2rem, 10vw, 2.75rem);
   }
 
   .landing-spacer {
