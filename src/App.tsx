@@ -90,6 +90,7 @@ export default function App() {
             mode={mode}
             variant="full"
             showFullSidebar={false}
+            interactive={!curtainVisible}
             autoplay={autoplay}
             onClear={() => setUserCleared(true)}
             baselinePct={baselinePct}
@@ -125,14 +126,13 @@ export default function App() {
               />
             </motion.div>
 
-            {/* Controls — interactive children only, container passthrough on desktop */}
-            <motion.nav
-              className="hud-controls"
+            {/* Mode strip — floating top on mobile, column above controls on desktop */}
+            <motion.div
+              className="hud-modes"
               style={{
                 opacity: sidebarOpacity,
                 pointerEvents: sidebarVisible ? undefined : 'none',
               }}
-              aria-label="Simulator controls"
             >
               <div className="sim-compact-modes">
                 <button
@@ -148,26 +148,40 @@ export default function App() {
                   onClick={() => setMode('compare')}
                 >Compare</button>
               </div>
+            </motion.div>
 
+            {/* Controls — sliders + CTA, floating bottom on mobile */}
+            <motion.nav
+              className="hud-controls"
+              style={{
+                opacity: sidebarOpacity,
+                pointerEvents: sidebarVisible ? undefined : 'none',
+              }}
+              aria-label="Simulator controls"
+            >
               <div className="sim-compact-controls">
-                <label className="sim-compact-label">
-                  <span>Baseline</span>
-                  <span className="sim-compact-value">{Math.round(baselinePct * 100)}%</span>
-                </label>
-                <input
-                  type="range" min={0} max={100}
-                  value={Math.round(baselinePct * 100)}
-                  onChange={e => setBaselinePct(Number(e.target.value) / 100)}
-                />
-                <label className="sim-compact-label">
-                  <span>Lookahead</span>
-                  <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
-                </label>
-                <input
-                  type="range" min={0.5} max={8} step={0.5}
-                  value={lookaheadSec}
-                  onChange={e => setLookaheadSec(Number(e.target.value))}
-                />
+                <div className="slider-col">
+                  <label className="sim-compact-label">
+                    <span>Baseline</span>
+                    <span className="sim-compact-value">{Math.round(baselinePct * 100)}%</span>
+                  </label>
+                  <input
+                    type="range" min={0} max={100}
+                    value={Math.round(baselinePct * 100)}
+                    onChange={e => setBaselinePct(Number(e.target.value) / 100)}
+                  />
+                </div>
+                <div className="slider-col">
+                  <label className="sim-compact-label">
+                    <span>Lookahead</span>
+                    <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
+                  </label>
+                  <input
+                    type="range" min={0.5} max={8} step={0.5}
+                    value={lookaheadSec}
+                    onChange={e => setLookaheadSec(Number(e.target.value))}
+                  />
+                </div>
               </div>
 
               <button
