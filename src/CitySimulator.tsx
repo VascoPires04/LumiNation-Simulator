@@ -431,7 +431,7 @@ export default function CitySimulator({
       const lookaheadPx = lookaheadRef.current * 21 * Math.sqrt(sp / PED_SPEED)
       // Both forward and rear reach scale with lookahead slider.
       const reachAhead  = (isCar ? LAMP_REACH_CAR  : LAMP_REACH_PED)  + lookaheadPx
-      const reachBehind = ((isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) + lookaheadPx) * backScale
+      const reachBehind = ((isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) + lookaheadPx * 1.6) * backScale
       const fx = a.x + dx * lookaheadPx
       const fy = a.y + dy * lookaheadPx
       // Use the street object reference directly rather than indexOf — indexOf
