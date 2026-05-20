@@ -1382,7 +1382,6 @@ if (pausedRef.current) return
   }
 
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    e.preventDefault()
     const touch = e.changedTouches[0]
     if (!touch) return
     const rect = canvasRef.current!.getBoundingClientRect()
@@ -1404,7 +1403,7 @@ if (pausedRef.current) return
           onTouchEnd={interactive ? handleTouchEnd : undefined}
           style={{
             display: effectiveMode === 'fpv' ? 'none' : undefined,
-            touchAction: interactive ? 'none' : 'auto',
+            touchAction: 'pan-y',
           }}
         />
         {variant !== 'ambient' && effectiveMode === 'fpv' && (

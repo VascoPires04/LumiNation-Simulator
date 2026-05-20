@@ -90,7 +90,6 @@ input[type="range"] {
 .app {
   height: 100vh;
   height: 100svh;
-  height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -99,10 +98,11 @@ input[type="range"] {
 /* V2: scrollable single-page layout.
    .app--v2 is the scroll container; fixed children use viewport as reference. */
 .app--v2 {
-  height: auto;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   position: relative; /* stacking context for z-index children */
 }
 
@@ -937,8 +937,9 @@ input[type="range"] {
 /* Spacer keeps scroll height for curtain lift + sidebar context */
 .sim-section-spacer { height: 100vh; }
 
-/* ── Base (desktop ≥ 768px): both elements right-side ── */
+/* ── Base (desktop ≥ 768px): all three elements right-side column ── */
 .hud-headline,
+.hud-modes,
 .hud-controls {
   position: fixed;
   z-index: 2;
@@ -979,12 +980,17 @@ input[type="range"] {
   text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.8);
 }
 
-/* Controls — stacked below headline */
-.hud-controls {
+/* Mode strip — desktop: below headline, right column */
+.hud-modes {
   top: 380px;
+}
+
+/* Controls — desktop: below modes, right column */
+.hud-controls {
+  top: 560px;
   display: flex;
   flex-direction: column;
-  gap: 52px;
+  gap: 32px;
 }
 
 /* Mode buttons — vertical stack on desktop */
@@ -1028,6 +1034,12 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  pointer-events: none;
+}
+.slider-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   pointer-events: none;
 }
 .sim-compact-label {
@@ -1078,14 +1090,16 @@ input[type="range"] {
 /* ── Tablet (768–1024px): narrower HUD ── */
 @media (max-width: 1024px) and (min-width: 769px) {
   .hud-headline,
+  .hud-modes,
   .hud-controls {
     right: 24px;
     width: clamp(160px, 17vw, 210px);
   }
-  .hud-controls { top: 320px; gap: 36px; }
+  .hud-modes { top: 320px; }
+  .hud-controls { top: 490px; gap: 28px; }
 }
 
-/* ── Mobile (<= 768px): headline top-center, controls bottom bar ── */
+/* ── Mobile (<= 768px): headline top-center, modes top strip, controls bottom bar ── */
 @media (max-width: 768px) {
   /* Headline: fixed top, centred across full width */
   .hud-headline {
@@ -1109,29 +1123,20 @@ input[type="range"] {
     margin-top: 3px;
   }
 
-  /* Controls: compact bottom bar with gradient fade — merges into canvas */
-  .hud-controls {
-    top: auto;
+  /* Mode strip: true overlay — no background, buttons float directly over canvas */
+  .hud-modes {
+    top: 56px;
     right: 0;
     left: 0;
-    bottom: 0;
     width: 100%;
-    flex-direction: column;
-    gap: 8px;
-    padding: 20px 16px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(
-      to bottom,
-      rgba(5,5,8,0) 0%,
-      rgba(5,5,8,0.75) 25%,
-      rgba(5,5,8,0.95) 50%
-    );
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-top: none;
+    padding: 10px 16px;
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     pointer-events: auto;
   }
 
-  /* Mode buttons: compact horizontal row */
+  /* Mode buttons: compact horizontal row, semi-transparent so canvas shows through */
   .sim-compact-modes {
     flex-direction: row;
     gap: 6px;
@@ -1146,14 +1151,48 @@ input[type="range"] {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    background: rgba(5,5,8,0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .sim-compact-modes button.active {
+    background: rgba(5,5,8,0.65);
   }
 
-  /* Sliders: 2-column grid (label|label, slider|slider) */
+  /* Controls: overlay bottom bar — gradient starts transparent so canvas bleeds through */
+  .hud-controls {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+    padding: 40px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(
+      to bottom,
+      rgba(5,5,8,0) 0%,
+      rgba(5,5,8,0.82) 35%,
+      rgba(5,5,8,0.96) 65%
+    );
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-top: none;
+    pointer-events: auto;
+  }
+
+  /* Sliders: 2-column flex (each col = label + slider stacked) */
   .sim-compact-controls {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 14px;
-    row-gap: 3px;
+    display: flex;
+    flex-direction: row;
+    gap: 14px;
+    pointer-events: auto;
+  }
+  .slider-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
     pointer-events: auto;
   }
   .sim-compact-label {
@@ -1205,7 +1244,7 @@ input[type="range"] {
 @media (max-width: 768px) {
   /* Topbar — single row, condensed */
   .app--v2 .topbar { padding: 8px 14px; gap: 8px; }
-  .brand-tag { font-size: 10px; opacity: 0.7; }
+  .brand-tag { font-size: clamp(9px, 2.5vw, 11px); opacity: 0.85; }
 
   /* Landing curtain */
   .landing-wordmark {
@@ -1218,9 +1257,9 @@ input[type="range"] {
   .landing-spacer { height: 105vh; height: 105svh; }
 }
 
-/* Topbar on very small screens — hide wordmark text, keep mark + button */
+/* Topbar on very small screens — shrink wordmark, keep mark + button */
 @media (max-width: 480px) {
-  .brand-name { display: none; }
+  .brand-name { font-size: clamp(0.75rem, 3.5vw, 0.9rem); }
   .app--v2 .topbar { padding: 8px 12px; }
   .brand-mark { width: 30px; height: 30px; font-size: 15px; }
 }
