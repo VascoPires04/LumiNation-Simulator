@@ -37,15 +37,26 @@ export default function App() {
   const topbarOpacity = useTransform(scrollY, [LIFT * 0.25, LIFT * 0.6], [0, 1])
   const [topbarVisible, setTopbarVisible] = useState(false)
 
-  // ── Autoplay: sparse while curtain is up; stops when curtain gone or cleared
+  // ── Autoplay: sparse while curtain is visible; stops when gone or cleared.
+  // curtainVisible is bidirectional — resets if user scrolls back up.
+  // userCleared also resets when curtain comes back, so sparse resumes.
   const [userCleared, setUserCleared] = useState(false)
-  const [curtainGone, setCurtainGone] = useState(false)
-  const autoplay: 'sparse' | 'none' = (curtainGone || userCleared) ? 'none' : 'sparse'
+  const [curtainVisible, setCurtainVisible] = useState(true)
+  const autoplay: 'sparse' | 'none' = (curtainVisible && !userCleared) ? 'sparse' : 'none'
+
+  // Disable browser scroll restoration so refresh always starts at top
+  useEffect(() => {
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual'
+    window.scrollTo(0, 0)
+  }, [])
 
   useEffect(() => {
     return scrollY.on('change', v => {
       setTopbarVisible(v > LIFT * 0.25)
-      if (v >= LIFT) setCurtainGone(true)
+      const visible = v < LIFT
+      setCurtainVisible(visible)
+      // Reset clear flag when curtain comes back so sparse resumes
+      if (visible) setUserCleared(false)
     })
   }, [scrollY])
 
