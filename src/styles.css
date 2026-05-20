@@ -127,10 +127,17 @@ input[type="range"] {
   padding: 70px 24px 24px 24px;
   grid-template-columns: 1fr;
 }
-/* On mobile, minimal padding — controls bar overlays canvas, no gap */
+/* On mobile: canvas fills edge-to-edge, no card border/radius */
 @media (max-width: 768px) {
   .canvas-layer .main {
     padding: 52px 0 0 0;
+    height: 100%;
+  }
+  .canvas-layer .stage {
+    min-height: 0;
+    height: 100%;
+    border: none;
+    border-radius: 0;
   }
 }
 /* variant="ambient" also supported (for future Dashboard use) */
