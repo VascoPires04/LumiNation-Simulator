@@ -63,7 +63,7 @@ const LAMP_REACH_PED = 180
 const LAMP_REACH_CAR = 300
 const LAMP_REACH_BEHIND_PED = 260
 const LAMP_REACH_BEHIND_CAR = 200
-const MAX_VISUAL_BRI = 0.72  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
+const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const PARK_CI = 1
 const PARK_RI = 2
 
