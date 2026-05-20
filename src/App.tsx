@@ -37,8 +37,16 @@ export default function App() {
   const topbarOpacity = useTransform(scrollY, [LIFT * 0.25, LIFT * 0.6], [0, 1])
   const [topbarVisible, setTopbarVisible] = useState(false)
 
+  // ── Autoplay: sparse while curtain is up; stops when curtain gone or cleared
+  const [userCleared, setUserCleared] = useState(false)
+  const [curtainGone, setCurtainGone] = useState(false)
+  const autoplay: 'sparse' | 'none' = (curtainGone || userCleared) ? 'none' : 'sparse'
+
   useEffect(() => {
-    return scrollY.on('change', v => setTopbarVisible(v > LIFT * 0.25))
+    return scrollY.on('change', v => {
+      setTopbarVisible(v > LIFT * 0.25)
+      if (v >= LIFT) setCurtainGone(true)
+    })
   }, [scrollY])
 
   return (
@@ -51,7 +59,12 @@ export default function App() {
           className="canvas-layer"
           style={{ scale: canvasScale, y: canvasY }}
         >
-          <CitySimulator mode={mode} variant="full" autoplay="sparse" />
+          <CitySimulator
+            mode={mode}
+            variant="full"
+            autoplay={autoplay}
+            onClear={() => setUserCleared(true)}
+          />
         </motion.div>
 
         {/* ── Layer 1: flat dim veil — softens canvas at landing state ──────── */}

@@ -49,6 +49,7 @@ interface Props {
   interactive?: boolean
   autoplay?: 'none' | 'sparse'
   dimmed?: boolean
+  onClear?: () => void
 }
 
 // Constants — tweak these and the whole sim re-balances
@@ -129,6 +130,7 @@ export default function CitySimulator({
   interactive = true,
   autoplay = 'none',
   dimmed = false,
+  onClear,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -1507,7 +1509,7 @@ if (pausedRef.current) return
             />
 
             <div className="button-row">
-              <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0; powerHistoryRef.current = [] }}>Clear</button>
+              <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0; powerHistoryRef.current = []; onClear?.() }}>Clear</button>
               <button onClick={() => setPaused(p => !p)}>{paused ? 'Resume' : 'Pause'}</button>
             </div>
             <button
