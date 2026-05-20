@@ -69,7 +69,7 @@ const PED_SPEED = 1.4
 const CAR_SPEED = 11
 const METERS_PER_PIXEL = 0.35
 const LAMP_REACH_PED = 60
-const LAMP_REACH_CAR = 90
+const LAMP_REACH_CAR = 40
 const LAMP_REACH_BEHIND_PED = 40
 const LAMP_REACH_BEHIND_CAR = 60
 const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
@@ -434,10 +434,13 @@ export default function CitySimulator({
       const reachBehind = ((isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) + lookaheadPx * 0.6) * backScale
       const fx = a.x + dx * lookaheadPx
       const fy = a.y + dy * lookaheadPx
-      const agentStreetId = streetsRef.current.indexOf(a.street)
+      // Use the street object reference directly rather than indexOf — indexOf
+      // returns -1 after a turn if the street reference drifted, leaving the
+      // agent unlit. Comparing by object identity is safe and O(1).
+      const agentStreet = a.street
 
       for (const l of lampsRef.current) {
-        const sameStreet = l.streetId === agentStreetId
+        const sameStreet = streetsRef.current[l.streetId] === agentStreet
 
         // Cross-street lamps only get a small intersection spillover (50px max)
         if (!sameStreet) {
