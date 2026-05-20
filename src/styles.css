@@ -88,9 +88,9 @@ input[type="range"] {
 
 /* Layout */
 .app {
-  height: 100vh;
-  height: 100svh;
-  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100svh; /* Fallback para browsers que não suportam dvh */
+  min-height: 100dvh; /* Usa a altura dinâmica, ajustando-se à UI do browser */
   display: flex;
   flex-direction: column;
 }
@@ -98,11 +98,10 @@ input[type="range"] {
 /* V2: scrollable single-page layout.
    .app--v2 is the scroll container; fixed children use viewport as reference. */
 .app--v2 {
-  height: 100%;
-  min-height: 100%;
+  height: auto;
+  min-height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
   position: relative; /* stacking context for z-index children */
 }
 
