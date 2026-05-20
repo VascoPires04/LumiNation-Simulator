@@ -1701,11 +1701,6 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
               {speedMult > 1.5 ? '⚡ HIGH (Running Mode)' : '🚶 NORMAL (Walking Mode)'}
             </span>
           </div>
-
-          <div className="fpv-stat-row" style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>
-            <span>* Warning Constant</span>
-            <span style={{ color: '#f59e0b' }}>17.1 seconds</span>
-          </div>
         </div>
 
         {/* Right Side: Speed Controls + sliders */}
@@ -1734,14 +1729,14 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           </div>
 
           {!isMobile && (
-            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 4 }}>
+            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 4 }}>
               Pro Tip: Hold <b>SHIFT</b> to sprint on keyboard!
             </div>
           )}
 
           {onBaselineChange && (
             <div style={{ marginTop: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>
                 <span>Baseline brightness</span>
                 <span style={{ color: '#FAC775' }}>{Math.round(baselineRef.current * 100)}%</span>
               </div>
@@ -1755,7 +1750,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
           {onLookaheadChange && (
             <div style={{ marginTop: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>
                 <span>Lookahead</span>
                 <span style={{ color: '#FAC775' }}>{lookaheadRef.current.toFixed(1)}s</span>
               </div>
