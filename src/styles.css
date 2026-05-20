@@ -88,9 +88,6 @@ input[type="range"] {
 
 /* Layout */
 .app {
-  min-height: 100vh;
-  min-height: 100svh; /* Fallback para browsers que não suportam dvh */
-  min-height: 100dvh; /* Usa a altura dinâmica, ajustando-se à UI do browser */
   display: flex;
   flex-direction: column;
 }
