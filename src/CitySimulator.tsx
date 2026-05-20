@@ -324,12 +324,12 @@ export default function CitySimulator({
     return bestD < 50 ? best : null
   }
 
-  function spawnAgent(px: number, py: number, type: AgentType): Agent | null {
+  function spawnAgent(px: number, py: number, type: AgentType, forceSign?: number): Agent | null {
     const hit = nearestStreet(px, py)
     if (!hit) return null
     const { s, qx, qy } = hit
     const speed = type === 'car' ? CAR_SPEED : PED_SPEED
-    const sign = Math.random() < 0.5 ? -1 : 1
+    const sign = forceSign !== undefined ? forceSign : (Math.random() < 0.5 ? -1 : 1)
     const a: Agent = {
       x: qx, y: qy,
       vx: s.dir === 'h' ? sign * speed : 0,
@@ -347,11 +347,13 @@ export default function CitySimulator({
     const streets = streetsRef.current
     const s = streets[Math.floor(Math.random() * streets.length)]
     if (s.dir === 'h') {
+      // Always spawn moving inward: left edge → moving right (+1), right edge → moving left (-1)
       const fromLeft = Math.random() < 0.5
-      spawnAgent(fromLeft ? 2 : W - 2, s.ay, type)
+      spawnAgent(fromLeft ? 2 : W - 2, s.ay, type, fromLeft ? 1 : -1)
     } else {
+      // Top edge → moving down (+1), bottom edge → moving up (-1)
       const fromTop = Math.random() < 0.5
-      spawnAgent(s.ax, fromTop ? 2 : H - 2, type)
+      spawnAgent(s.ax, fromTop ? 2 : H - 2, type, fromTop ? 1 : -1)
     }
   }
 
