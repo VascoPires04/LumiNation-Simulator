@@ -7,11 +7,12 @@ export interface SimSample {
   t: number          // performance.now() at emission
   powerW: number     // LumiNation power (W)
   baselineW: number  // always-on baseline (W)
-  eurSaved: number   // projected annual € saved (session lamp config)
-  co2Kg: number      // projected annual CO₂ saved (kg)
+  eurSaved: number   // projected annual € saved (current lamp config, unscaled)
+  co2Kg: number      // projected annual CO₂ saved (kg, unscaled)
   kwhSaved: number   // cumulative kWh saved this session
   peds: number
   cars: number
+  lampCount: number  // current number of lamps — needed for Lisbon scaling
 }
 
 type Listener = (s: SimSample) => void

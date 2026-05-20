@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import FPV3D from './FPV3D'
 import { useIsMobile } from './hooks/useIsMobile'
 import SimControls from './components/SimControls'
+import { simBus } from './sim-bus'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 type AgentType = 'ped' | 'car'
@@ -50,6 +51,11 @@ interface Props {
   autoplay?: 'none' | 'sparse'
   dimmed?: boolean
   onClear?: () => void
+  // Controlled baseline + lookahead — when provided, overrides internal state
+  baselinePct?: number
+  onBaselineChange?: (v: number) => void
+  lookaheadSec?: number
+  onLookaheadChange?: (v: number) => void
 }
 
 // Constants — tweak these and the whole sim re-balances
@@ -131,6 +137,10 @@ export default function CitySimulator({
   autoplay = 'none',
   dimmed = false,
   onClear,
+  baselinePct: baselinePctProp,
+  onBaselineChange,
+  lookaheadSec: lookaheadSecProp,
+  onLookaheadChange,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -155,8 +165,14 @@ export default function CitySimulator({
   const modeRef = useRef<Mode>(effectiveMode)
   modeRef.current = effectiveMode
 
-  const [baselinePct, setBaselinePct] = useState(0.30)
-  const [lookaheadSec, setLookaheadSec] = useState(4.0)
+  // Controlled pattern: external prop overrides internal state when provided
+  const [baselinePctLocal, setBaselinePctLocal] = useState(0.30)
+  const baselinePct    = baselinePctProp  !== undefined ? baselinePctProp  : baselinePctLocal
+  const setBaselinePct = onBaselineChange !== undefined ? onBaselineChange : setBaselinePctLocal
+
+  const [lookaheadSecLocal, setLookaheadSecLocal] = useState(4.0)
+  const lookaheadSec    = lookaheadSecProp   !== undefined ? lookaheadSecProp   : lookaheadSecLocal
+  const setLookaheadSec = onLookaheadChange  !== undefined ? onLookaheadChange  : setLookaheadSecLocal
   const [scenario, setScenario] = useState<'manual' | 'quiet' | 'busy' | 'mixed'>('manual')
   const [paused, setPaused] = useState(false)
   const [spawnMode, setSpawnMode] = useState<'ped' | 'car'>('ped')
@@ -1297,16 +1313,32 @@ if (pausedRef.current) return
         const pct = full > 0 ? Math.round((power.luminationPower / full) * 100) : 0
         const instSavedW = full - power.luminationPower
         const annualKwh = (instSavedW / 1000) * HOURS_PER_YEAR_NIGHT
+        const eurSavedNow  = Math.round(annualKwh * PRICE_PER_KWH)
+        const co2SavedNow  = Math.round(annualKwh * CO2_PER_KWH)
+        const pedsNow = agentsRef.current.filter(a => a.type === 'ped').length
+        const carsNow = agentsRef.current.filter(a => a.type === 'car').length
         setStats({
           powerNow: Math.round(power.luminationPower),
           powerPct: pct,
           kwhSaved: kwhSavedRef.current,
-          eurSaved: Math.round(annualKwh * PRICE_PER_KWH),
-          co2Saved: Math.round(annualKwh * CO2_PER_KWH),
-          peds: agentsRef.current.filter(a => a.type === 'ped').length,
-          cars: agentsRef.current.filter(a => a.type === 'car').length,
+          eurSaved: eurSavedNow,
+          co2Saved: co2SavedNow,
+          peds: pedsNow,
+          cars: carsNow,
           lampCount: N,
           fullPower: full,
+        })
+        // Emit to simBus so Dashboard + compact overlay can subscribe
+        simBus.emit({
+          t: performance.now(),
+          powerW: power.luminationPower,
+          baselineW: full,
+          eurSaved: eurSavedNow,
+          co2Kg: co2SavedNow,
+          kwhSaved: kwhSavedRef.current,
+          peds: pedsNow,
+          cars: carsNow,
+          lampCount: N,
         })
       }
 

@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 import { motion, MotionConfig, useScroll, useTransform } from 'framer-motion'
 import CitySimulator from './CitySimulator'
 import LandingCurtain from './sections/LandingSection'
+import SimulatorSection from './sections/SimulatorSection'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 
@@ -22,7 +23,9 @@ type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 const LIFT = 600
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>('lumination')
+  const [mode, setMode]               = useState<Mode>('lumination')
+  const [baselinePct, setBaselinePct] = useState(0.30)
+  const [lookaheadSec, setLookaheadSec] = useState(4.0)
   const { scrollY } = useScroll()
 
   // ── Canvas layer — pull-in zoom (Effect C) ────────────────────────────────
@@ -75,6 +78,10 @@ export default function App() {
             variant="full"
             autoplay={autoplay}
             onClear={() => setUserCleared(true)}
+            baselinePct={baselinePct}
+            onBaselineChange={setBaselinePct}
+            lookaheadSec={lookaheadSec}
+            onLookaheadChange={setLookaheadSec}
           />
         </motion.div>
 
@@ -93,8 +100,18 @@ export default function App() {
           {/* Landing spacer — transparent, height drives curtain lift distance */}
           <div className="landing-spacer" aria-hidden="true" />
 
-          {/* Phase 3: SimulatorSection mounts here (controls overlay on fixed canvas) */}
-          <div className="sim-section-placeholder" />
+          {/* Compact simulator overlay — appears after curtain lifts */}
+          <SimulatorSection
+            mode={mode}
+            onModeChange={setMode}
+            baselinePct={baselinePct}
+            onBaselineChange={setBaselinePct}
+            lookaheadSec={lookaheadSec}
+            onLookaheadChange={setLookaheadSec}
+          />
+
+          {/* Dashboard placeholder — Phase 4 will fill this */}
+          <section id="dashboard" className="dashboard-placeholder" aria-label="Dashboard" />
 
           <footer className="footer">
             <span>LumiNation · Red Bull Basement Portugal 2026 · Instituto Superior Técnico</span>

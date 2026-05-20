@@ -916,9 +916,141 @@ input[type="range"] {
   height: 110svh;
 }
 
-/* Placeholder for Phase 3 SimulatorSection */
-.sim-section-placeholder {
-  height: 50vh;
+/* ── Phase 3: SimulatorSection ──────────────────────────────────────────── */
+
+/* Outer section — tall enough for sticky overlay to stick while scrolling */
+.sim-section {
+  display: flex;
+  align-items: flex-start;
+  min-height: 160vh;
+  pointer-events: none;
+}
+
+/* Left gap — transparent, lets canvas show through */
+.sim-section-gap {
+  flex: 1;
+}
+
+/* Compact overlay — sticky on the right, covers the full sidebar beneath.
+   Same width as the sidebar (280px) so the canvas area doesn't shift. */
+.sim-compact-overlay {
+  position: sticky;
+  top: 72px; /* just below topbar */
+  width: 280px;
+  flex-shrink: 0;
+  pointer-events: auto;
+  background: rgba(5, 5, 8, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-bottom-left-radius: 12px;
+  padding: 20px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Headline + lisbon badge wrapper */
+.sim-compact-headline {
+  position: relative;
+  text-align: center;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sim-compact-headline .headline-metric {
+  padding: 0;
+}
+.lisbon-badge {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--amber);
+  border: 1px solid rgba(250, 199, 117, 0.35);
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+
+/* Mode buttons — 3-button row */
+.sim-compact-modes {
+  display: flex;
+  gap: 6px;
+}
+.sim-compact-modes button {
+  flex: 1;
+  padding: 7px 4px;
+  font-size: 11px;
+  font-family: var(--font-heading);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+  white-space: nowrap;
+}
+.sim-compact-modes button:hover {
+  background: rgba(250, 199, 117, 0.08);
+  color: var(--text);
+}
+.sim-compact-modes button.active {
+  background: rgba(250, 199, 117, 0.15);
+  color: var(--amber);
+  border-color: rgba(250, 199, 117, 0.45);
+}
+
+/* Sliders */
+.sim-compact-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sim-compact-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.sim-compact-value {
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.sim-compact-controls input[type='range'] {
+  width: 100%;
+  accent-color: var(--amber);
+}
+
+/* CTA button */
+.sim-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--amber);
+  background: transparent;
+  border: 1px solid rgba(250, 199, 117, 0.45);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  pointer-events: auto;
+  margin-top: auto;
+}
+.sim-cta:hover {
+  background: rgba(250, 199, 117, 0.12);
+}
+
+/* Dashboard placeholder — transparent, canvas visible behind */
+.dashboard-placeholder {
+  min-height: 100vh;
+  min-height: 100svh;
+  pointer-events: none;
 }
 
 /* Footer — re-enable pointer events for links */
@@ -940,6 +1072,22 @@ input[type="range"] {
   }
   .landing-scroll-cue {
     margin-top: 36px;
+  }
+
+  /* Compact overlay stacks full-width below the fold on mobile */
+  .sim-section {
+    flex-direction: column;
+    min-height: auto;
+  }
+  .sim-section-gap {
+    display: none;
+  }
+  .sim-compact-overlay {
+    position: static;
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
   }
   .landing-spacer {
     height: 105vh;
