@@ -32,10 +32,12 @@ html, body {
   font-family: var(--font);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 #root {
-  min-height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -99,11 +101,14 @@ input[type="range"] {
 /* V2: scrollable single-page layout.
    .app--v2 is the scroll container; fixed children use viewport as reference. */
 .app--v2 {
-  height: auto;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100svh;
+  height: 100dvh;
   overflow-y: auto;
   overflow-x: hidden;
   position: relative; /* stacking context for z-index children */
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ── V2 fixed layers ────────────────────────────────────────────────────── */
@@ -1242,6 +1247,18 @@ input[type="range"] {
 
 /* ── V2: topbar + landing curtain mobile ────────────────────────────────── */
 @media (max-width: 768px) {
+  html, body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app,
+  .app--v2 {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+
   /* Topbar — single row, condensed */
   .app--v2 .topbar { padding: 8px 14px; gap: 8px; }
   .brand-tag { font-size: clamp(9px, 2.5vw, 11px); opacity: 0.85; }
