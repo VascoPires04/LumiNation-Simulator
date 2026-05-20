@@ -118,12 +118,14 @@ input[type="range"] {
   overflow: hidden;
 }
 /* variant="full" .main fills the canvas-layer completely.
-   padding-top = topbar height (70px) so the grid never hides behind the topbar.
-   This also pushes the map+sidebar down below the curtain text area. */
+   grid-template-columns: 1fr — sidebar column removed so canvas always fills
+   full viewport width (no resize when showFullSidebar changes).
+   padding-top = topbar height so map never hides under topbar. */
 .canvas-layer .main {
   height: 100%;
   width: 100%;
   padding: 70px 24px 24px 24px;
+  grid-template-columns: 1fr;
 }
 /* variant="ambient" also supported (for future Dashboard use) */
 .canvas-layer .main--ambient {
@@ -916,89 +918,82 @@ input[type="range"] {
   height: 110svh;
 }
 
-/* ── Phase 3: SimulatorSection ──────────────────────────────────────────── */
+/* ── Phase 3: HUD sidebar — no container, no background, floats over canvas ── */
 
-/* Outer section — tall enough for sticky overlay to stick while scrolling */
-.sim-section {
-  display: flex;
-  align-items: flex-start;
-  min-height: 160vh;
-  pointer-events: none;
+/* Spacer inside scroll-doc so page is long enough to scroll past sim context */
+.sim-section-spacer {
+  height: 100vh;
 }
 
-/* Left gap — transparent, lets canvas show through */
-.sim-section-gap {
-  flex: 1;
-}
-
-/* Compact overlay — sticky on the right, covers the full sidebar beneath.
-   Same width as the sidebar (280px) so the canvas area doesn't shift. */
-.sim-compact-overlay {
-  position: sticky;
-  top: 72px; /* just below topbar */
-  width: 280px;
-  flex-shrink: 0;
-  pointer-events: auto;
-  background: rgba(5, 5, 8, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-left: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  border-bottom-left-radius: 12px;
-  padding: 20px 16px 24px;
+/* Floating HUD — z=2 between dim-veil and curtain.
+   No background, no blur, no border. Pure text over canvas. */
+.sim-compact-sidebar {
+  position: fixed;
+  top: 60px;
+  right: 24px;
+  z-index: 2;
+  width: clamp(140px, 14vw, 180px);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
+  pointer-events: none; /* toggled via inline style in App.tsx */
 }
 
-/* Headline + lisbon badge wrapper */
-.sim-compact-headline {
-  position: relative;
-  text-align: center;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-.sim-compact-headline .headline-metric {
+/* Headline metric — HUD overrides (base .headline-metric styles kept) */
+.sim-compact-sidebar .headline-metric {
+  text-align: left;
   padding: 0;
 }
-.lisbon-badge {
-  display: inline-block;
-  margin-top: 8px;
-  font-size: 10px;
-  letter-spacing: 0.10em;
+.sim-compact-sidebar .headline-metric-value {
+  font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.65);
+}
+.sim-compact-sidebar .headline-metric-label {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-top: 4px;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+}
+.sim-compact-sidebar .headline-metric-sublabel {
+  font-size: 9px;
+  opacity: 0.55;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--amber);
-  border: 1px solid rgba(250, 199, 117, 0.35);
-  border-radius: 4px;
-  padding: 2px 7px;
+  margin-top: 2px;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
 }
 
-/* Mode buttons — 3-button row */
+/* Mode buttons — vertical stack */
 .sim-compact-modes {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 5px;
 }
 .sim-compact-modes button {
-  flex: 1;
-  padding: 7px 4px;
+  padding: 5px 10px;
   font-size: 11px;
   font-family: var(--font-heading);
   background: transparent;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  color: rgba(240, 240, 245, 0.9);
+  border: 0.5px solid rgba(240, 240, 245, 0.3);
+  border-radius: 3px;
   cursor: pointer;
-  transition: background 0.18s, color 0.18s, border-color 0.18s;
+  text-align: left;
+  transition: background 0.15s;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
   white-space: nowrap;
 }
 .sim-compact-modes button:hover {
   background: rgba(250, 199, 117, 0.08);
-  color: var(--text);
 }
 .sim-compact-modes button.active {
-  background: rgba(250, 199, 117, 0.15);
-  color: var(--amber);
-  border-color: rgba(250, 199, 117, 0.45);
+  background: #FAC775;
+  color: #412402;
+  border-color: #FAC775;
+  font-weight: 500;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.65);
 }
 
 /* Sliders */
@@ -1010,13 +1005,15 @@ input[type="range"] {
 .sim-compact-label {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 2px;
+  font-size: 11px;
+  color: rgba(240, 240, 245, 0.75);
+  margin-bottom: 3px;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
 }
 .sim-compact-value {
   color: var(--amber);
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.65);
 }
 .sim-compact-controls input[type='range'] {
   width: 100%;
@@ -1027,23 +1024,21 @@ input[type="range"] {
 .sim-cta {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: 6px;
+  padding: 6px 12px;
   font-family: var(--font-heading);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
   color: var(--amber);
   background: transparent;
-  border: 1px solid rgba(250, 199, 117, 0.45);
-  border-radius: 8px;
+  border: 0.5px solid #FAC775;
+  border-radius: 3px;
   cursor: pointer;
-  transition: background 0.18s, color 0.18s;
+  transition: background 0.15s;
   pointer-events: auto;
-  margin-top: auto;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.65);
 }
 .sim-cta:hover {
-  background: rgba(250, 199, 117, 0.12);
+  background: rgba(250, 199, 117, 0.1);
 }
 
 /* Dashboard placeholder — transparent, canvas visible behind */
@@ -1074,21 +1069,15 @@ input[type="range"] {
     margin-top: 36px;
   }
 
-  /* Compact overlay stacks full-width below the fold on mobile */
-  .sim-section {
-    flex-direction: column;
-    min-height: auto;
+  /* Compact sidebar — bottom-right on mobile, narrower width */
+  .sim-compact-sidebar {
+    top: auto;
+    bottom: 16px;
+    right: 16px;
+    width: clamp(130px, 40vw, 160px);
+    gap: 10px;
   }
-  .sim-section-gap {
-    display: none;
-  }
-  .sim-compact-overlay {
-    position: static;
-    width: 100%;
-    border-left: none;
-    border-top: 1px solid var(--border);
-    border-radius: 0;
-  }
+
   .landing-spacer {
     height: 105vh;
     height: 105svh;

@@ -56,6 +56,8 @@ interface Props {
   onBaselineChange?: (v: number) => void
   lookaheadSec?: number
   onLookaheadChange?: (v: number) => void
+  // When false, renders canvas only — no sidebar, no chart, no controls
+  showFullSidebar?: boolean
 }
 
 // Constants — tweak these and the whole sim re-balances
@@ -141,6 +143,7 @@ export default function CitySimulator({
   onBaselineChange,
   lookaheadSec: lookaheadSecProp,
   onLookaheadChange,
+  showFullSidebar = true,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -1438,7 +1441,7 @@ if (pausedRef.current) return
         )}
       </div>
 
-      {variant !== 'ambient' && <aside className="sidebar">
+      {variant !== 'ambient' && showFullSidebar && <aside className="sidebar">
         {(() => {
           const scale = lisbon ? 70_000 / Math.max(stats.lampCount, 1) : 1
           const scaledPower = stats.powerNow * scale
