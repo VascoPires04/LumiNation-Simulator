@@ -936,8 +936,8 @@ input[type="range"] {
   width: clamp(240px, 22vw, 320px);
   display: flex;
   flex-direction: column;
-  gap: 56px;
-  pointer-events: none; /* toggled via inline style in App.tsx */
+  gap: 72px;
+  pointer-events: none; /* container always passthrough — only children get auto */
 }
 
 /* Headline metric — big, left-aligned, amber glow */
@@ -973,9 +973,11 @@ input[type="range"] {
 .sim-compact-modes {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
+  pointer-events: none; /* passthrough on the group; buttons get auto below */
 }
 .sim-compact-modes button {
+  pointer-events: auto;
   padding: 10px 16px;
   font-size: 17px;
   font-family: var(--font-heading);
@@ -1007,6 +1009,7 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  pointer-events: none; /* passthrough; inputs/labels get auto below */
 }
 .sim-compact-label {
   display: flex;
@@ -1027,6 +1030,7 @@ input[type="range"] {
 .sim-compact-controls input[type='range'] {
   width: 100%;
   accent-color: var(--amber);
+  pointer-events: auto;
 }
 
 /* CTA button */

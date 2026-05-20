@@ -106,72 +106,71 @@ export default function App() {
           aria-hidden="true"
         />
 
-        {/* ── Layer 2: compact sidebar — fixed right, fades in after curtain starts lifting ── */}
-        <motion.aside
-          className="sim-compact-sidebar"
-          style={{
-            opacity: sidebarOpacity,
-            pointerEvents: sidebarVisible ? 'auto' : 'none',
-          }}
-          aria-label="Simulator controls"
-        >
-          {/* Headline metric — Lisbon scale always on, sublabel replaces badge */}
-          <HeadlineMetric
-            value={fmtEur}
-            label="saved per year"
-            sublabel="LISBON · 70K LAMPS"
-          />
-
-          {/* Mode buttons */}
-          <div className="sim-compact-modes">
-            <button
-              className={mode === 'lumination' ? 'active' : ''}
-              onClick={() => setMode('lumination')}
-            >LumiNation</button>
-            <button
-              className={mode === 'baseline' ? 'active' : ''}
-              onClick={() => setMode('baseline')}
-            >Always-on</button>
-            <button
-              className={mode === 'compare' ? 'active' : ''}
-              onClick={() => setMode('compare')}
-            >Compare</button>
-          </div>
-
-          {/* Sliders */}
-          <div className="sim-compact-controls">
-            <label className="sim-compact-label">
-              <span>Baseline brightness</span>
-              <span className="sim-compact-value">{Math.round(baselinePct * 100)}%</span>
-            </label>
-            <input
-              type="range" min={15} max={100}
-              value={Math.round(baselinePct * 100)}
-              onChange={e => setBaselinePct(Number(e.target.value) / 100)}
-            />
-
-            <label className="sim-compact-label">
-              <span>Lookahead</span>
-              <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
-            </label>
-            <input
-              type="range" min={1} max={8} step={0.5}
-              value={lookaheadSec}
-              onChange={e => setLookaheadSec(Number(e.target.value))}
-            />
-          </div>
-
-          {/* CTA */}
-          <button
-            className="sim-cta"
-            onClick={() => document.getElementById('dashboard')?.scrollIntoView({ behavior: 'smooth' })}
+        {/* ── Layer 2: HUD sidebar — hidden in fpv, click-through on empty space ── */}
+        {mode !== 'fpv' && (
+          <motion.aside
+            className="sim-compact-sidebar"
+            style={{ opacity: sidebarOpacity }}
+            aria-label="Simulator controls"
           >
-            Explore the data
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-              <path d="M7 2v10M2 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-        </motion.aside>
+            {/* Headline metric — display only, no pointer events needed */}
+            <HeadlineMetric
+              value={fmtEur}
+              label="saved per year"
+              sublabel="LISBON · 70K LAMPS"
+            />
+
+            {/* Mode buttons — pointer-events:auto on buttons only */}
+            <div className="sim-compact-modes">
+              <button
+                className={mode === 'lumination' ? 'active' : ''}
+                onClick={() => setMode('lumination')}
+              >LumiNation</button>
+              <button
+                className={mode === 'baseline' ? 'active' : ''}
+                onClick={() => setMode('baseline')}
+              >Always-on</button>
+              <button
+                className={mode === 'compare' ? 'active' : ''}
+                onClick={() => setMode('compare')}
+              >Compare</button>
+            </div>
+
+            {/* Sliders */}
+            <div className="sim-compact-controls">
+              <label className="sim-compact-label">
+                <span>Baseline brightness</span>
+                <span className="sim-compact-value">{Math.round(baselinePct * 100)}%</span>
+              </label>
+              <input
+                type="range" min={15} max={100}
+                value={Math.round(baselinePct * 100)}
+                onChange={e => setBaselinePct(Number(e.target.value) / 100)}
+              />
+
+              <label className="sim-compact-label">
+                <span>Lookahead</span>
+                <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
+              </label>
+              <input
+                type="range" min={1} max={8} step={0.5}
+                value={lookaheadSec}
+                onChange={e => setLookaheadSec(Number(e.target.value))}
+              />
+            </div>
+
+            {/* CTA */}
+            <button
+              className="sim-cta"
+              onClick={() => document.getElementById('dashboard')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              Explore the data
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M7 2v10M2 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </motion.aside>
+        )}
 
         {/* ── Layer 3: curtain — gradient veil + text, pointer-events:none ── */}
         <LandingCurtain />
@@ -216,7 +215,10 @@ export default function App() {
             </div>
           </div>
           <div className="mode-bar">
-            <button className={mode === 'fpv' ? 'active' : ''} onClick={() => setMode('fpv')}>Citizen view</button>
+            {mode === 'fpv'
+              ? <button className="active" onClick={() => setMode('lumination')}>← Simulation</button>
+              : <button onClick={() => setMode('fpv')}>Citizen view</button>
+            }
           </div>
         </motion.header>
 
