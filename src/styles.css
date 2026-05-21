@@ -27,13 +27,12 @@
 
 html, body {
   height: 100%;
-  overflow: hidden; /* Lock window scroll — keeps mobile browser URL bar visible */
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
-  overflow: hidden;
 }
 
 #root {
@@ -129,6 +128,31 @@ input[type="range"] {
   grid-template-columns: 1fr;
 }
 /* On mobile: canvas fills edge-to-edge, no card border/radius */
+/* ── Mobile viewport lock — prevents Chrome/Safari URL bar hide ─────────────
+   position:fixed on html+body is the only reliable way to stop Android Chrome
+   from resizing the viewport when the URL bar hides. overflow:hidden alone is
+   not sufficient. The internal .scroll-doc handles all scrolling instead.     */
+@media (max-width: 768px) {
+  html, body {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: auto;
+  }
+  #root {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+  }
+  .app--v2 {
+    position: fixed;
+    inset: 0;
+    height: auto; /* inset:0 sets the height correctly */
+    overflow: hidden;
+  }
+}
+
 @media (max-width: 768px) {
   .canvas-layer .main {
     padding: 52px 0 0 0;
@@ -925,8 +949,9 @@ input[type="range"] {
   background: transparent;
   overflow-y: scroll;
   overflow-x: hidden;
-  -webkit-overflow-scrolling: touch; /* iOS momentum scroll */
-  scrollbar-width: none; /* Firefox */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain; /* stop scroll chain reaching the page */
+  scrollbar-width: none;
 }
 .scroll-doc::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
