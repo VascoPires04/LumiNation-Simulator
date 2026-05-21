@@ -103,11 +103,8 @@ input[type="range"] {
   height: 100vh;
   height: 100svh;
   height: 100dvh;
-  overflow-y: auto;
-  overflow-x: hidden;
-  position: relative; /* stacking context for z-index children */
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden; /* scroll-doc handles all scrolling internally */
+  position: relative;
 }
 
 /* ── V2 fixed layers ────────────────────────────────────────────────────── */

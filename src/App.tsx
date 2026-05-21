@@ -175,16 +175,13 @@ export default function App() {
                 className="hud-controls-body"
                 style={{ y: hudY }}
                 drag="y"
-                dragControls={hudDrag}
-                dragListener={false}
                 dragConstraints={{ top: 0, bottom: hudMax }}
-                dragElastic={{ top: 0.05, bottom: 0.05 }}
+                dragElastic={{ top: 0.02, bottom: 0.02 }}
                 onDragEnd={hudSnap}
               >
                 {/* Handle inside so it moves with content */}
                 <div
                   className="hud-controls-handle-row"
-                  onPointerDown={(e) => hudDrag.start(e)}
                   onClick={hudToggle}
                 >
                   <div className="hud-controls-handle" />
