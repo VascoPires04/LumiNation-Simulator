@@ -993,17 +993,48 @@ input[type="range"] {
   text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.8);
 }
 
-/* Mode strip — desktop: below headline, right column */
-.hud-modes {
-  top: 380px;
-}
-
-/* Controls — desktop: below modes, right column */
+/* Controls — modes + sliders + CTA, desktop: below headline, right column */
 .hud-controls {
-  top: 560px;
+  top: 380px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 0;
+}
+
+/* Drag handle row — tiny clickable/draggable bar above content */
+.hud-controls-handle-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0 4px;
+  cursor: grab;
+  pointer-events: auto;
+}
+.hud-controls-handle-row:active { cursor: grabbing; }
+
+.hud-controls-handle {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(240,240,245,0.25);
+  transition: background 0.15s;
+}
+.hud-controls-handle-row:hover .hud-controls-handle {
+  background: rgba(240,240,245,0.5);
+}
+
+/* Body — panel that slides as one unit (handle + content) */
+.hud-controls-body {
+  will-change: transform;
+}
+
+/* Inner padding so content has breathing room */
+.hud-controls-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 10px;
+  padding-bottom: 8px;
 }
 
 /* Mode buttons — vertical stack on desktop */
@@ -1108,8 +1139,7 @@ input[type="range"] {
     right: 24px;
     width: clamp(160px, 17vw, 210px);
   }
-  .hud-modes { top: 320px; }
-  .hud-controls { top: 490px; gap: 28px; }
+  .hud-controls { top: 320px; gap: 18px; }
 }
 
 /* ── Mobile (<= 768px): headline top-center, modes top strip, controls bottom bar ── */
@@ -1136,29 +1166,16 @@ input[type="range"] {
     margin-top: 3px;
   }
 
-  /* Mode strip: true overlay — no background, buttons float directly over canvas */
-  .hud-modes {
-    top: 56px;
-    right: 0;
-    left: 0;
-    width: 100%;
-    padding: 10px 16px;
-    background: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    pointer-events: auto;
-  }
-
-  /* Mode buttons: compact horizontal row, semi-transparent so canvas shows through */
-  .sim-compact-modes {
+  /* Mode buttons inside controls: horizontal row */
+  .hud-controls .sim-compact-modes {
     flex-direction: row;
     gap: 6px;
     pointer-events: auto;
   }
-  .sim-compact-modes button {
+  .hud-controls .sim-compact-modes button {
     flex: 1;
     text-align: center;
-    min-height: 40px;
+    min-height: 38px;
     font-size: clamp(0.68rem, 3vw, 0.85rem);
     padding: 6px 3px;
     white-space: nowrap;
@@ -1168,7 +1185,7 @@ input[type="range"] {
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
   }
-  .sim-compact-modes button.active {
+  .hud-controls .sim-compact-modes button.active {
     background: rgba(5,5,8,0.65);
   }
 

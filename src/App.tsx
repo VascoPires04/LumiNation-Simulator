@@ -11,7 +11,7 @@
 // The compact sidebar (z=2) is the ONLY sidebar. CitySimulator renders canvas only (showFullSidebar=false).
 
 import { useEffect, useRef, useState } from 'react'
-import { motion, MotionConfig, useScroll, useSpring, useTransform } from 'framer-motion'
+import { animate, motion, MotionConfig, useDragControls, useMotionValue, useScroll, useSpring, useTransform } from 'framer-motion'
 import CitySimulator from './CitySimulator'
 import LandingCurtain from './sections/LandingSection'
 import { useSimHistory } from './hooks/useSimHistory'
@@ -27,6 +27,27 @@ export default function App() {
   const [mode, setMode]               = useState<Mode>('lumination')
   const [baselinePct, setBaselinePct] = useState(0.30)
   const [lookaheadSec, setLookaheadSec] = useState(4.0)
+  const hudNavRef    = useRef<HTMLElement>(null)
+  const [hudMax, setHudMax] = useState(260)
+  const hudDrag = useDragControls()
+  const hudY    = useMotionValue(0)
+  const [hudOpen, setHudOpen] = useState(true)
+  const springCfg = { type: 'spring' as const, stiffness: 400, damping: 38 }
+
+  const hudSnap = (_: unknown, info: { velocity: { y: number } }) => {
+    const cur = hudY.get()
+    const vel = info.velocity.y
+    if (hudOpen ? (cur > hudMax * 0.4 || vel > 300) : (cur < hudMax * 0.6 || vel < -300)) {
+      animate(hudY, hudOpen ? hudMax : 0, springCfg)
+      setHudOpen(o => !o)
+    } else {
+      animate(hudY, hudOpen ? 0 : hudMax, springCfg)
+    }
+  }
+  const hudToggle = () => {
+    animate(hudY, hudOpen ? hudMax : 0, springCfg)
+    setHudOpen(o => !o)
+  }
   const scrollRef        = useRef<HTMLDivElement>(null)
   const externalSpawnRef = useRef<((cx: number, cy: number) => void) | null>(null)
   const touchStartRef    = useRef<{ x: number; y: number } | null>(null)
@@ -44,6 +65,13 @@ export default function App() {
   // ── Compact sidebar — fades in as curtain starts lifting ──────────────────
   const sidebarOpacity = useTransform(scrollY, [LIFT * 0.1, LIFT * 0.45], [0, 1])
   const [sidebarVisible, setSidebarVisible] = useState(false)
+
+  // Measure nav position once sidebar becomes visible, cap panel travel to keep bar on-screen
+  useEffect(() => {
+    if (!sidebarVisible || !hudNavRef.current) return
+    const rect = hudNavRef.current.getBoundingClientRect()
+    setHudMax(Math.max(60, window.innerHeight - rect.top - 24))
+  }, [sidebarVisible])
 
   // ── Topbar — fades in as curtain lifts (Effect E) ─────────────────────────
   const topbarOpacity = useTransform(scrollY, [LIFT * 0.25, LIFT * 0.6], [0, 1])
@@ -132,32 +160,9 @@ export default function App() {
               />
             </motion.div>
 
-            {/* Mode strip — floating top on mobile, column above controls on desktop */}
-            <motion.div
-              className="hud-modes"
-              style={{
-                opacity: sidebarOpacity,
-                pointerEvents: sidebarVisible ? undefined : 'none',
-              }}
-            >
-              <div className="sim-compact-modes">
-                <button
-                  className={mode === 'lumination' ? 'active' : ''}
-                  onClick={() => setMode('lumination')}
-                >LumiNation</button>
-                <button
-                  className={mode === 'baseline' ? 'active' : ''}
-                  onClick={() => setMode('baseline')}
-                >Always-on</button>
-                <button
-                  className={mode === 'compare' ? 'active' : ''}
-                  onClick={() => setMode('compare')}
-                >Compare</button>
-              </div>
-            </motion.div>
-
-            {/* Controls — sliders + CTA, floating bottom on mobile */}
+            {/* Controls — modes + sliders + CTA, one group */}
             <motion.nav
+              ref={hudNavRef}
               className="hud-controls"
               style={{
                 opacity: sidebarOpacity,
@@ -165,45 +170,85 @@ export default function App() {
               }}
               aria-label="Simulator controls"
             >
-              <div className="sim-compact-controls">
-                <div className="slider-col">
-                  <label className="sim-compact-label">
-                    <span>Baseline</span>
-                    <span className="sim-compact-value">{Math.round(baselinePct * 100)}%</span>
-                  </label>
-                  <input
-                    type="range" min={0} max={100}
-                    value={Math.round(baselinePct * 100)}
-                    onChange={e => setBaselinePct(Number(e.target.value) / 100)}
-                  />
-                </div>
-                <div className="slider-col">
-                  <label className="sim-compact-label">
-                    <span>Lookahead</span>
-                    <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
-                  </label>
-                  <input
-                    type="range" min={0.5} max={8} step={0.5}
-                    value={lookaheadSec}
-                    onChange={e => setLookaheadSec(Number(e.target.value))}
-                  />
-                </div>
-              </div>
-
-              <button
-                className="sim-cta"
-                onClick={() => {
-                  const el = document.getElementById('dashboard')
-                  if (el && scrollRef.current) {
-                    scrollRef.current.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
-                  }
-                }}
+              {/* Draggable panel — handle + content move together */}
+              <motion.div
+                className="hud-controls-body"
+                style={{ y: hudY }}
+                drag="y"
+                dragControls={hudDrag}
+                dragListener={false}
+                dragConstraints={{ top: 0, bottom: hudMax }}
+                dragElastic={{ top: 0.05, bottom: 0.05 }}
+                onDragEnd={hudSnap}
               >
-                Explore the data
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path d="M7 2v10M2 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
+                {/* Handle inside so it moves with content */}
+                <div
+                  className="hud-controls-handle-row"
+                  onPointerDown={(e) => hudDrag.start(e)}
+                  onClick={hudToggle}
+                >
+                  <div className="hud-controls-handle" />
+                </div>
+
+                <div className="hud-controls-inner">
+                  <div className="sim-compact-modes">
+                    <button
+                      className={mode === 'lumination' ? 'active' : ''}
+                      onClick={() => setMode('lumination')}
+                    >LumiNation</button>
+                    <button
+                      className={mode === 'baseline' ? 'active' : ''}
+                      onClick={() => setMode('baseline')}
+                    >Always-on</button>
+                    <button
+                      className={mode === 'compare' ? 'active' : ''}
+                      onClick={() => setMode('compare')}
+                    >Compare</button>
+                  </div>
+
+                  <div className="sim-compact-controls">
+                    <div className="slider-col">
+                      <label className="sim-compact-label">
+                        <span>Baseline</span>
+                        <span className="sim-compact-value">{Math.round(baselinePct * 100)}%</span>
+                      </label>
+                      <input
+                        type="range" min={0} max={100}
+                        value={Math.round(baselinePct * 100)}
+                        onChange={e => setBaselinePct(Number(e.target.value) / 100)}
+                        onPointerDown={e => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="slider-col">
+                      <label className="sim-compact-label">
+                        <span>Lookahead</span>
+                        <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
+                      </label>
+                      <input
+                        type="range" min={0.5} max={8} step={0.5}
+                        value={lookaheadSec}
+                        onChange={e => setLookaheadSec(Number(e.target.value))}
+                        onPointerDown={e => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    className="sim-cta"
+                    onClick={() => {
+                      const el = document.getElementById('dashboard')
+                      if (el && scrollRef.current) {
+                        scrollRef.current.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
+                      }
+                    }}
+                  >
+                    Explore the data
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                      <path d="M7 2v10M2 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+              </motion.div>
             </motion.nav>
           </>
         )}
