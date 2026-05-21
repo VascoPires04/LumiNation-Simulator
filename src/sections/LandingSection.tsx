@@ -17,12 +17,13 @@
 // prefers-reduced-motion: MotionConfig in App handles all FM animations.
 // CSS animations (.wordmark-breathe, .drip-drop) overridden in styles.css.
 
-import { motion, useScroll, useTransform } from 'framer-motion'
+import { MotionValue, motion, useTransform } from 'framer-motion'
 
 const LIFT = 600
 
-export default function LandingCurtain() {
-  const { scrollY } = useScroll()
+interface Props { scrollY: MotionValue<number> }
+
+export default function LandingCurtain({ scrollY }: Props) {
 
   // Gradient veil fades over 80% of LIFT
   const veilOpacity = useTransform(scrollY, [0, LIFT * 0.80], [1, 0])

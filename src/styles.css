@@ -27,6 +27,7 @@
 
 html, body {
   height: 100%;
+  overflow: hidden; /* Lock window scroll — keeps mobile browser URL bar visible */
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -35,9 +36,8 @@ html, body {
 }
 
 #root {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 button, input, select {
@@ -917,14 +917,23 @@ input[type="range"] {
   100% { transform: translateY(10px);  opacity: 0; }
 }
 
-/* ── V2: Scrollable document ────────────────────────────────────────────── */
+/* ── V2: Internal scroll driver — replaces window scroll ───────────────── */
 
-/* scroll-doc sits on top of fixed layers (z-index 4) but is transparent */
+/* scroll-doc is a fixed transparent overlay that drives the curtain animation.
+   pointer-events toggled via React: auto while curtain visible (lets user scroll),
+   none after curtain lifts (lets touches reach canvas for agent spawning).
+   Children with pointer-events:auto still receive events even when parent is none. */
 .scroll-doc {
-  position: relative;
-  z-index: 4;
-  pointer-events: none; /* children opt-in with pointer-events: auto */
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  background: transparent;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch; /* iOS momentum scroll */
+  scrollbar-width: none; /* Firefox */
 }
+.scroll-doc::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
 /* Landing spacer — transparent, just provides scroll height for curtain lift */
 .landing-spacer {
@@ -942,7 +951,7 @@ input[type="range"] {
 .hud-modes,
 .hud-controls {
   position: fixed;
-  z-index: 2;
+  z-index: 10; /* above scroll-driver (z:5) so touches reach buttons */
   pointer-events: none;
   right: clamp(48px, 6vw, 120px);
   width: clamp(200px, 20vw, 280px);
