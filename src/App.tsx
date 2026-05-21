@@ -10,7 +10,7 @@
 //
 // The compact sidebar (z=2) is the ONLY sidebar. CitySimulator renders canvas only (showFullSidebar=false).
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, MotionConfig, useScroll, useTransform } from 'framer-motion'
 import CitySimulator from './CitySimulator'
 import LandingCurtain from './sections/LandingSection'
@@ -27,7 +27,8 @@ export default function App() {
   const [mode, setMode]               = useState<Mode>('lumination')
   const [baselinePct, setBaselinePct] = useState(0.30)
   const [lookaheadSec, setLookaheadSec] = useState(4.0)
-  const { scrollY } = useScroll()
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { scrollY } = useScroll({ container: scrollRef })
 
   // ── Canvas layer — pull-in zoom (Effect C) ────────────────────────────────
   const canvasScale = useTransform(scrollY, [0, LIFT], [1.04, 1.0])
@@ -61,10 +62,10 @@ export default function App() {
     ? `€${Math.round(lisbonEur / 1_000)}k`
     : `€${Math.round(lisbonEur)}`
 
-  // Disable browser scroll restoration so refresh always starts at top
+  // Reset scroll container to top on mount
   useEffect(() => {
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual'
-    window.scrollTo(0, 0)
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
   }, [])
 
   useEffect(() => {
@@ -81,10 +82,12 @@ export default function App() {
     <MotionConfig reducedMotion="user">
       <div className="app app--v2">
 
-        {/* ── Layer 0: persistent fixed canvas — FULL simulator, no sidebar ── */}
+        {/* ── Layer 0: persistent fixed canvas — FULL simulator, no sidebar ──
+              z-index lifts to 6 (above scroll-doc z:5) once curtain is gone,
+              so click/touch events reach the canvas for agent spawning.        ── */}
         <motion.div
           className="canvas-layer"
-          style={{ scale: canvasScale, y: canvasY }}
+          style={{ scale: canvasScale, y: canvasY, zIndex: curtainVisible ? 0 : 6 }}
         >
           <CitySimulator
             mode={mode}
@@ -186,7 +189,12 @@ export default function App() {
 
               <button
                 className="sim-cta"
-                onClick={() => document.getElementById('dashboard')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() => {
+                  const el = document.getElementById('dashboard')
+                  if (el && scrollRef.current) {
+                    scrollRef.current.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
+                  }
+                }}
               >
                 Explore the data
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -198,10 +206,17 @@ export default function App() {
         )}
 
         {/* ── Layer 3: curtain — gradient veil + text, pointer-events:none ── */}
-        <LandingCurtain />
+        <LandingCurtain scrollY={scrollY} />
 
-        {/* ── Layer 4: scroll-doc — transparent, provides scroll height only ── */}
-        <div className="scroll-doc">
+        {/* ── Layer 5: scroll-doc — fixed transparent overlay that drives curtain.
+              Always pointer-events:auto so scroll works in both directions.
+              Spacer children have no click handlers so clicks are "silent".
+              Canvas interaction handled by raising canvas-layer z-index above
+              scroll-doc (z:5) after curtain lifts.                              ── */}
+        <div
+          ref={scrollRef}
+          className="scroll-doc"
+        >
           {/* Landing spacer — transparent, height drives curtain lift distance */}
           <div className="landing-spacer" aria-hidden="true" />
 
@@ -231,6 +246,9 @@ export default function App() {
               initial={{ scale: 0.6 }}
               animate={topbarVisible ? { scale: 1 } : { scale: 0.6 }}
               transition={{ type: 'spring', stiffness: 420, damping: 18 }}
+              onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+              title="Back to start"
+              style={{ cursor: 'pointer' }}
             >
               L
             </motion.div>
