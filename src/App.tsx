@@ -11,7 +11,7 @@
 // The compact sidebar (z=2) is the ONLY sidebar. CitySimulator renders canvas only (showFullSidebar=false).
 
 import { useEffect, useRef, useState } from 'react'
-import { motion, MotionConfig, useScroll, useTransform } from 'framer-motion'
+import { motion, MotionConfig, useScroll, useSpring, useTransform } from 'framer-motion'
 import CitySimulator from './CitySimulator'
 import LandingCurtain from './sections/LandingSection'
 import { useSimHistory } from './hooks/useSimHistory'
@@ -33,9 +33,10 @@ export default function App() {
   const lastTouchRef     = useRef(0) // timestamp — blocks ghost click after touch
   const { scrollY } = useScroll({ container: scrollRef })
 
-  // ── Canvas layer — pull-in zoom (Effect C) ────────────────────────────────
-  const canvasScale = useTransform(scrollY, [0, LIFT], [1.04, 1.0])
-  const canvasY     = useTransform(scrollY, [0, LIFT], [20, 0])
+  // ── Canvas layer — pull-in zoom with spring for smooth feel ──────────────
+  const springScrollY = useSpring(scrollY, { stiffness: 180, damping: 42, restDelta: 0.001 })
+  const canvasScale = useTransform(springScrollY, [0, LIFT], [1.04, 1.0])
+  const canvasY     = useTransform(springScrollY, [0, LIFT], [20, 0])
 
   // ── Flat dim veil — fades independently of gradient veil ──────────────────
   const dimVeilOpacity = useTransform(scrollY, [0, LIFT * 0.75], [1, 0])

@@ -1,101 +1,106 @@
-// LandingSection — Phase 2 rev2: pure translateY + opacity curtain.
+// LandingSection — smooth spring-driven curtain lift.
 //
-// No rotateX. No scale. No perspective. Pure 2D veil being pulled upward.
+// Uses useSpring(scrollY) so the curtain has physical inertia —
+// elements "coast" slightly past where you stop scrolling and settle.
+// Each layer moves at a different speed (parallax depth) and fades
+// with an easeIn curve so opacity feels crisp, not linear.
 //
-// Stagger timings (committed):
-//   wordmark entrance:  0ms delay
-//   line 1 (slogan):   0ms delay
-//   line 2 (slogan):  150ms delay
-//   scroll cue:        400ms delay
-//
-// Scroll-driven curtain lift over LIFT=600px:
-//   wordmark:   translateY 0 → -180px, opacity 1 → 0
-//   slogan:     translateY 0 → -160px, opacity 1 → 0
-//   scroll cue: translateY 0 → -140px, opacity 1 → 0 (faster: done at 60% of LIFT)
-//   dim veil:   opacity 1 → 0 over 80% of LIFT
-//
-// prefers-reduced-motion: MotionConfig in App handles all FM animations.
-// CSS animations (.wordmark-breathe, .drip-drop) overridden in styles.css.
+// Spring config: stiffness 180, damping 42 — snappy but with presence.
+// Larger Y travel than before (wordmark: –260px) so the lift reads clearly.
 
-import { MotionValue, motion, useTransform } from 'framer-motion'
+import { MotionValue, motion, useSpring, useTransform } from 'framer-motion'
+import { cubicBezier } from 'framer-motion'
 
 const LIFT = 600
+
+// Easing curves for opacity: ease-in so things are crisp at full opacity
+// and melt away quickly once they start fading.
+const fadeEase  = cubicBezier(0.42, 0, 1, 1)   // easeIn
+const liftEase  = cubicBezier(0.22, 0, 0.36, 1) // custom decel
 
 interface Props { scrollY: MotionValue<number> }
 
 export default function LandingCurtain({ scrollY }: Props) {
+  // Spring wrapping gives the curtain physical inertia —
+  // it "floats" rather than snapping exactly to scroll position.
+  const spring = useSpring(scrollY, {
+    stiffness: 180,
+    damping:   42,
+    restDelta: 0.001,
+  })
 
-  // Gradient veil fades over 80% of LIFT
-  const veilOpacity = useTransform(scrollY, [0, LIFT * 0.80], [1, 0])
+  // Gradient veil — fades away cleanly in the first 70% of lift
+  const veilOpacity = useTransform(spring, [0, LIFT * 0.70], [1, 0])
 
-  // Wordmark: leads the lift
-  const wordmarkY       = useTransform(scrollY, [0, LIFT], [0, -180])
-  const wordmarkOpacity = useTransform(scrollY, [0, LIFT * 0.75], [1, 0])
+  // Wordmark — deepest element, travels furthest, lingers longest
+  const wordmarkY       = useTransform(spring, [0, LIFT], [0, -260], { ease: liftEase })
+  const wordmarkOpacity = useTransform(spring, [0, LIFT * 0.68], [1, 0], { ease: fadeEase })
+  const wordmarkScale   = useTransform(spring, [0, LIFT * 0.8], [1, 0.90])
 
-  // Slogan: 10px behind the wordmark
-  const sloganY       = useTransform(scrollY, [0, LIFT], [0, -160])
-  const sloganOpacity = useTransform(scrollY, [0, LIFT * 0.70], [1, 0])
+  // Slogan — mid layer, slightly less travel
+  const sloganY       = useTransform(spring, [0, LIFT], [0, -200], { ease: liftEase })
+  const sloganOpacity = useTransform(spring, [0, LIFT * 0.55], [1, 0], { ease: fadeEase })
+  const sloganScale   = useTransform(spring, [0, LIFT * 0.65], [1, 0.93])
 
-  // Scroll cue: last element, fades first (gone at 60% of LIFT)
-  const cueY       = useTransform(scrollY, [0, LIFT], [0, -140])
-  const cueOpacity = useTransform(scrollY, [0, LIFT * 0.40], [1, 0])
+  // Scroll cue — closest layer, fades first
+  const cueY       = useTransform(spring, [0, LIFT * 0.5], [0, -80], { ease: liftEase })
+  const cueOpacity = useTransform(spring, [0, LIFT * 0.28], [1, 0], { ease: fadeEase })
 
   return (
     <>
-      {/* Fixed gradient veil — dims canvas at landing state, fades on scroll */}
+      {/* Fixed gradient veil — dims canvas, fades on scroll */}
       <motion.div
         className="landing-gradient-veil"
         style={{ opacity: veilOpacity }}
         aria-hidden="true"
       />
 
-      {/* Hero text — each element has independent translateY + opacity */}
+      {/* Hero text — each element has independent parallax + opacity */}
       <div className="landing-text-layer" aria-hidden="false">
         <div className="landing-hero">
 
-          {/* Wordmark — leads the lift */}
+          {/* Wordmark — leads the lift, deepest parallax */}
           <motion.div
             className="landing-wordmark"
-            style={{ y: wordmarkY, opacity: wordmarkOpacity }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.55, ease: 'easeOut' }}
+            style={{ y: wordmarkY, opacity: wordmarkOpacity, scale: wordmarkScale }}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
           >
             LumiNation
           </motion.div>
 
-          {/* Slogan line 1 — 0ms entrance, lifts 10px behind wordmark */}
+          {/* Slogan line 1 */}
           <motion.p
             className="landing-line"
-            style={{ y: sloganY, opacity: sloganOpacity }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.7, ease: 'easeOut', delay: 0 }}
+            style={{ y: sloganY, opacity: sloganOpacity, scale: sloganScale }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, ease: 'easeOut', delay: 0.08 }}
           >
             We are not turning the lights off,
           </motion.p>
 
-          {/* Slogan line 2 — 150ms entrance, same lift as line 1 */}
+          {/* Slogan line 2 */}
           <motion.p
             className="landing-line landing-line-em"
-            style={{ y: sloganY, opacity: sloganOpacity }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.7, ease: 'easeOut', delay: 0.15 }}
+            style={{ y: sloganY, opacity: sloganOpacity, scale: sloganScale }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, ease: 'easeOut', delay: 0.22 }}
           >
             we are turning them on <em>intelligently.</em>
           </motion.p>
 
-          {/* Scroll cue — 400ms entrance, fades first (gone at 40% of LIFT) */}
+          {/* Scroll cue — fades very early so canvas reveals quickly */}
           <motion.div
             className="landing-scroll-cue"
             style={{ y: cueY, opacity: cueOpacity }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.6, ease: 'easeOut', delay: 0.4 }}
+            transition={{ duration: 0.6, ease: 'easeOut', delay: 0.42 }}
           >
             <span className="landing-scroll-label">scroll to explore</span>
-            {/* Drip line (Effect F) — CSS animation in styles.css */}
             <div className="landing-scroll-drip" aria-hidden="true" />
           </motion.div>
 
