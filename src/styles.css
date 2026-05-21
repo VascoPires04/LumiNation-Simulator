@@ -33,6 +33,7 @@ html, body {
   font-family: var(--font);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 #root {
@@ -99,11 +100,14 @@ input[type="range"] {
 /* V2: scrollable single-page layout.
    .app--v2 is the scroll container; fixed children use viewport as reference. */
 .app--v2 {
-  height: auto;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100svh;
+  height: 100dvh;
   overflow-y: auto;
   overflow-x: hidden;
   position: relative; /* stacking context for z-index children */
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ── V2 fixed layers ────────────────────────────────────────────────────── */
