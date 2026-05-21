@@ -27,7 +27,10 @@ export default function App() {
   const [mode, setMode]               = useState<Mode>('lumination')
   const [baselinePct, setBaselinePct] = useState(0.30)
   const [lookaheadSec, setLookaheadSec] = useState(4.0)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollRef        = useRef<HTMLDivElement>(null)
+  const externalSpawnRef = useRef<((cx: number, cy: number) => void) | null>(null)
+  const touchStartRef    = useRef<{ x: number; y: number } | null>(null)
+  const lastTouchRef     = useRef(0) // timestamp — blocks ghost click after touch
   const { scrollY } = useScroll({ container: scrollRef })
 
   // ── Canvas layer — pull-in zoom (Effect C) ────────────────────────────────
@@ -82,12 +85,10 @@ export default function App() {
     <MotionConfig reducedMotion="user">
       <div className="app app--v2">
 
-        {/* ── Layer 0: persistent fixed canvas — FULL simulator, no sidebar ──
-              z-index lifts to 6 (above scroll-doc z:5) once curtain is gone,
-              so click/touch events reach the canvas for agent spawning.        ── */}
+        {/* ── Layer 0: persistent fixed canvas — always z:0 below scroll-doc ── */}
         <motion.div
           className="canvas-layer"
-          style={{ scale: canvasScale, y: canvasY, zIndex: curtainVisible ? 0 : 6 }}
+          style={{ scale: canvasScale, y: canvasY }}
         >
           <CitySimulator
             mode={mode}
@@ -100,6 +101,7 @@ export default function App() {
             onBaselineChange={setBaselinePct}
             lookaheadSec={lookaheadSec}
             onLookaheadChange={setLookaheadSec}
+            externalSpawnRef={externalSpawnRef}
           />
         </motion.div>
 
@@ -216,6 +218,29 @@ export default function App() {
         <div
           ref={scrollRef}
           className="scroll-doc"
+          onTouchStart={(e) => {
+            touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+          }}
+          onTouchEnd={(e) => {
+            const t = e.changedTouches[0]
+            const start = touchStartRef.current
+            touchStartRef.current = null
+            if (!curtainVisible && t && start && externalSpawnRef.current) {
+              const dx = Math.abs(t.clientX - start.x)
+              const dy = Math.abs(t.clientY - start.y)
+              if (dx < 10 && dy < 10) { // tap, not scroll
+                lastTouchRef.current = Date.now()
+                externalSpawnRef.current(t.clientX, t.clientY)
+              }
+            }
+          }}
+          onClick={(e) => {
+            // Block ghost click fired by browser after touch
+            if (Date.now() - lastTouchRef.current < 500) return
+            if (!curtainVisible && externalSpawnRef.current) {
+              externalSpawnRef.current(e.clientX, e.clientY)
+            }
+          }}
         >
           {/* Landing spacer — transparent, height drives curtain lift distance */}
           <div className="landing-spacer" aria-hidden="true" />

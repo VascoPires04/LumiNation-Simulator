@@ -58,6 +58,8 @@ interface Props {
   onLookaheadChange?: (v: number) => void
   // When false, renders canvas only — no sidebar, no chart, no controls
   showFullSidebar?: boolean
+  // External spawn — lets a parent element (e.g. scroll-doc overlay) forward taps
+  externalSpawnRef?: React.MutableRefObject<((cx: number, cy: number) => void) | null>
 }
 
 // Constants — tweak these and the whole sim re-balances
@@ -144,6 +146,7 @@ export default function CitySimulator({
   lookaheadSec: lookaheadSecProp,
   onLookaheadChange,
   showFullSidebar = true,
+  externalSpawnRef,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -1370,6 +1373,20 @@ if (pausedRef.current) return
   }, [])
 
   // --- Canvas click / touch handlers ---
+  // Register external spawn function so App.tsx scroll-doc overlay can forward taps
+  useEffect(() => {
+    if (!externalSpawnRef) return
+    externalSpawnRef.current = (cx: number, cy: number) => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const a = spawnAgent(cx - rect.left, cy - rect.top, spawnModeRef.current)
+      if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
+    }
+    return () => { if (externalSpawnRef) externalSpawnRef.current = null }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // stable: spawnAgent uses only refs internally
+
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = e.clientX - rect.left
