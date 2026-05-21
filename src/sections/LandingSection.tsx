@@ -78,19 +78,9 @@ export default function LandingCurtain({ scrollY }: Props) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: 'easeOut', delay: 0.08 }}
           >
-            We are not turning the lights off,
+            Light that moves with you
           </motion.p>
 
-          {/* Slogan line 2 */}
-          <motion.p
-            className="landing-line landing-line-em"
-            style={{ y: sloganY, opacity: sloganOpacity, scale: sloganScale }}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: 'easeOut', delay: 0.22 }}
-          >
-            we are turning them on <em>intelligently.</em>
-          </motion.p>
 
           {/* Scroll cue — fades very early so canvas reveals quickly */}
           <motion.div

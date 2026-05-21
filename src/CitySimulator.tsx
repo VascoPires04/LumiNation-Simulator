@@ -60,6 +60,8 @@ interface Props {
   showFullSidebar?: boolean
   // External spawn — lets a parent element (e.g. scroll-doc overlay) forward taps
   externalSpawnRef?: React.MutableRefObject<((cx: number, cy: number) => void) | null>
+  // External spawn mode — lets parent control ped/car toggle
+  externalSpawnModeRef?: React.MutableRefObject<'ped' | 'car'>
 }
 
 // Constants — tweak these and the whole sim re-balances
@@ -147,6 +149,7 @@ export default function CitySimulator({
   onLookaheadChange,
   showFullSidebar = true,
   externalSpawnRef,
+  externalSpawnModeRef,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -183,6 +186,8 @@ export default function CitySimulator({
   const [paused, setPaused] = useState(false)
   const [spawnMode, setSpawnMode] = useState<'ped' | 'car'>('ped')
   const spawnModeRef = useRef<'ped' | 'car'>('ped')
+  // If parent supplies a spawn mode ref, use it as the source of truth
+  const activeSpawnModeRef = externalSpawnModeRef ?? spawnModeRef
   const [lisbon, setLisbon] = useState(false)
   const [controlsOpen, setControlsOpen] = useState(false)
   const [stats, setStats] = useState({
@@ -1380,7 +1385,7 @@ if (pausedRef.current) return
       const canvas = canvasRef.current
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
-      const a = spawnAgent(cx - rect.left, cy - rect.top, spawnModeRef.current)
+      const a = spawnAgent(cx - rect.left, cy - rect.top, activeSpawnModeRef.current)
       if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
     }
     return () => { if (externalSpawnRef) externalSpawnRef.current = null }
@@ -1393,7 +1398,7 @@ if (pausedRef.current) return
     const y = e.clientY - rect.top
     // On mobile, ghost clicks arrive here after touch — respect spawnModeRef.
     // On desktop, shift+click still works as before.
-    const isCar = e.shiftKey || spawnModeRef.current === 'car'
+    const isCar = e.shiftKey || activeSpawnModeRef.current === 'car'
     const a = spawnAgent(x, y, isCar ? 'car' : 'ped')
     if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
   }
@@ -1405,7 +1410,7 @@ if (pausedRef.current) return
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = touch.clientX - rect.left
     const y = touch.clientY - rect.top
-    const a = spawnAgent(x, y, spawnModeRef.current)
+    const a = spawnAgent(x, y, activeSpawnModeRef.current)
     if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
   }
 
@@ -1452,13 +1457,13 @@ if (pausedRef.current) return
               <>
                 <button
                   className={`spawn-toggle ${spawnMode === 'ped' ? 'active' : ''}`}
-                  onTouchEnd={e => { e.stopPropagation(); spawnModeRef.current = 'ped'; setSpawnMode('ped') }}
-                  onClick={() => { spawnModeRef.current = 'ped'; setSpawnMode('ped') }}
+                  onTouchEnd={e => { e.stopPropagation(); activeSpawnModeRef.current = 'ped'; setSpawnMode('ped') }}
+                  onClick={() => { activeSpawnModeRef.current = 'ped'; setSpawnMode('ped') }}
                 >🚶 Ped</button>
                 <button
                   className={`spawn-toggle ${spawnMode === 'car' ? 'active' : ''}`}
-                  onTouchEnd={e => { e.stopPropagation(); spawnModeRef.current = 'car'; setSpawnMode('car') }}
-                  onClick={() => { spawnModeRef.current = 'car'; setSpawnMode('car') }}
+                  onTouchEnd={e => { e.stopPropagation(); activeSpawnModeRef.current = 'car'; setSpawnMode('car') }}
+                  onClick={() => { activeSpawnModeRef.current = 'car'; setSpawnMode('car') }}
                 >🚗 Car</button>
                 <span className="spawn-hint-text">tap a street to add</span>
               </>

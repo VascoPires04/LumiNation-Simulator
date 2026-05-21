@@ -32,7 +32,7 @@ export default function MobileHero({ setMode, fmtEur, sessionCo2Kg }: Props) {
       </div>
 
       {/* Row 2: tagline */}
-      <div className="mobile-hero-tagline">The adaptive light corridor</div>
+      <div className="mobile-hero-tagline">Light that moves with you</div>
 
       {/* Row 3: headline metric */}
       <div className="mobile-hero-metric">

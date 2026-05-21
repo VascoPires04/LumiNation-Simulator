@@ -205,6 +205,10 @@ input[type="range"] {
   font-size: clamp(1rem, 1.8vw, 1.25rem);
   letter-spacing: -0.03em;
 }
+.brand-lumi { color: var(--text); }
+.brand-nation { color: var(--amber); }
+.mobile-brand-lumi { color: var(--text); }
+.mobile-brand-nation { color: var(--amber); }
 
 .brand-tag {
   font-size: clamp(0.65rem, 1.2vw, 0.78rem);
@@ -533,12 +537,10 @@ input[type="range"] {
 @media (max-width: 768px) {
   /* ── App shell ── */
   .app {
-    height: auto;
-    min-height: 100dvh;
-    min-height: 100svh;
-    min-height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
+    height: 100dvh;
+    height: 100svh;
+    height: 100vh;
+    overflow: hidden;
   }
 
   /* ── Topbar (legacy non-v2 layout) ── */
@@ -652,17 +654,9 @@ input[type="range"] {
   }
 
   /* ── Stage hint / spawn toggle ── */
+  /* Hide old in-canvas spawn buttons on mobile — replaced by App-level buttons */
   .stage-hint {
-    font-size: 9px;
-    right: 7px;
-    left: 7px;
-    bottom: 6px;
-    gap: 5px;
-  }
-  .spawn-toggle {
-    font-size: 12px;
-    padding: 5px 11px;
-    min-height: 30px;
+    display: none;
   }
 
   /* ── Footer ── */
@@ -974,14 +968,14 @@ input[type="range"] {
   text-shadow: 0 1px 16px rgba(0,0,0,0.7), 0 0 48px rgba(250,199,117,0.2);
 }
 .hud-headline .headline-metric-label {
-  font-size: clamp(0.8rem, 1.5vw, 1.1rem);
+  font-size: clamp(0.85rem, 1.4vw, 1rem);
   color: rgba(240,240,245,0.95);
   font-weight: 400;
   margin-top: 10px;
   text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
 }
 .hud-headline .headline-metric-sublabel {
-  font-size: clamp(0.65rem, 1.2vw, 0.85rem);
+  font-size: clamp(0.85rem, 1.4vw, 1rem);
   color: rgba(240,240,245,0.7);
   font-weight: 500;
   letter-spacing: 0.08em;
@@ -996,6 +990,75 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+/* Context line below the headline metric */
+.hud-context-line {
+  font-size: clamp(0.78rem, 1.2vw, 0.9rem);
+  color: rgba(240,240,245,0.72);
+  line-height: 1.55;
+  margin-top: 12px;
+  max-width: 22ch;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  pointer-events: none;
+}
+
+/* Section wrapper with descriptor above mode buttons */
+.hud-section { display: flex; flex-direction: column; gap: 8px; }
+.hud-section-desc {
+  font-size: clamp(0.85rem, 1.3vw, 0.95rem);
+  color: rgba(254, 254, 255, 0.68);
+  line-height: 1.55;
+  text-shadow: 0 1px 4px rgba(15, 15, 15, 0.8);
+}
+
+/* Label row — name + info icon inline */
+.sim-compact-label-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+}
+
+/* ⓘ info button */
+.hud-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  min-height: unset;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.925);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.hud-info-btn:hover { color: rgba(240,240,245,0.85); }
+
+/* Tooltip popup */
+.hud-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 260px;
+  background: rgba(14,14,22,0.96);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 0.88rem;
+  color: rgba(240,240,245,0.9);
+  line-height: 1.55;
+  pointer-events: none;
+  z-index: 50;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 /* Drag handle row — tiny clickable/draggable bar above content */
@@ -1029,8 +1092,8 @@ input[type="range"] {
 .hud-controls-inner {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding-top: 10px;
+  gap: 24px;
+  padding-top: 16px;
   padding-bottom: 8px;
 }
 
@@ -1045,7 +1108,7 @@ input[type="range"] {
   pointer-events: auto;
   min-height: 44px;
   padding: 10px 16px;
-  font-size: clamp(0.8rem, 1.4vw, 1.05rem);
+  font-size: clamp(0.85rem, 1.4vw, 1rem);
   font-family: var(--font-heading);
   font-weight: 400;
   background: transparent;
@@ -1086,7 +1149,7 @@ input[type="range"] {
 .sim-compact-label {
   display: flex;
   justify-content: space-between;
-  font-size: clamp(0.8rem, 1.4vw, 1rem);
+  font-size: clamp(0.85rem, 1.4vw, 1rem);
   font-weight: 400;
   color: rgba(240,240,245,0.85);
   margin-bottom: 3px;
@@ -1143,7 +1206,7 @@ input[type="range"] {
 @media (max-width: 768px) {
   /* Headline: fixed top, centred across full width */
   .hud-headline {
-    top: 72px;
+    top: 82px;
     right: 0;
     left: 0;
     width: 100%;
@@ -1186,7 +1249,7 @@ input[type="range"] {
     background: rgba(5,5,8,0.65);
   }
 
-  /* Controls: overlay bottom bar — gradient starts transparent so canvas bleeds through */
+  /* Controls: overlay bottom bar */
   .hud-controls {
     top: auto;
     right: 0;
@@ -1195,16 +1258,22 @@ input[type="range"] {
     width: 100%;
     flex-direction: column;
     gap: 8px;
-    padding: 40px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(
       to bottom,
-      rgba(5,5,8,0) 0%,
-      rgba(5,5,8,0.82) 35%,
-      rgba(5,5,8,0.96) 65%
+      transparent 0%,
+      transparent 50%,
+      rgba(5,5,8,0.28) 80%,
+      rgba(5,5,8,0.40) 100%
     );
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     border-top: none;
+    pointer-events: none; /* default none — only handle gets events when collapsed */
+  }
+
+  /* Handle always clickable */
+  .hud-controls .hud-controls-handle-row {
     pointer-events: auto;
   }
 
@@ -1243,7 +1312,7 @@ input[type="range"] {
 
 /* ── Mobile portrait (<480px): tighter ── */
 @media (max-width: 480px) {
-  .hud-headline { top: 60px; padding: 0 16px; }
+  .hud-headline { top: 110px; padding: 0 16px; }
   .hud-headline .headline-metric-value { font-size: clamp(1.8rem, 11vw, 2.6rem); }
   .hud-controls {
     padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
@@ -1289,6 +1358,30 @@ input[type="range"] {
   .brand-name { font-size: clamp(0.75rem, 3.5vw, 0.9rem); }
   .app--v2 .topbar { padding: 8px 12px; }
   .brand-mark { width: 30px; height: 30px; font-size: 15px; }
+}
+
+/* ── Mobile spawn buttons — rendered in App.tsx above scroll-doc ─────────── */
+.mobile-spawn-btns {
+  display: none;
+}
+@media (max-width: 768px) {
+  .mobile-spawn-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    position: fixed;
+    top: 70px;
+    right: 12px;
+    z-index: 10;
+  }
+  .mobile-spawn-btns .spawn-toggle {
+    font-size: 15px;
+    padding: 4px 7px;
+    min-height: 30px;
+    min-width: 30px;
+    border-radius: 7px;
+    line-height: 1;
+  }
 }
 
 /* ── prefers-reduced-motion ─────────────────────────────────────────────── */

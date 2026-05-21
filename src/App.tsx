@@ -11,10 +11,11 @@
 // The compact sidebar (z=2) is the ONLY sidebar. CitySimulator renders canvas only (showFullSidebar=false).
 
 import { useEffect, useRef, useState } from 'react'
-import { animate, motion, MotionConfig, useDragControls, useMotionValue, useScroll, useSpring, useTransform } from 'framer-motion'
+import { animate, motion, MotionConfig, useMotionValue, useScroll, useSpring, useTransform } from 'framer-motion'
 import CitySimulator from './CitySimulator'
 import LandingCurtain from './sections/LandingSection'
 import { useSimHistory } from './hooks/useSimHistory'
+import { useIsMobile } from './hooks/useIsMobile'
 import HeadlineMetric from './components/HeadlineMetric'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
@@ -24,12 +25,16 @@ const LIFT = 600
 const LISBON_LAMPS = 70_000
 
 export default function App() {
+  const isMobile = useIsMobile()
   const [mode, setMode]               = useState<Mode>('lumination')
   const [baselinePct, setBaselinePct] = useState(0.30)
   const [lookaheadSec, setLookaheadSec] = useState(4.0)
+  const [spawnMode, setSpawnMode]     = useState<'ped' | 'car'>('ped')
+  const [tooltip, setTooltip]         = useState<'baseline' | 'lookahead' | null>(null)
+  const externalSpawnModeRef = useRef<'ped' | 'car'>('ped')
   const hudNavRef    = useRef<HTMLElement>(null)
-  const [hudMax, setHudMax] = useState(260)
-  const hudDrag = useDragControls()
+  const [hudMax, setHudMax] = useState(220)
+
   const hudY    = useMotionValue(0)
   const [hudOpen, setHudOpen] = useState(true)
   const springCfg = { type: 'spring' as const, stiffness: 400, damping: 38 }
@@ -104,7 +109,7 @@ export default function App() {
     return scrollY.on('change', v => {
       setTopbarVisible(v > LIFT * 0.25)
       setSidebarVisible(v > LIFT * 0.1)
-      const visible = v < LIFT
+      const visible = v < LIFT * 0.65
       setCurtainVisible(visible)
       if (visible) setUserCleared(false)
     })
@@ -131,8 +136,28 @@ export default function App() {
             lookaheadSec={lookaheadSec}
             onLookaheadChange={setLookaheadSec}
             externalSpawnRef={externalSpawnRef}
+            externalSpawnModeRef={externalSpawnModeRef}
           />
         </motion.div>
+
+        {/* ── Mobile spawn buttons — z:10, above scroll-doc, only after curtain lifts ── */}
+        {isMobile && !curtainVisible && mode !== 'fpv' && (
+          <motion.div
+            className="mobile-spawn-btns"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+          >
+            <button
+              className={`spawn-toggle${spawnMode === 'ped' ? ' active' : ''}`}
+              onClick={() => { externalSpawnModeRef.current = 'ped'; setSpawnMode('ped') }}
+            >🚶</button>
+            <button
+              className={`spawn-toggle${spawnMode === 'car' ? ' active' : ''}`}
+              onClick={() => { externalSpawnModeRef.current = 'car'; setSpawnMode('car') }}
+            >🚗</button>
+          </motion.div>
+        )}
 
         {/* ── Layer 1: flat dim veil — softens canvas at landing state ──────── */}
         <motion.div
@@ -170,43 +195,56 @@ export default function App() {
               }}
               aria-label="Simulator controls"
             >
-              {/* Draggable panel — handle + content move together */}
+              {/* Draggable on mobile only — static on desktop */}
               <motion.div
                 className="hud-controls-body"
-                style={{ y: hudY }}
-                drag="y"
-                dragConstraints={{ top: 0, bottom: hudMax }}
-                dragElastic={{ top: 0.02, bottom: 0.02 }}
-                onDragEnd={hudSnap}
+                style={isMobile ? { y: hudY } : undefined}
+                drag={isMobile ? 'y' : false}
+                dragConstraints={isMobile ? { top: 0, bottom: hudMax } : undefined}
+                dragElastic={isMobile ? { top: 0.02, bottom: 0.02 } : undefined}
+                onDragEnd={isMobile ? hudSnap : undefined}
               >
-                {/* Handle inside so it moves with content */}
-                <div
-                  className="hud-controls-handle-row"
-                  onClick={hudToggle}
-                >
-                  <div className="hud-controls-handle" />
-                </div>
+                {/* Handle — mobile only */}
+                {isMobile && (
+                  <div className="hud-controls-handle-row" onClick={hudToggle}>
+                    <div className="hud-controls-handle" />
+                  </div>
+                )}
 
-                <div className="hud-controls-inner">
-                  <div className="sim-compact-modes">
-                    <button
-                      className={mode === 'lumination' ? 'active' : ''}
-                      onClick={() => setMode('lumination')}
-                    >LumiNation</button>
-                    <button
-                      className={mode === 'baseline' ? 'active' : ''}
-                      onClick={() => setMode('baseline')}
-                    >Always-on</button>
-                    <button
-                      className={mode === 'compare' ? 'active' : ''}
-                      onClick={() => setMode('compare')}
-                    >Compare</button>
+                <div className="hud-controls-inner" style={{ pointerEvents: hudOpen ? 'auto' : 'none' }}>
+                  <div className="hud-section">
+                    <p className="hud-section-desc">Switch between modes to visualize the impact.</p>
+                    <div className="sim-compact-modes">
+                      <button
+                        className={mode === 'lumination' ? 'active' : ''}
+                        onClick={() => setMode('lumination')}
+                      >LumiNation</button>
+                      <button
+                        className={mode === 'baseline' ? 'active' : ''}
+                        onClick={() => setMode('baseline')}
+                      >Always-on</button>
+                      <button
+                        className={mode === 'compare' ? 'active' : ''}
+                        onClick={() => setMode('compare')}
+                      >Compare</button>
+                    </div>
                   </div>
 
                   <div className="sim-compact-controls">
                     <div className="slider-col">
                       <label className="sim-compact-label">
-                        <span>Baseline</span>
+                        <span className="sim-compact-label-row">
+                          Baseline brightness
+                          <button
+                            className="hud-info-btn"
+                            onClick={() => setTooltip(t => t === 'baseline' ? null : 'baseline')}
+                            onPointerDown={e => e.stopPropagation()}
+                            aria-label="Info about baseline brightness"
+                          >ⓘ</button>
+                          {tooltip === 'baseline' && (
+                            <span className="hud-tooltip">Minimum lamp brightness when no pedestrian or vehicle is detected nearby.</span>
+                          )}
+                        </span>
                         <span className="sim-compact-value">{Math.round(baselinePct * 100)}%</span>
                       </label>
                       <input
@@ -218,7 +256,18 @@ export default function App() {
                     </div>
                     <div className="slider-col">
                       <label className="sim-compact-label">
-                        <span>Lookahead</span>
+                        <span className="sim-compact-label-row">
+                          Light corridor
+                          <button
+                            className="hud-info-btn"
+                            onClick={() => setTooltip(t => t === 'lookahead' ? null : 'lookahead')}
+                            onPointerDown={e => e.stopPropagation()}
+                            aria-label="Info about light corridor"
+                          >ⓘ</button>
+                          {tooltip === 'lookahead' && (
+                            <span className="hud-tooltip">How far ahead the lamps illuminate as someone walks or drives through.</span>
+                          )}
+                        </span>
                         <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
                       </label>
                       <input
@@ -321,7 +370,7 @@ export default function App() {
               L
             </motion.div>
             <div>
-              <div className="brand-name">LumiNation</div>
+              <div className="brand-name"><span className="brand-lumi">Lumi</span><span className="brand-nation">Nation</span></div>
               <div className="brand-tag">The adaptive light corridor · live simulator</div>
             </div>
           </div>
