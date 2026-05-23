@@ -105,6 +105,16 @@ export default function App() {
     if (scrollRef.current) scrollRef.current.scrollTop = 0
   }, [])
 
+  // iOS Safari: prevent document-level touchmove outside .scroll-doc so the
+  // browser never falls back to window scrolling (which hides the URL bar).
+  useEffect(() => {
+    const handler = (e: TouchEvent) => {
+      if (!(e.target as Element).closest('.scroll-doc')) e.preventDefault()
+    }
+    document.addEventListener('touchmove', handler, { passive: false })
+    return () => document.removeEventListener('touchmove', handler)
+  }, [])
+
   useEffect(() => {
     return scrollY.on('change', v => {
       setTopbarVisible(v > LIFT * 0.25)

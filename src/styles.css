@@ -154,6 +154,14 @@ input[type="range"] {
     height: 100% !important; /* inherit from #root, not 100dvh — beats .app { height:100dvh } */
     overflow: hidden !important;
   }
+  /* Scroll container: keep touch momentum so the curtain lift feels smooth,
+     but confine all scrolling to this element (never reaches the document). */
+  .scroll-doc {
+    height: 100%;
+    width: 100%;
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 @media (max-width: 768px) {
