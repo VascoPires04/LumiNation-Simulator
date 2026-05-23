@@ -128,15 +128,14 @@ input[type="range"] {
   grid-template-columns: 1fr;
 }
 /* On mobile: canvas fills edge-to-edge, no card border/radius */
-/* ── Mobile viewport lock — prevents Chrome/Safari URL bar reflow ───────────
-   -webkit-fill-available locks html height to the initial viewport (URL bar
-   visible). When the URL bar hides, the html element stays the same size so
-   the layout never reflows/jumps. overflow:hidden on html/body stops the page
-   from scrolling (all scrolling is handled by .scroll-doc internally).        */
+/* ── Mobile viewport lock ────────────────────────────────────────────────────
+   On mobile the curtain is auto-dismissed (no scroll), so the scroll-doc never
+   receives active scrolling. Lock everything to a fixed height so the URL bar
+   can never trigger a viewport resize that would cause layout jumps.           */
 @media (max-width: 768px) {
   html {
     height: 100vh;
-    height: -webkit-fill-available; /* locks to viewport WITH URL bar */
+    height: -webkit-fill-available; /* freezes at initial viewport — URL bar can't expand layout */
     overflow: hidden;
     overscroll-behavior: none;
   }
@@ -144,23 +143,19 @@ input[type="range"] {
     height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
-    -webkit-overflow-scrolling: auto;
   }
   #root {
     height: 100%;
     overflow: hidden;
   }
   .app--v2 {
-    height: 100% !important; /* inherit from #root, not 100dvh — beats .app { height:100dvh } */
+    height: 100% !important; /* beats later .app { height:100dvh } rule */
     overflow: hidden !important;
   }
-  /* Scroll container: keep touch momentum so the curtain lift feels smooth,
-     but confine all scrolling to this element (never reaches the document). */
+  /* scroll-doc: disable scrolling on mobile — curtain is timer-based, no scroll needed */
   .scroll-doc {
-    height: 100%;
-    width: 100%;
-    overflow-y: scroll;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
+    pointer-events: none; /* canvas gets all touch events directly */
   }
 }
 
@@ -1387,6 +1382,7 @@ input[type="range"] {
   .landing-scroll-cue { margin-top: 36px; }
   .landing-hero { padding: 0 24px; }
   .landing-spacer { height: 105vh; height: 105svh; }
+  .landing-scroll-cue { display: none; }
 }
 
 /* Topbar on very small screens — shrink wordmark, keep mark + button */

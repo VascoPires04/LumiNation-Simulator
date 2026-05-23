@@ -9,6 +9,9 @@
 //   100 topbar               — position:fixed — fades in on scroll, interactive when visible
 //
 // The compact sidebar (z=2) is the ONLY sidebar. CitySimulator renders canvas only (showFullSidebar=false).
+//
+// Mobile curtain: auto-dismisses after 1s with a fade. No scroll interaction on mobile.
+// Desktop curtain: scroll-driven lift as before.
 
 import { useEffect, useRef, useState } from 'react'
 import { animate, motion, MotionConfig, useMotionValue, useScroll, useSpring, useTransform } from 'framer-motion'
@@ -82,10 +85,43 @@ export default function App() {
   const topbarOpacity = useTransform(scrollY, [LIFT * 0.25, LIFT * 0.6], [0, 1])
   const [topbarVisible, setTopbarVisible] = useState(false)
 
-  // ── Autoplay: sparse while curtain is visible; stops when gone or cleared.
+  // ── Autoplay / curtain visibility ────────────────────────────────────────
+  // Declared early so effectiveCurtainVisible can reference curtainVisible below.
   const [userCleared, setUserCleared] = useState(false)
   const [curtainVisible, setCurtainVisible] = useState(true)
-  const autoplay: 'sparse' | 'none' = (curtainVisible && !userCleared) ? 'sparse' : 'none'
+
+  // ── Mobile-specific MotionValues for HUD/topbar fade-in (scroll is 0 on mobile) ──
+  const mobileHudOpacity     = useMotionValue(0)
+  const mobileTopbarOpacity  = useMotionValue(0)
+
+  // ── Mobile curtain: auto-dismiss after 1s, no scroll needed ──────────────
+  // Once gone it never comes back (clicking L doesn't re-show it).
+  const [mobileCurtainFading, setMobileCurtainFading] = useState(false)
+  const [mobileCurtainGone,   setMobileCurtainGone]   = useState(false)
+
+  useEffect(() => {
+    if (!isMobile) return
+    // Start fade after 1s
+    const t1 = setTimeout(() => {
+      setMobileCurtainFading(true)
+      setSidebarVisible(true)
+      setTopbarVisible(true)
+      animate(mobileHudOpacity,    1, { duration: 0.55, ease: 'easeOut', delay: 0.15 })
+      animate(mobileTopbarOpacity, 1, { duration: 0.55, ease: 'easeOut', delay: 0.25 })
+    }, 1000)
+    // Unmount curtain DOM after fade completes (1000 + 800ms)
+    const t2 = setTimeout(() => setMobileCurtainGone(true), 1800)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [isMobile, mobileHudOpacity, mobileTopbarOpacity])
+
+  // Effective values — mobile uses timer-based, desktop uses scroll-based
+  const effectiveCurtainVisible  = isMobile ? !mobileCurtainGone  : curtainVisible
+  const effectiveSidebarOpacity  = isMobile ? mobileHudOpacity    : sidebarOpacity
+  const effectiveTopbarOpacity   = isMobile ? mobileTopbarOpacity : topbarOpacity
+  const effectiveSidebarVisible  = sidebarVisible
+  const effectiveTopbarVisible   = topbarVisible
+
+  const autoplay: 'sparse' | 'none' = (effectiveCurtainVisible && !userCleared) ? 'sparse' : 'none'
 
   // ── Lisbon-scaled headline metric ─────────────────────────────────────────
   const simHistory = useSimHistory(60)
@@ -115,6 +151,7 @@ export default function App() {
     return () => document.removeEventListener('touchmove', handler)
   }, [])
 
+  // Desktop scroll listener — updates curtain/sidebar/topbar visibility from scroll
   useEffect(() => {
     return scrollY.on('change', v => {
       setTopbarVisible(v > LIFT * 0.25)
@@ -138,7 +175,7 @@ export default function App() {
             mode={mode}
             variant="full"
             showFullSidebar={false}
-            interactive={!curtainVisible}
+            interactive={!effectiveCurtainVisible}
             autoplay={autoplay}
             onClear={() => setUserCleared(true)}
             baselinePct={baselinePct}
@@ -151,7 +188,7 @@ export default function App() {
         </motion.div>
 
         {/* ── Mobile spawn buttons — z:10, above scroll-doc, only after curtain lifts ── */}
-        {isMobile && !curtainVisible && mode !== 'fpv' && (
+        {isMobile && !effectiveCurtainVisible && mode !== 'fpv' && (
           <motion.div
             className="mobile-spawn-btns"
             initial={{ opacity: 0 }}
@@ -184,7 +221,7 @@ export default function App() {
             {/* Headline — display only, no interaction */}
             <motion.div
               className="hud-headline"
-              style={{ opacity: sidebarOpacity }}
+              style={{ opacity: effectiveSidebarOpacity }}
               aria-live="polite"
               aria-label="Live savings estimate"
             >
@@ -200,8 +237,8 @@ export default function App() {
               ref={hudNavRef}
               className="hud-controls"
               style={{
-                opacity: sidebarOpacity,
-                pointerEvents: sidebarVisible ? undefined : 'none',
+                opacity: effectiveSidebarOpacity,
+                pointerEvents: effectiveSidebarVisible ? undefined : 'none',
               }}
               aria-label="Simulator controls"
             >
@@ -309,14 +346,26 @@ export default function App() {
           </>
         )}
 
-        {/* ── Layer 3: curtain — gradient veil + text, pointer-events:none ── */}
-        <LandingCurtain scrollY={scrollY} />
+        {/* ── Layer 3: curtain ─────────────────────────────────────────────────
+             Desktop: scroll-driven lift via LandingCurtain's internal transforms.
+             Mobile:  same curtain but wrapped in a fade-out that triggers after 1s.
+                      Once gone it never returns (no scroll re-trigger on mobile). ── */}
+        {(!isMobile || !mobileCurtainGone) && (
+          <motion.div
+            animate={isMobile ? { opacity: mobileCurtainFading ? 0 : 1 } : { opacity: 1 }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 4,
+              pointerEvents: 'none',
+            }}
+          >
+            <LandingCurtain scrollY={scrollY} />
+          </motion.div>
+        )}
 
-        {/* ── Layer 5: scroll-doc — fixed transparent overlay that drives curtain.
-              Always pointer-events:auto so scroll works in both directions.
-              Spacer children have no click handlers so clicks are "silent".
-              Canvas interaction handled by raising canvas-layer z-index above
-              scroll-doc (z:5) after curtain lifts.                              ── */}
+        {/* ── Layer 5: scroll-doc — drives curtain on desktop, forwards taps to canvas ── */}
         <div
           ref={scrollRef}
           className="scroll-doc"
@@ -327,7 +376,7 @@ export default function App() {
             const t = e.changedTouches[0]
             const start = touchStartRef.current
             touchStartRef.current = null
-            if (!curtainVisible && t && start && externalSpawnRef.current) {
+            if (!effectiveCurtainVisible && t && start && externalSpawnRef.current) {
               const dx = Math.abs(t.clientX - start.x)
               const dy = Math.abs(t.clientY - start.y)
               if (dx < 10 && dy < 10) { // tap, not scroll
@@ -339,12 +388,12 @@ export default function App() {
           onClick={(e) => {
             // Block ghost click fired by browser after touch
             if (Date.now() - lastTouchRef.current < 500) return
-            if (!curtainVisible && externalSpawnRef.current) {
+            if (!effectiveCurtainVisible && externalSpawnRef.current) {
               externalSpawnRef.current(e.clientX, e.clientY)
             }
           }}
         >
-          {/* Landing spacer — transparent, height drives curtain lift distance */}
+          {/* Landing spacer — transparent, height drives curtain lift distance on desktop */}
           <div className="landing-spacer" aria-hidden="true" />
 
           {/* Simulator section spacer — keeps scroll height for sidebar context */}
@@ -359,23 +408,26 @@ export default function App() {
           </footer>
         </div>
 
-        {/* ── Layer 100: topbar — fixed, glassmorphic, fades in on scroll ───── */}
+        {/* ── Layer 100: topbar — fixed, glassmorphic, fades in on scroll/timer ── */}
         <motion.header
           className="topbar"
           style={{
-            opacity: topbarOpacity,
-            pointerEvents: topbarVisible ? 'auto' : 'none',
+            opacity: effectiveTopbarOpacity,
+            pointerEvents: effectiveTopbarVisible ? 'auto' : 'none',
           }}
         >
           <div className="brand">
             <motion.div
               className="brand-mark"
               initial={{ scale: 0.6 }}
-              animate={topbarVisible ? { scale: 1 } : { scale: 0.6 }}
+              animate={effectiveTopbarVisible ? { scale: 1 } : { scale: 0.6 }}
               transition={{ type: 'spring', stiffness: 420, damping: 18 }}
-              onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-              title="Back to start"
-              style={{ cursor: 'pointer' }}
+              onClick={() => {
+                // Desktop only: scroll to top re-shows the curtain
+                if (!isMobile) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+              title={isMobile ? undefined : 'Back to start'}
+              style={{ cursor: isMobile ? 'default' : 'pointer' }}
             >
               L
             </motion.div>
