@@ -135,6 +135,11 @@ export default function App() {
     ? `€${Math.round(lisbonEur / 1_000)}k`
     : `€${Math.round(lisbonEur)}`
 
+  // Citizen view is desktop-only — redirect away if somehow reached on mobile
+  useEffect(() => {
+    if (isMobile && mode === 'fpv') setMode('lumination')
+  }, [isMobile, mode])
+
   // Reset scroll container to top on mount
   useEffect(() => {
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual'
@@ -369,6 +374,7 @@ export default function App() {
         <div
           ref={scrollRef}
           className="scroll-doc"
+          style={mode === 'fpv' ? { pointerEvents: 'none' } : undefined}
           onTouchStart={(e) => {
             touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
           }}
@@ -389,7 +395,10 @@ export default function App() {
             // Block ghost click fired by browser after touch
             if (Date.now() - lastTouchRef.current < 500) return
             if (!effectiveCurtainVisible && externalSpawnRef.current) {
+              // Shift+click spawns a car (desktop shortcut)
+              if (e.shiftKey) externalSpawnModeRef.current = 'car'
               externalSpawnRef.current(e.clientX, e.clientY)
+              if (e.shiftKey) externalSpawnModeRef.current = spawnMode === 'car' ? 'car' : 'ped'
             }
           }}
         >
@@ -436,12 +445,15 @@ export default function App() {
               <div className="brand-tag">The adaptive light corridor · live simulator</div>
             </div>
           </div>
-          <div className="mode-bar">
-            {mode === 'fpv'
-              ? <button className="active" onClick={() => setMode('lumination')}>← Simulation</button>
-              : <button onClick={() => setMode('fpv')}>Citizen view</button>
-            }
-          </div>
+          {/* Citizen view is desktop-only — too heavy for most phones */}
+          {!isMobile && (
+            <div className="mode-bar">
+              {mode === 'fpv'
+                ? <button className="active" onClick={() => setMode('lumination')}>← Simulation</button>
+                : <button onClick={() => setMode('fpv')}>Citizen view</button>
+              }
+            </div>
+          )}
         </motion.header>
 
       </div>
