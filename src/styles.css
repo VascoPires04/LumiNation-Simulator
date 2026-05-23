@@ -27,6 +27,7 @@
 
 html, body {
   height: 100%;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -35,9 +36,8 @@ html, body {
 }
 
 #root {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 button, input, select {
@@ -96,6 +96,98 @@ input[type="range"] {
   flex-direction: column;
 }
 
+/* V2: scrollable single-page layout.
+   .app--v2 is the scroll container; fixed children use viewport as reference. */
+.app--v2 {
+  height: 100vh;
+  height: 100svh;
+  height: 100dvh;
+  overflow: hidden; /* scroll-doc handles all scrolling internally */
+  position: relative;
+}
+
+/* ── V2 fixed layers ────────────────────────────────────────────────────── */
+
+/* Layer 0: persistent canvas — full CitySimulator, always interactive */
+.canvas-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  transform-origin: center center;
+  /* overflow:hidden clips the 1.04× zoom edges cleanly */
+  overflow: hidden;
+}
+/* variant="full" .main fills the canvas-layer completely.
+   grid-template-columns: 1fr — sidebar column removed so canvas always fills
+   full viewport width (no resize when showFullSidebar changes).
+   padding-top = topbar height so map never hides under topbar. */
+.canvas-layer .main {
+  height: 100%;
+  width: 100%;
+  padding: 70px 24px 24px 24px;
+  grid-template-columns: 1fr;
+}
+/* On mobile: canvas fills edge-to-edge, no card border/radius */
+/* ── Mobile viewport lock ────────────────────────────────────────────────────
+   On mobile the curtain is auto-dismissed (no scroll), so the scroll-doc never
+   receives active scrolling. Lock everything to a fixed height so the URL bar
+   can never trigger a viewport resize that would cause layout jumps.           */
+@media (max-width: 768px) {
+  html {
+    height: 100vh;
+    height: -webkit-fill-available; /* freezes at initial viewport — URL bar can't expand layout */
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+  .app--v2 {
+    height: 100% !important; /* beats later .app { height:100dvh } rule */
+    overflow: hidden !important;
+  }
+  /* scroll-doc: disable scrolling on mobile — curtain is timer-based, no scroll needed */
+  .scroll-doc {
+    overflow: hidden;
+    pointer-events: none; /* canvas gets all touch events directly */
+  }
+}
+
+@media (max-width: 768px) {
+  .canvas-layer .main {
+    padding: 52px 0 0 0;
+    height: 100%;
+  }
+  .canvas-layer .stage {
+    min-height: 0;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+}
+/* variant="ambient" also supported (for future Dashboard use) */
+.canvas-layer .main--ambient {
+  height: 100%;
+  width: 100%;
+  padding: 0;
+}
+
+/* Layer 0.5: flat dim veil — fades out as curtain lifts */
+.canvas-dim-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: rgba(5, 5, 8, 0.30);
+  pointer-events: none;
+}
+
+/* Layer 100: topbar — fixed, glassmorphic */
 .topbar {
   display: flex;
   align-items: center;
@@ -104,6 +196,16 @@ input[type="range"] {
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   gap: 12px;
+}
+.app--v2 .topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: rgba(5, 5, 8, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .brand {
@@ -130,12 +232,16 @@ input[type="range"] {
 .brand-name {
   font-family: var(--font-heading);
   font-weight: 700;
-  font-size: 19px;
+  font-size: clamp(1rem, 1.8vw, 1.25rem);
   letter-spacing: -0.03em;
 }
+.brand-lumi { color: var(--text); }
+.brand-nation { color: var(--amber); }
+.mobile-brand-lumi { color: var(--text); }
+.mobile-brand-nation { color: var(--amber); }
 
 .brand-tag {
-  font-size: 12px;
+  font-size: clamp(0.65rem, 1.2vw, 0.78rem);
   color: var(--text-muted);
 }
 
@@ -461,21 +567,16 @@ input[type="range"] {
 @media (max-width: 768px) {
   /* ── App shell ── */
   .app {
-    height: auto;
-    min-height: 100dvh;
-    min-height: 100svh;
-    min-height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
+    height: 100dvh;
+    height: 100svh;
+    height: 100vh;
+    overflow: hidden;
   }
 
-  /* ── Topbar ── */
+  /* ── Topbar (legacy non-v2 layout) ── */
   .topbar {
     padding: 6px 10px;
     gap: 5px;
-  }
-  .brand-tag {
-    display: none;
   }
   .brand-name {
     font-size: 13px;
@@ -487,15 +588,14 @@ input[type="range"] {
     box-shadow: none;
   }
   .mode-bar {
-    width: 100%;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
+    width: auto;
+    display: flex;
+    gap: 6px;
   }
   .mode-bar button {
-    min-height: 32px;
-    font-size: 11px;
-    padding: 4px 3px;
+    min-height: 36px;
+    font-size: clamp(0.72rem, 3vw, 0.88rem);
+    padding: 6px 12px;
   }
 
   /* ── Main layout ── */
@@ -584,17 +684,9 @@ input[type="range"] {
   }
 
   /* ── Stage hint / spawn toggle ── */
+  /* Hide old in-canvas spawn buttons on mobile — replaced by App-level buttons */
   .stage-hint {
-    font-size: 9px;
-    right: 7px;
-    left: 7px;
-    bottom: 6px;
-    gap: 5px;
-  }
-  .spawn-toggle {
-    font-size: 12px;
-    padding: 5px 11px;
-    min-height: 30px;
+    display: none;
   }
 
   /* ── Footer ── */
@@ -605,39 +697,33 @@ input[type="range"] {
     font-size: 9px;
   }
 
-  /* ── FPV overlay: thin button strip on mobile ── */
+  /* ── FPV overlay: slim bottom strip on mobile ── */
   .fpv-overlay {
-    flex-direction: row;
+    flex-direction: column;
     align-items: stretch;
-    bottom: 8px;
-    left: 8px;
-    right: 8px;
+    bottom: 0;
+    left: 0;
+    right: 0;
     gap: 0;
-    max-height: none;
-    overflow: visible;
+    padding: 0;
   }
-  /* Hide the dashboard stats card — just show speed controls */
-  .fpv-overlay .fpv-card:first-child {
-    display: none;
-  }
-  /* Controls card fills full width as a slim strip */
+  .fpv-overlay .fpv-card:first-child { display: none; }
   .fpv-overlay .fpv-card:last-child {
     flex: 1;
-    padding: 6px 8px;
-    gap: 5px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    gap: 8px;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
   }
-  .fpv-card-title {
-    display: none;
-  }
-  .fpv-button-group {
-    flex-direction: row;
-    gap: 5px;
-  }
+  .fpv-card-title { display: none; }
+  .fpv-button-group { flex-direction: row; gap: 8px; }
   .fpv-btn {
     flex: 1;
-    padding: 5px 4px;
-    font-size: 11px;
-    min-height: 34px;
+    min-height: 44px;
+    padding: 8px 6px;
+    font-size: clamp(0.72rem, 3vw, 0.88rem);
   }
 
   /* ── Controls collapsible on mobile ── */
@@ -668,4 +754,673 @@ input[type="range"] {
     min-height: 34px;
     font-size: 11px;
   }
+}
+
+/* ── V2: variant="ambient" — canvas fills its fixed wrapper ─────────────── */
+.main--ambient {
+  display: block;
+  padding: 0;
+  gap: 0;
+  height: 100%;
+  width: 100%;
+}
+.main--ambient .stage {
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* dimmed — kept for non-canvas-layer usage */
+.stage--dimmed canvas {
+  opacity: 0.72;
+}
+.stage--dimmed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    #0a0a0f 0%,
+    transparent 22%,
+    transparent 78%,
+    #0a0a0f 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── V2: HeadlineMetric component ───────────────────────────────────────── */
+.headline-metric {
+  text-align: center;
+  padding: 28px 16px;
+}
+.headline-metric-value {
+  font-family: var(--font-heading);
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  font-weight: 700;
+  color: var(--amber);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.headline-metric-label {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 10px;
+}
+.headline-metric-sublabel {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* ── V2: Landing curtain — fixed overlay layers ─────────────────────────── */
+
+/* Gradient veil (z-index 2) — dims canvas at landing state, fades on scroll */
+.landing-gradient-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(to bottom, rgba(5,5,8,0.50) 0%, transparent 28%, transparent 72%, rgba(5,5,8,0.65) 100%),
+    radial-gradient(ellipse 80% 55% at 50% 50%, transparent 25%, rgba(5,5,8,0.40) 100%);
+  pointer-events: none;
+}
+
+/* Grain overlay — adds depth and premium feel to the landing */
+.landing-gradient-veil::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  opacity: 0.035;
+  pointer-events: none;
+}
+
+/* Text layer (z-index 3) — wordmark + slogan + scroll cue */
+.landing-text-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.landing-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 24px;
+  gap: 0;
+}
+
+/* Giant amber wordmark — Effect D: glow breathes while at rest */
+.landing-wordmark {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: clamp(3rem, 12vw, 8rem);
+  color: var(--amber);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin-bottom: 28px;
+  will-change: transform;
+  animation: wordmark-breathe 4s ease-in-out infinite;
+}
+/* Effect D: ambient amber glow pulsing — "the word is a streetlamp" */
+@keyframes wordmark-breathe {
+  0%, 100% {
+    text-shadow:
+      0 0 30px rgba(250, 199, 117, 0.30),
+      0 0 80px  rgba(250, 199, 117, 0.12);
+  }
+  50% {
+    text-shadow:
+      0 0 40px rgba(250, 199, 117, 0.50),
+      0 0 100px rgba(250, 199, 117, 0.22);
+  }
+}
+
+/* Tagline lines */
+.landing-line {
+  font-family: var(--font-heading);
+  font-size: clamp(1rem, 2.5vw, 1.6rem);
+  font-weight: 400;
+  color: rgba(240, 240, 245, 0.88);
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.landing-line-em em {
+  color: var(--amber);
+  font-style: normal;
+  font-weight: 600;
+}
+.landing-line + .landing-line {
+  margin-top: 6px;
+}
+
+/* Scroll cue */
+.landing-scroll-cue {
+  margin-top: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.landing-scroll-label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+/* Effect F: drip line — amber drops downward in a loop */
+.landing-scroll-drip {
+  width: 1px;
+  height: 28px;
+  position: relative;
+  overflow: visible;
+}
+.landing-scroll-drip::after {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 28px;
+  background: linear-gradient(to bottom, var(--amber), transparent);
+  animation: drip-drop 1.8s ease-in-out infinite;
+}
+@keyframes drip-drop {
+  0%   { transform: translateY(-10px); opacity: 0; }
+  18%  { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { transform: translateY(10px);  opacity: 0; }
+}
+
+/* ── V2: Internal scroll driver — replaces window scroll ───────────────── */
+
+/* scroll-doc is a fixed transparent overlay that drives the curtain animation.
+   pointer-events toggled via React: auto while curtain visible (lets user scroll),
+   none after curtain lifts (lets touches reach canvas for agent spawning).
+   Children with pointer-events:auto still receive events even when parent is none. */
+.scroll-doc {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  background: transparent;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain; /* stop scroll chain reaching the page */
+  scrollbar-width: none;
+}
+.scroll-doc::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
+/* Landing spacer — transparent, just provides scroll height for curtain lift */
+.landing-spacer {
+  height: 110vh;
+  height: 110svh;
+}
+
+/* ── Phase 3: HUD — two fixed elements, no background, pure text over canvas ── */
+
+/* Spacer keeps scroll height for curtain lift + sidebar context */
+.sim-section-spacer { height: 100vh; }
+
+/* ── Base (desktop ≥ 768px): all three elements right-side column ── */
+.hud-headline,
+.hud-modes,
+.hud-controls {
+  position: fixed;
+  z-index: 10; /* above scroll-driver (z:5) so touches reach buttons */
+  pointer-events: none;
+  right: clamp(48px, 6vw, 120px);
+  width: clamp(200px, 20vw, 280px);
+}
+
+/* Headline — top of the right column */
+.hud-headline {
+  top: 140px;
+}
+.hud-headline .headline-metric {
+  text-align: left;
+  padding: 0;
+}
+.hud-headline .headline-metric-value {
+  font-size: clamp(2.5rem, 5.5vw, 6rem);
+  font-weight: 500;
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  text-shadow: 0 1px 16px rgba(0,0,0,0.7), 0 0 48px rgba(250,199,117,0.2);
+}
+.hud-headline .headline-metric-label {
+  font-size: clamp(0.85rem, 1.4vw, 1rem);
+  color: rgba(240,240,245,0.95);
+  font-weight: 400;
+  margin-top: 10px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
+}
+.hud-headline .headline-metric-sublabel {
+  font-size: clamp(0.85rem, 1.4vw, 1rem);
+  color: rgba(240,240,245,0.7);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 5px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.8);
+}
+
+/* Controls — modes + sliders + CTA, desktop: below headline, right column */
+.hud-controls {
+  top: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Context line below the headline metric */
+.hud-context-line {
+  font-size: clamp(0.78rem, 1.2vw, 0.9rem);
+  color: rgba(240,240,245,0.72);
+  line-height: 1.55;
+  margin-top: 12px;
+  max-width: 22ch;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  pointer-events: none;
+}
+
+/* Section wrapper with descriptor above mode buttons */
+.hud-section { display: flex; flex-direction: column; gap: 8px; }
+.hud-section-desc {
+  font-size: clamp(0.85rem, 1.3vw, 0.95rem);
+  color: rgba(254, 254, 255, 0.68);
+  line-height: 1.55;
+  text-shadow: 0 1px 4px rgba(15, 15, 15, 0.8);
+}
+
+/* Label row — name + info icon inline */
+.sim-compact-label-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+}
+
+/* ⓘ info button */
+.hud-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  min-height: unset;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.925);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.hud-info-btn:hover { color: rgba(240,240,245,0.85); }
+
+/* Tooltip popup */
+.hud-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 260px;
+  background: rgba(14,14,22,0.96);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 0.88rem;
+  color: rgba(240,240,245,0.9);
+  line-height: 1.55;
+  pointer-events: none;
+  z-index: 50;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Drag handle row — tiny clickable/draggable bar above content */
+.hud-controls-handle-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0 4px;
+  cursor: grab;
+  pointer-events: auto;
+}
+.hud-controls-handle-row:active { cursor: grabbing; }
+
+.hud-controls-handle {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(240,240,245,0.25);
+  transition: background 0.15s;
+}
+.hud-controls-handle-row:hover .hud-controls-handle {
+  background: rgba(240,240,245,0.5);
+}
+
+/* Body — panel that slides as one unit (handle + content) */
+.hud-controls-body {
+  will-change: transform;
+}
+
+/* Inner padding so content has breathing room */
+.hud-controls-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 16px;
+  padding-bottom: 8px;
+}
+
+/* Mode buttons — vertical stack on desktop */
+.sim-compact-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.sim-compact-modes button {
+  pointer-events: auto;
+  min-height: 44px;
+  padding: 10px 16px;
+  font-size: clamp(0.85rem, 1.4vw, 1rem);
+  font-family: var(--font-heading);
+  font-weight: 400;
+  background: transparent;
+  color: rgba(240,240,245,0.85);
+  border: 0.5px solid rgba(240,240,245,0.25);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, color 0.15s;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
+  white-space: nowrap;
+}
+.sim-compact-modes button:hover {
+  border-color: rgba(240,240,245,0.5);
+  color: rgba(240,240,245,0.95);
+}
+.sim-compact-modes button.active {
+  background: transparent;
+  color: #FAC775;
+  border: 1px solid #FAC775;
+  font-weight: 500;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
+}
+
+/* Sliders */
+.sim-compact-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.slider-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+}
+.sim-compact-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: clamp(0.85rem, 1.4vw, 1rem);
+  font-weight: 400;
+  color: rgba(240,240,245,0.85);
+  margin-bottom: 3px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
+}
+.sim-compact-value {
+  color: #f0f0f5;
+  font-weight: 500;
+  font-size: clamp(0.8rem, 1.4vw, 1rem);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
+}
+.sim-compact-controls input[type='range'] {
+  width: 100%;
+  height: 20px;
+  accent-color: var(--amber);
+  pointer-events: auto;
+}
+
+/* CTA */
+.sim-cta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  min-height: 44px;
+  font-family: var(--font-heading);
+  font-size: clamp(0.8rem, 1.4vw, 1rem);
+  font-weight: 500;
+  color: var(--amber);
+  background: transparent;
+  border: 0.5px solid #FAC775;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  pointer-events: auto;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.7);
+  align-self: flex-start;
+}
+.sim-cta:hover { background: rgba(250,199,117,0.1); }
+
+/* ── Tablet (768–1024px): narrower HUD ── */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .hud-headline,
+  .hud-modes,
+  .hud-controls {
+    right: 24px;
+    width: clamp(160px, 17vw, 210px);
+  }
+  .hud-controls { top: 320px; gap: 18px; }
+}
+
+/* ── Mobile (<= 768px): headline top-center, modes top strip, controls bottom bar ── */
+@media (max-width: 768px) {
+  /* Headline: fixed top, centred across full width */
+  .hud-headline {
+    top: 82px;
+    right: 0;
+    left: 0;
+    width: 100%;
+    padding: 0 24px;
+    text-align: center;
+  }
+  .hud-headline .headline-metric { text-align: center; padding: 0; }
+  .hud-headline .headline-metric-value {
+    font-size: clamp(2rem, 10vw, 3.5rem);
+  }
+  .hud-headline .headline-metric-label {
+    font-size: clamp(0.75rem, 3.5vw, 0.95rem);
+    margin-top: 6px;
+  }
+  .hud-headline .headline-metric-sublabel {
+    font-size: clamp(0.65rem, 2.8vw, 0.8rem);
+    margin-top: 3px;
+  }
+
+  /* Mode buttons inside controls: horizontal row */
+  .hud-controls .sim-compact-modes {
+    flex-direction: row;
+    gap: 6px;
+    pointer-events: auto;
+  }
+  .hud-controls .sim-compact-modes button {
+    flex: 1;
+    text-align: center;
+    min-height: 38px;
+    font-size: clamp(0.68rem, 3vw, 0.85rem);
+    padding: 6px 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: rgba(5,5,8,0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .hud-controls .sim-compact-modes button.active {
+    background: rgba(5,5,8,0.65);
+  }
+
+  /* Controls: overlay bottom bar */
+  .hud-controls {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      transparent 50%,
+      rgba(5,5,8,0.28) 80%,
+      rgba(5,5,8,0.40) 100%
+    );
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-top: none;
+    pointer-events: none; /* default none — only handle gets events when collapsed */
+  }
+
+  /* Handle always clickable */
+  .hud-controls .hud-controls-handle-row {
+    pointer-events: auto;
+  }
+
+  /* Sliders: 2-column flex (each col = label + slider stacked) */
+  .sim-compact-controls {
+    display: flex;
+    flex-direction: row;
+    gap: 14px;
+    pointer-events: auto;
+  }
+  .slider-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    pointer-events: auto;
+  }
+  .sim-compact-label {
+    font-size: clamp(0.7rem, 2.8vw, 0.85rem);
+    margin-bottom: 0;
+  }
+  .sim-compact-value {
+    font-size: clamp(0.7rem, 2.8vw, 0.85rem);
+  }
+  .sim-compact-controls input[type='range'] { height: 18px; }
+
+  /* CTA: slim full-width */
+  .sim-cta {
+    align-self: stretch;
+    justify-content: center;
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: clamp(0.75rem, 3vw, 0.88rem);
+  }
+}
+
+/* ── Mobile portrait (<480px): tighter ── */
+@media (max-width: 480px) {
+  .hud-headline { top: 110px; padding: 0 16px; }
+  .hud-headline .headline-metric-value { font-size: clamp(1.8rem, 11vw, 2.6rem); }
+  .hud-controls {
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+    gap: 6px;
+  }
+  .sim-compact-modes button { min-height: 38px; }
+}
+
+/* Dashboard placeholder — transparent, canvas visible behind */
+.dashboard-placeholder {
+  min-height: 100vh;
+  min-height: 100svh;
+  pointer-events: none;
+}
+
+/* Footer — re-enable pointer events for links */
+.scroll-doc .footer {
+  pointer-events: auto;
+  background: rgba(5, 5, 8, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ── V2: topbar + landing curtain mobile ────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Topbar — single row, condensed */
+  .app--v2 .topbar { padding: 8px 14px; gap: 8px; }
+  .brand-tag { font-size: clamp(9px, 2.5vw, 11px); opacity: 0.85; }
+
+  /* Landing curtain */
+  .landing-wordmark {
+    font-size: clamp(2.8rem, 14vw, 5rem);
+    margin-bottom: 20px;
+  }
+  .landing-line { font-size: clamp(0.9rem, 4vw, 1.2rem); }
+  .landing-scroll-cue { margin-top: 36px; }
+  .landing-hero { padding: 0 24px; }
+  .landing-spacer { height: 105vh; height: 105svh; }
+  .landing-scroll-cue { display: none; }
+}
+
+/* Topbar on very small screens — shrink wordmark, keep mark + button */
+@media (max-width: 480px) {
+  .brand-name { font-size: clamp(0.75rem, 3.5vw, 0.9rem); }
+  .app--v2 .topbar { padding: 8px 12px; }
+  .brand-mark { width: 30px; height: 30px; font-size: 15px; }
+}
+
+/* ── Mobile spawn buttons — rendered in App.tsx above scroll-doc ─────────── */
+.mobile-spawn-btns {
+  display: none;
+}
+@media (max-width: 768px) {
+  .mobile-spawn-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    position: fixed;
+    top: 70px;
+    right: 12px;
+    z-index: 10;
+  }
+  .mobile-spawn-btns .spawn-toggle {
+    font-size: 15px;
+    padding: 4px 7px;
+    min-height: 30px;
+    min-width: 30px;
+    border-radius: 7px;
+    line-height: 1;
+  }
+}
+
+/* ── prefers-reduced-motion ─────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .landing-wordmark,
+  .landing-scroll-drip::after {
+    animation: none !important;
+  }
+  /* Framer Motion animations are handled by MotionConfig reducedMotion="user" */
 }

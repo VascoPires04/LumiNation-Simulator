@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import FPV3D from './FPV3D'
 import { useIsMobile } from './hooks/useIsMobile'
+import SimControls from './components/SimControls'
+import { simBus } from './sim-bus'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 type AgentType = 'ped' | 'car'
@@ -44,6 +46,22 @@ interface ParkZone { x: number; y: number; w: number; h: number }
 
 interface Props {
   mode: Mode
+  variant?: 'full' | 'compact' | 'ambient'
+  interactive?: boolean
+  autoplay?: 'none' | 'sparse'
+  dimmed?: boolean
+  onClear?: () => void
+  // Controlled baseline + lookahead — when provided, overrides internal state
+  baselinePct?: number
+  onBaselineChange?: (v: number) => void
+  lookaheadSec?: number
+  onLookaheadChange?: (v: number) => void
+  // When false, renders canvas only — no sidebar, no chart, no controls
+  showFullSidebar?: boolean
+  // External spawn — lets a parent element (e.g. scroll-doc overlay) forward taps
+  externalSpawnRef?: React.MutableRefObject<((cx: number, cy: number) => void) | null>
+  // External spawn mode — lets parent control ped/car toggle
+  externalSpawnModeRef?: React.MutableRefObject<'ped' | 'car'>
 }
 
 // Constants — tweak these and the whole sim re-balances
@@ -54,10 +72,10 @@ const HOURS_PER_YEAR_NIGHT = 4100
 const PED_SPEED = 1.4
 const CAR_SPEED = 11
 const METERS_PER_PIXEL = 0.35
-const LAMP_REACH_PED = 180
-const LAMP_REACH_CAR = 300
-const LAMP_REACH_BEHIND_PED = 260
-const LAMP_REACH_BEHIND_CAR = 200
+const LAMP_REACH_PED = 60
+const LAMP_REACH_CAR = 25
+const LAMP_REACH_BEHIND_PED = 70
+const LAMP_REACH_BEHIND_CAR = 60
 const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const PARK_CI = 1
 const PARK_RI = 2
@@ -118,10 +136,31 @@ function buildCityBlocks(W: number, H: number): Building[] {
   return buildings
 }
 
-export default function CitySimulator({ mode }: Props) {
+export default function CitySimulator({
+  mode,
+  variant = 'full',
+  interactive = true,
+  autoplay = 'none',
+  dimmed = false,
+  onClear,
+  baselinePct: baselinePctProp,
+  onBaselineChange,
+  lookaheadSec: lookaheadSecProp,
+  onLookaheadChange,
+  showFullSidebar = true,
+  externalSpawnRef,
+  externalSpawnModeRef,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const isMobile = useIsMobile()
+
+  // Variant/autoplay refs — readable inside RAF loop without stale closure
+  const variantRef   = useRef(variant);   variantRef.current   = variant
+  const autoplayRef  = useRef(autoplay);  autoplayRef.current  = autoplay
+  const isMobileRef  = useRef(isMobile);  isMobileRef.current  = isMobile
+  // Sparse autoplay timer (seconds until next auto-spawn)
+  const sparseTimerRef = useRef(2 + Math.random() * 3)
 
   // Sim state lives in refs so the render loop never re-mounts
   const lampsRef = useRef<Lamp[]>([])
@@ -130,15 +169,25 @@ export default function CitySimulator({ mode }: Props) {
   const trackedRef = useRef<Agent | null>(null)
   const dimsRef = useRef({ W: 0, H: 0 })
 
-  const modeRef = useRef(mode)
-  modeRef.current = mode
+  // ambient forces lumination mode so the corridor is always visible as backdrop
+  const effectiveMode: Mode = variant === 'ambient' ? 'lumination' : mode
+  const modeRef = useRef<Mode>(effectiveMode)
+  modeRef.current = effectiveMode
 
-  const [baselinePct, setBaselinePct] = useState(0.30)
-  const [lookaheadSec, setLookaheadSec] = useState(4.0)
+  // Controlled pattern: external prop overrides internal state when provided
+  const [baselinePctLocal, setBaselinePctLocal] = useState(0.30)
+  const baselinePct    = baselinePctProp  !== undefined ? baselinePctProp  : baselinePctLocal
+  const setBaselinePct = onBaselineChange !== undefined ? onBaselineChange : setBaselinePctLocal
+
+  const [lookaheadSecLocal, setLookaheadSecLocal] = useState(4.0)
+  const lookaheadSec    = lookaheadSecProp   !== undefined ? lookaheadSecProp   : lookaheadSecLocal
+  const setLookaheadSec = onLookaheadChange  !== undefined ? onLookaheadChange  : setLookaheadSecLocal
   const [scenario, setScenario] = useState<'manual' | 'quiet' | 'busy' | 'mixed'>('manual')
   const [paused, setPaused] = useState(false)
   const [spawnMode, setSpawnMode] = useState<'ped' | 'car'>('ped')
   const spawnModeRef = useRef<'ped' | 'car'>('ped')
+  // If parent supplies a spawn mode ref, use it as the source of truth
+  const activeSpawnModeRef = externalSpawnModeRef ?? spawnModeRef
   const [lisbon, setLisbon] = useState(false)
   const [controlsOpen, setControlsOpen] = useState(false)
   const [stats, setStats] = useState({
@@ -157,6 +206,7 @@ export default function CitySimulator({ mode }: Props) {
   const powerHistoryRef = useRef<{ lumi: number; full: number }[]>([])
   const histTickRef = useRef(0)
   const chartRef = useRef<HTMLCanvasElement>(null)
+
 
   // Redraw chart whenever stats update
   useEffect(() => {
@@ -301,12 +351,12 @@ export default function CitySimulator({ mode }: Props) {
     return bestD < 50 ? best : null
   }
 
-  function spawnAgent(px: number, py: number, type: AgentType): Agent | null {
+  function spawnAgent(px: number, py: number, type: AgentType, forceSign?: number): Agent | null {
     const hit = nearestStreet(px, py)
     if (!hit) return null
     const { s, qx, qy } = hit
     const speed = type === 'car' ? CAR_SPEED : PED_SPEED
-    const sign = Math.random() < 0.5 ? -1 : 1
+    const sign = forceSign !== undefined ? forceSign : (Math.random() < 0.5 ? -1 : 1)
     const a: Agent = {
       x: qx, y: qy,
       vx: s.dir === 'h' ? sign * speed : 0,
@@ -324,11 +374,13 @@ export default function CitySimulator({ mode }: Props) {
     const streets = streetsRef.current
     const s = streets[Math.floor(Math.random() * streets.length)]
     if (s.dir === 'h') {
+      // Always spawn moving inward: left edge → moving right (+1), right edge → moving left (-1)
       const fromLeft = Math.random() < 0.5
-      spawnAgent(fromLeft ? 2 : W - 2, s.ay, type)
+      spawnAgent(fromLeft ? 2 : W - 2, s.ay, type, fromLeft ? 1 : -1)
     } else {
+      // Top edge → moving down (+1), bottom edge → moving up (-1)
       const fromTop = Math.random() < 0.5
-      spawnAgent(s.ax, fromTop ? 2 : H - 2, type)
+      spawnAgent(s.ax, fromTop ? 2 : H - 2, type, fromTop ? 1 : -1)
     }
   }
 
@@ -378,18 +430,25 @@ export default function CitySimulator({ mode }: Props) {
     for (const l of lampsRef.current) l.target = baselineRef.current
     for (const a of agentsRef.current) {
       const isCar = a.type === 'car'
-      const reachAhead = isCar ? LAMP_REACH_CAR : LAMP_REACH_PED          // full-size forward reach
-      const reachBehind = (isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) * backScale
       const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))
       const dx = a.vx / sp
       const dy = a.vy / sp
-      const lookaheadPx = (sp * lookaheadRef.current) / METERS_PER_PIXEL
+      // lookaheadPx: visual scale proportional to agent speed — a car at 11 m/s
+      // gets ~7.8× more corridor than a pedestrian at 1.4 m/s, reflecting the
+      // real predictive need: faster agents need lights further ahead.
+      const lookaheadPx = lookaheadRef.current * 21 * Math.sqrt(sp / PED_SPEED)
+      // Both forward and rear reach scale with lookahead slider.
+      const reachAhead  = (isCar ? LAMP_REACH_CAR  : LAMP_REACH_PED)  + lookaheadPx
+      const reachBehind = ((isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) + lookaheadPx * 1.6) * backScale
       const fx = a.x + dx * lookaheadPx
       const fy = a.y + dy * lookaheadPx
-      const agentStreetId = streetsRef.current.indexOf(a.street)
+      // Use the street object reference directly rather than indexOf — indexOf
+      // returns -1 after a turn if the street reference drifted, leaving the
+      // agent unlit. Comparing by object identity is safe and O(1).
+      const agentStreet = a.street
 
       for (const l of lampsRef.current) {
-        const sameStreet = l.streetId === agentStreetId
+        const sameStreet = streetsRef.current[l.streetId] === agentStreet
 
         // Cross-street lamps only get a small intersection spillover (50px max)
         if (!sameStreet) {
@@ -669,7 +728,7 @@ export default function CitySimulator({ mode }: Props) {
       ctx.beginPath(); ctx.arc(t.x - 2, t.y - 2, 3, 0, Math.PI * 2); ctx.fill()
     }
 
-    // Communication mesh — opacity reacts to lamp brightness
+    // Communication mesh — opacity reacts to lamp brightness + amber pulse
     ctx.lineWidth = 1
     const byStreet = new Map<string, Lamp[]>()
     lampsRef.current.forEach(l => {
@@ -1190,6 +1249,23 @@ export default function CitySimulator({ mode }: Props) {
 
   // --- Scenario auto-spawn ---
   function handleScenario(dt: number) {
+    // Sparse autoplay — runs regardless of scenario picker, caps agents at 4
+    if (autoplayRef.current === 'sparse') {
+      sparseTimerRef.current -= dt
+      if (sparseTimerRef.current <= 0) {
+        sparseTimerRef.current = 2 + Math.random() * 3
+        const agents = agentsRef.current
+        const pedCount = agents.filter(a => a.type === 'ped').length
+        const carCount = agents.filter(a => a.type === 'car').length
+        const maxPeds = isMobileRef.current ? 2 : 3
+        if (Math.random() < 0.75) {
+          if (pedCount < maxPeds) spawnRandomEdge('ped')
+        } else {
+          if (carCount < 1) spawnRandomEdge('car')
+        }
+      }
+    }
+
     if (scenarioRef.current === 'manual') return
     scenarioTimerRef.current -= dt
     if (scenarioTimerRef.current > 0) return
@@ -1230,14 +1306,18 @@ export default function CitySimulator({ mode }: Props) {
     ro.observe(stage)
 
     let lastTick = performance.now()
+    let lastAmbientFrame = 0
     let raf = 0
     let statsTick = 0
 
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop)
+      // Throttle ambient to 20fps — it's a backdrop, not the main interaction
+      if (variantRef.current === 'ambient' && now - lastAmbientFrame < 50) return
+      if (variantRef.current === 'ambient') lastAmbientFrame = now
       const dt = Math.min(0.1, (now - lastTick) / 1000)
       lastTick = now
-      if (pausedRef.current) return
+if (pausedRef.current) return
       handleScenario(dt)
       const power = step(dt)
       draw(ctx)
@@ -1251,16 +1331,32 @@ export default function CitySimulator({ mode }: Props) {
         const pct = full > 0 ? Math.round((power.luminationPower / full) * 100) : 0
         const instSavedW = full - power.luminationPower
         const annualKwh = (instSavedW / 1000) * HOURS_PER_YEAR_NIGHT
+        const eurSavedNow  = Math.round(annualKwh * PRICE_PER_KWH)
+        const co2SavedNow  = Math.round(annualKwh * CO2_PER_KWH)
+        const pedsNow = agentsRef.current.filter(a => a.type === 'ped').length
+        const carsNow = agentsRef.current.filter(a => a.type === 'car').length
         setStats({
           powerNow: Math.round(power.luminationPower),
           powerPct: pct,
           kwhSaved: kwhSavedRef.current,
-          eurSaved: Math.round(annualKwh * PRICE_PER_KWH),
-          co2Saved: Math.round(annualKwh * CO2_PER_KWH),
-          peds: agentsRef.current.filter(a => a.type === 'ped').length,
-          cars: agentsRef.current.filter(a => a.type === 'car').length,
+          eurSaved: eurSavedNow,
+          co2Saved: co2SavedNow,
+          peds: pedsNow,
+          cars: carsNow,
           lampCount: N,
           fullPower: full,
+        })
+        // Emit to simBus so Dashboard + compact overlay can subscribe
+        simBus.emit({
+          t: performance.now(),
+          powerW: power.luminationPower,
+          baselineW: full,
+          eurSaved: eurSavedNow,
+          co2Kg: co2SavedNow,
+          kwhSaved: kwhSavedRef.current,
+          peds: pedsNow,
+          cars: carsNow,
+          lampCount: N,
         })
       }
 
@@ -1282,13 +1378,27 @@ export default function CitySimulator({ mode }: Props) {
   }, [])
 
   // --- Canvas click / touch handlers ---
+  // Register external spawn function so App.tsx scroll-doc overlay can forward taps
+  useEffect(() => {
+    if (!externalSpawnRef) return
+    externalSpawnRef.current = (cx: number, cy: number) => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const a = spawnAgent(cx - rect.left, cy - rect.top, activeSpawnModeRef.current)
+      if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
+    }
+    return () => { if (externalSpawnRef) externalSpawnRef.current = null }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // stable: spawnAgent uses only refs internally
+
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
     // On mobile, ghost clicks arrive here after touch — respect spawnModeRef.
     // On desktop, shift+click still works as before.
-    const isCar = e.shiftKey || spawnModeRef.current === 'car'
+    const isCar = e.shiftKey || activeSpawnModeRef.current === 'car'
     const a = spawnAgent(x, y, isCar ? 'car' : 'ped')
     if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
   }
@@ -1300,21 +1410,26 @@ export default function CitySimulator({ mode }: Props) {
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = touch.clientX - rect.left
     const y = touch.clientY - rect.top
-    const a = spawnAgent(x, y, spawnModeRef.current)
+    const a = spawnAgent(x, y, activeSpawnModeRef.current)
     if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
   }
 
   // --- Render ---
+  const dimmedActual = dimmed || variant === 'ambient'
+
   return (
-    <div className="main">
-      <div className="stage" ref={stageRef}>
+    <div className={`main${variant === 'ambient' ? ' main--ambient' : ''}`}>
+      <div className={`stage${dimmedActual ? ' stage--dimmed' : ''}`} ref={stageRef}>
         <canvas
           ref={canvasRef}
-          onClick={handleClick}
-          onTouchEnd={handleTouchEnd}
-          style={{ display: mode === 'fpv' ? 'none' : undefined, touchAction: 'none' }}
+          onClick={interactive ? handleClick : undefined}
+          onTouchEnd={interactive ? handleTouchEnd : undefined}
+          style={{
+            display: effectiveMode === 'fpv' ? 'none' : undefined,
+            touchAction: interactive ? 'none' : 'auto',
+          }}
         />
-        {mode === 'fpv' && (
+        {variant !== 'ambient' && effectiveMode === 'fpv' && (
           <FPV3D
             lampsRef={lampsRef}
             trackedRef={trackedRef}
@@ -1327,26 +1442,28 @@ export default function CitySimulator({ mode }: Props) {
               const arr = agentsRef.current
               return arr[arr.length - 1] ?? null
             }}
+            onBaselineChange={onBaselineChange ?? setBaselinePctLocal}
+            onLookaheadChange={onLookaheadChange ?? setLookaheadSecLocal}
           />
         )}
-        {mode === 'compare' && (
+        {variant !== 'ambient' && effectiveMode === 'compare' && (
           <div className="stage-label-row">
             <span>Always-on</span><span>LumiNation</span>
           </div>
         )}
-        {mode !== 'fpv' && (
+        {variant !== 'ambient' && effectiveMode !== 'fpv' && interactive && (
           <div className="stage-hint">
             {isMobile ? (
               <>
                 <button
                   className={`spawn-toggle ${spawnMode === 'ped' ? 'active' : ''}`}
-                  onTouchEnd={e => { e.stopPropagation(); spawnModeRef.current = 'ped'; setSpawnMode('ped') }}
-                  onClick={() => { spawnModeRef.current = 'ped'; setSpawnMode('ped') }}
+                  onTouchEnd={e => { e.stopPropagation(); activeSpawnModeRef.current = 'ped'; setSpawnMode('ped') }}
+                  onClick={() => { activeSpawnModeRef.current = 'ped'; setSpawnMode('ped') }}
                 >🚶 Ped</button>
                 <button
                   className={`spawn-toggle ${spawnMode === 'car' ? 'active' : ''}`}
-                  onTouchEnd={e => { e.stopPropagation(); spawnModeRef.current = 'car'; setSpawnMode('car') }}
-                  onClick={() => { spawnModeRef.current = 'car'; setSpawnMode('car') }}
+                  onTouchEnd={e => { e.stopPropagation(); activeSpawnModeRef.current = 'car'; setSpawnMode('car') }}
+                  onClick={() => { activeSpawnModeRef.current = 'car'; setSpawnMode('car') }}
                 >🚗 Car</button>
                 <span className="spawn-hint-text">tap a street to add</span>
               </>
@@ -1355,7 +1472,7 @@ export default function CitySimulator({ mode }: Props) {
         )}
       </div>
 
-      <aside className="sidebar">
+      {variant !== 'ambient' && showFullSidebar && <aside className="sidebar">
         {(() => {
           const scale = lisbon ? 70_000 / Math.max(stats.lampCount, 1) : 1
           const scaledPower = stats.powerNow * scale
@@ -1452,16 +1569,15 @@ export default function CitySimulator({ mode }: Props) {
               <option value="mixed">Mixed traffic · 11pm</option>
             </select>
 
-            <div className="row"><span>Baseline brightness</span><span>{Math.round(baselinePct * 100)}%</span></div>
-            <input type="range" min={15} max={100} step={1} value={Math.round(baselinePct * 100)}
-              onChange={e => setBaselinePct(parseInt(e.target.value, 10) / 100)} />
-
-            <div className="row"><span>Lookahead</span><span>{lookaheadSec.toFixed(1)}s</span></div>
-            <input type="range" min={20} max={80} step={1} value={Math.round(lookaheadSec * 10)}
-              onChange={e => setLookaheadSec(parseInt(e.target.value, 10) / 10)} />
+            <SimControls
+              baselinePct={baselinePct}
+              onBaselineChange={setBaselinePct}
+              lookaheadSec={lookaheadSec}
+              onLookaheadChange={setLookaheadSec}
+            />
 
             <div className="button-row">
-              <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0; powerHistoryRef.current = [] }}>Clear</button>
+              <button onClick={() => { agentsRef.current = []; trackedRef.current = null; kwhSavedRef.current = 0; powerHistoryRef.current = []; onClear?.() }}>Clear</button>
               <button onClick={() => setPaused(p => !p)}>{paused ? 'Resume' : 'Pause'}</button>
             </div>
             <button
@@ -1479,7 +1595,7 @@ export default function CitySimulator({ mode }: Props) {
             </button>
           </div>
         </div>
-      </aside>
+      </aside>}
     </div>
   )
 }

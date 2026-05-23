@@ -168,17 +168,80 @@ plan to use on stage at the Silicon Valley World Final, plus as a marketing /
 investor-facing piece.
 
 **Stack:** React 18 + TypeScript + Vite + Three.js (^0.184.0). No backend. All client-side.
+**Published:** Replit (public URL). All files tracked by git including `FPV3D.tsx`.
 
 **Files of interest:**
-- `src/CitySimulator.tsx` — simulation logic (city layout, agents, lamps,
-  physics step, drawing, scenarios). All key tunables are at the top.
-- `src/FPV3D.tsx` — Three.js Citizen View (1500+ lines). Completely independent
+- `src/App.tsx` — shell: topbar with 4 mode buttons, renders `<CitySimulator>`, footer.
+- `src/CitySimulator.tsx` — all simulation logic (city layout, agents, lamps, physics,
+  drawing, scenarios, Lisbon scale, live chart). All key tunables are at the top.
+- `src/FPV3D.tsx` — Three.js Citizen View (~1750 lines). Completely independent
   from the Canvas 2D system; receives simulation state as React refs via props.
-- `src/App.tsx` — top bar with mode buttons (LumiNation / Always-on / Compare /
-  Citizen view) and footer.
-- `src/styles.css` — global styles + LumiNation brand tokens.
-- `THREEJS_FPV_ROADMAP.txt` — original implementation plan for the 3D FPV.
+- `src/hooks/useIsMobile.ts` — `window.matchMedia` hook, breakpoint 768px.
+- `src/styles.css` — global styles + LumiNation brand tokens + full mobile layout.
 - `SIMULATION_VALUES_RESEARCH_REPORT.txt` — research on Portuguese energy values.
+
+---
+
+## Site flow & screens
+
+The app is a single page. No routing. `App.tsx` holds a `mode` state that switches
+what `CitySimulator.tsx` renders (and whether `FPV3D.tsx` is mounted).
+
+### Top bar (always visible)
+- Left: amber "L" brand mark (glowing box-shadow) + "LumiNation" heading + tagline
+  "The adaptive light corridor · live simulator"
+- Right (desktop) / below brand (mobile 2×2 grid): 4 mode buttons
+
+### 4 mode buttons → 4 screens
+
+**1. LumiNation** (default, `mode='lumination'`)
+- 2D top-down canvas: 3×3 city grid, dark night palette.
+- Adaptive corridor active: lamps near pedestrians/cars illuminate ahead, dim behind.
+- Communication mesh lines between adjacent lamps, opacity reacts to brightness.
+- Sidebar visible (right on desktop, top on mobile).
+
+**2. Always-on** (`mode='baseline'`)
+- Same 2D canvas but all lamps rendered at `MAX_VISUAL_BRI` permanently.
+- Useful to show the contrast: "this is what cities do today."
+
+**3. Compare** (`mode='compare'`)
+- Split-screen: left half = LumiNation, right half = Always-on.
+- Same simulation state drives both halves — direct side-by-side comparison.
+- Sidebar visible.
+
+**4. Citizen view** (`mode='fpv'`)
+- Full `FPV3D.tsx` Three.js scene mounts; canvas is hidden.
+- First-person walk down a city street at night, corridor of light ahead of you.
+- Glassmorphic overlay with: Walk / Jog / Sprint buttons + Citizen Dashboard stats.
+- Sidebar still visible below on mobile (metrics, controls).
+
+### Sidebar (right on desktop, bottom on mobile — always shown except in fpv on some layouts)
+
+**Controls card:**
+- Baseline brightness slider (15–100%)
+- Lookahead time slider
+- Scenario selector: Manual / Quiet residential 3am / Busy avenue 8pm / Mixed 11pm
+- Spawn buttons: "Spawn Pedestrian" / "Spawn Car" (desktop), tap-mode toggle (mobile)
+- **Lisbon Scale** toggle button — multiplies all displayed metrics by 70,000/lampCount
+  to surface the €4M/year headline figure for Lisbon's 70,000 streetlights.
+- Pause / Resume / Clear buttons
+
+**Metrics card:**
+- Power now (W or kW or MW with Lisbon scale)
+- % of always-on power
+- Session kWh saved
+- Annual € savings (projected)
+- Annual CO₂ savings (kg or t)
+- Live pedestrian + vehicle counts
+
+**Live power chart (canvas element):**
+- 60-second ring buffer (120 entries × 0.5s) drawn each time stats update.
+- Amber filled area = LumiNation power over time.
+- Dashed white line = always-on reference.
+- Y axis: 0 → full power. X axis: last 60 seconds.
+
+### Footer (always visible)
+`LumiNation · Red Bull Basement Portugal 2026 · Instituto Superior Técnico` + `v0.1 · early prototype`
 
 ---
 
@@ -194,114 +257,128 @@ investor-facing piece.
 - Communication mesh lines between adjacent lamps — opacity reacts dynamically
   to the average brightness of each lamp pair.
 - Lamp halos: 5-stop radial gradient for smooth falloff; atmospheric vignette
-  darkens canvas edges. Both Always-on and LumiNation are capped at
-  `MAX_VISUAL_BRI = 0.85` so visual comparison is fair.
+  darkens canvas edges. Both Always-on and LumiNation use `brightness * MAX_VISUAL_BRI`
+  (multiplicative, smooth 0→100% range, no dead zone).
 - Lamp corridor logic: same-street lamps within [−reachBehind, lookaheadPx +
   reachAhead] are lit at 100%; cross-street lamps get a 50px intersection
   spillover glow. Asymmetric easing: fast warm-up (τ≈0.31s), slow dim-down
   (τ≈0.83s). Snaps to target when Δ < 0.01.
-- Click anywhere on a street to spawn a pedestrian; shift+click for a car.
+- Click (desktop) or tap (mobile) on a street to spawn a pedestrian.
+  Shift+click (desktop) or tap-mode toggle (mobile) for a car.
 - Pedestrians drawn as walking figures with animated stride.
 - Cars drawn pseudo-3D with body, windshield, headlight cones, tail lights.
+- `spawnRandomEdge()` — spawns agents at valid street edges (not building centers).
+- Scenarios auto-spawn agents at appropriate rates:
+  - Quiet residential 3am: sparse pedestrians, rare cars.
+  - Busy avenue 8pm: frequent cars, moderate pedestrians.
+  - Mixed 11pm: balanced.
+- **Lisbon Scale** — `scale = 70_000 / lampCount` multiplier applied to all displayed
+  metrics. Surfaces headline €4M/year figure. Scale badge shown when active.
+  Resize bug fixed: sidebar growth no longer triggers canvas resize (overflow:hidden on .app).
+- **Live power chart** — 60s ring buffer drawn on a `<canvas>` in the sidebar.
+  Amber area = LumiNation; dashed white = always-on. Drawn via `useEffect` on stats change.
 
 ### Citizen view (FPV — `src/FPV3D.tsx`, Three.js WebGL)
 
-The Canvas 2D FPV has been fully replaced by a Three.js 3D scene. Key features:
+Full 3D WebGL scene. Key features:
 
-**Scene & rendering:**
-- `WebGLRenderer` with PCFSoftShadowMap, ReinhardToneMapping (exposure 1.0),
-  antialias, pixelRatio capped at 2.
-- `FogExp2(0x020a18, 0.009)` — subtle atmospheric depth haze.
-- Scene background `0x020205` (near-black indigo).
-- Single `AmbientLight(0x08080c, 0.05)` — extremely dim fill only.
+**Rendering (desktop / mobile adaptive):**
+- `WebGLRenderer`: antialias on desktop, off on mobile. `PCFSoftShadowMap` on desktop, disabled on mobile.
+- `ReinhardToneMapping` exposure 1.0.
+- `pixelRatio`: capped at 2 on desktop, 1 on mobile.
+- `FogExp2`: density 0.006 on desktop, 0.022 on mobile (3.7× thicker → shorter draw distance).
+- Camera far plane: 300m desktop, 120m mobile.
+- `HemisphereLight(0x1a2540, 0x0a0906, 1.2)` + `AmbientLight(0x0a0c12, 0.3)`.
+
+**Materials (desktop / mobile):**
+- Desktop: `MeshStandardMaterial` (PBR) throughout.
+- Mobile: `MeshLambertMaterial` for all non-emissive surfaces (2–4× faster fragment shading).
+- Emissive materials (bulb, windows) use same parameters on both; Lambert supports emissive.
 
 **Ground & road:**
-- Road: `PlaneGeometry(8, 800)`, `color: 0x0e0e0e` (neutral dark asphalt).
-- Sidewalks: `PlaneGeometry(4.5, 800)` each side, `color: 0x181816`.
+- Road: `PlaneGeometry(8, 800)`, dark asphalt.
+- Sidewalks: `PlaneGeometry(4.5, 800)` each side.
 - Curb edges: `BoxGeometry(0.14, 0.14, 800)` at ±4.06m.
-- White road centre dashes: 63 pooled `BoxGeometry(0.12, 0.01, 3.2)` boxes,
-  `color: 0xe8e8e8`, recycled as camera advances.
+- White road centre dashes: 63 (desktop) / 20 (mobile) pooled boxes, recycled as camera advances.
 
 **Sky:**
-- 280 stars: `Points` geometry with `PointsMaterial({ fog: false })` (critical:
-  fog:false prevents FogExp2 from occluding distant stars).
+- Stars: 280 (desktop) / 80 (mobile) `Points` geometry, `fog: false` so FogExp2 doesn't hide them.
 
-**Building pool (23 per side, 22m spacing):**
-- Slot system — each building position is deterministically assigned one of four
-  types via `seededRng`:
-  - **`building`** (most common): 2 sub-buildings with varied heights, 10 WALL_COLORS
-    (antique white → charcoal → terracotta → sage → ochre → teal → taupe),
-    individual `PlaneGeometry` glass window panes (lit: emissive amber; unlit:
-    dark glass metalness 0.9), doors with frame + handle, shopfront glazing, awnings.
-  - **`park`**: grass ground plane, `DodecahedronGeometry` trees with bark trunk,
-    bench, wall-mounted LED lamp (registered as AdaptiveLamp).
-  - **`playground`**: grass, wooden fence rails, sandbox (frame + sand plane),
-    slide, swing set (A-frame, chains, seat), globe lamp post (AdaptiveLamp).
-  - **`parking`**: asphalt, painted parking lines, low-poly parked cars
-    (body + cab + 4 wheels + headlights), wall LED (AdaptiveLamp).
-- Recycling: when group.position.z > 240, teleport to far end, reassign slot.
+**Building pool (desktop: 23/side, mobile: 10/side, 22m spacing):**
+- Slot types (desktop only — mobile forces 'building' to avoid extra PointLights):
+  - **`building`** (most common): 2 sub-buildings with varied heights, 10 WALL_COLORS.
+    Individual glass window panes (desktop only; skipped on mobile — too many draw calls).
+    Doors + frame + handle, shopfront glazing, awnings, café tables (desktop only).
+  - **`park`**: grass, bench, tree, wall-mounted LED (AdaptiveLamp PointLight).
+  - **`playground`**: grass, fence, sandbox, slide, swing set, globe lamp (AdaptiveLamp).
+  - **`parking`**: asphalt, parking lines, low-poly parked cars, wall LED (AdaptiveLamp).
+- Bollards at curb edges (desktop only; skipped on mobile).
+- Recycling: when `group.position.z > 240`, teleport to far end.
 
-**Streetlamp pool (46 total, 11m spacing, staggered ±5.5m per side):**
-- Per lamp: pole (`CylinderGeometry`) + arm (`BoxGeometry`) + fixture hood
-  (`CylinderGeometry`) + bulb (`SphereGeometry` with emissive) + `PointLight`
-  + soft radial pool (canvas texture, `AdditiveBlending`).
-- `PointLight(0xffd060, 18, 13, 2)` — warm amber, distance 13m, decay 2.
-- Corridor brightness: `bri * 16` → PointLight.intensity.
-- Shadows cast on road surface.
+**Streetlamp pool (desktop: 46/side, mobile: 10/side, 11m spacing, staggered):**
+- Per lamp: pole + arm + fixture hood + emissive bulb + `PointLight` + two pool planes (AdditiveBlending).
+- `PointLight(0xffd060, 18, 13, 2)` — warm amber.
+- Corridor brightness: `bri * 16` → `PointLight.intensity`.
+- Shadow maps: only for 1–2 closest lamps per side (desktop); fully disabled mobile.
+- Total PointLights: ~92 desktop, ~20 mobile (this is the biggest perf difference).
 
-**Tree pool (11 per side, 48m spacing):**
-- `DodecahedronGeometry` foliage + cylinder trunk, recycled like buildings.
+**Tree pool (desktop: 11/side, mobile: 5/side, 48m spacing):**
+- `DodecahedronGeometry` foliage (3 stacked spheres) + cylinder trunk.
 
-**Bollards:**
-- Stone-gray bollards placed at curb edges between lamps.
-
-**AdaptiveLamps system:**
+**AdaptiveLamps system (desktop only):**
 - Park/playground/parking lights register into `adaptiveLamps[]`.
 - Each frame: intensity driven by same `getBri()` corridor function as streetlamps.
 
+**NPC walker pool (3 silhouettes: 2 walkers + 1 dog walker):**
+- Articulated human figures: head (SphereGeometry) + hair + eyes + nose + torso + hip-pivot legs + shoulder-pivot arms.
+- Human gait: `legL/armR` and `legR/armL` swing in opposing phases (realistic walk).
+- Dog walker: oval body (scaled SphereGeometry), snout, nose, ears, tail, 4 leg pivots with paws.
+  Dog uses diagonal trot gait. Sniff animation: vertical + horizontal head oscillation.
+- Leash: `THREE.Line` with `BufferAttribute` updated each frame to follow dog collar.
+- Dog faces correct direction: `dogGroup.rotation.y = Math.PI`, `position.z = -1.3`.
+- Recycled when they pass camera (z > 6), reappear 320m ahead.
+
 **Corridor brightness (`getBri()`):**
-```ts
-const lookaheadDist = lookaheadRef.current * 8.0 * currentSpeedMult
-// distAhead = lamp's distance ahead of camera, corrected for yaw
-if (distAhead >= 0 && distAhead <= lookaheadDist) → bri = MAX_VISUAL_BRI
-else → fade to baselineRef.current * MAX_VISUAL_BRI
-```
-- Speed multiplier expands the corridor: faster walk → longer lit zone.
+- Lamps 0–12m behind camera: fully lit (safety zone).
+- 12m+ behind: fade to baseline over 10m.
+- Ahead within `lookaheadDist`: fully lit.
+- Beyond lookaheadDist: fade to baseline over 10m.
+- `lookaheadDist = lookaheadRef.current * 8 * corridorSpeedMult`
+- `corridorSpeedMult` lags behind `currentSpeedMult` (reactive, not instant).
 
 **Speed system:**
-- Hold `Shift` → sprint (3× speed). Release → walk (1×).
-- UI buttons: Walk (1.4 m/s) / Jog (2.5×) / Sprint (4×).
-- `speedMult` syncs directly to 2D agent velocity so top-down and FPV stay in sync.
-
-**Look behind:**
-- Press `Space` or `B` → camera yaw rotates to 180° (smooth 6 rad/s), held 2s, auto-returns.
-- `targetYawRef` / `currentYawRef` system; `getBri()` uses `Math.cos(currentYaw)` to
-  correct distance-ahead calculation when looking back.
+- Hold `Shift` → 3× speed (keyboard sprint).
+- UI buttons: Walk (1.0×) / Jog (2.0×) / Sprint (3.0×).
+- `speedMult` syncs back to 2D agent velocity so top-down and FPV stay in sync.
 
 **Head-bob:**
 - `camera.position.y = 1.7 + sin(stridePhase × 2π) × 0.04`
-- `camera.position.x = sin(stridePhase × π) × 0.015`
-- `stridePhase += dt × PED_SPEED × speedMult / 0.75`
+- `camera.position.x = sin(stridePhase × π) × 0.012`
 
-**UI overlay (glassmorphic):**
-- "Citizen Dashboard" panel: corridor length (m), walking speed (km/h), mode label.
-- "Citizen Controls" panel: Walk / Jog / Sprint buttons, Look Behind button.
-- Styled with `.fpv-overlay` CSS class (backdrop-filter blur, amber accents).
+**UI overlay (glassmorphic `.fpv-overlay`):**
+- "Citizen Dashboard" panel: velocity (m/s + km/h), lookahead corridor (m), light frequency.
+- "Citizen Controls" panel: Walk / Jog / Sprint buttons.
+- SHIFT hint hidden on mobile (`!isMobile`).
 
-### Shared features
+### Mobile layout (responsive — `src/styles.css` + `useIsMobile` hook)
 
-- Four view modes: LumiNation (default), Always-on, Compare (split-screen), Citizen view.
-- Live metrics: power now (W), % of always-on, session kWh saved, projected
-  annual €/CO₂ savings, pedestrian + vehicle counts.
-- Scenarios: manual, quiet residential 3am, busy avenue 8pm, mixed 11pm.
-- Controls: baseline brightness slider (15–100%), lookahead time slider, clear,
-  pause/resume.
-
-### UI / brand
-
-- Darker base palette: `--bg: #050508`, `--bg-elev: #0e0e16`.
-- 'Outfit' heading font alongside 'Inter'; metric values use heading font at 26px/700.
-- Brand mark has a subtle amber box-shadow glow. Larger corner radii (12/16px).
+- **`useIsMobile`** hook: `window.matchMedia('(max-width: 768px)')` with change listener.
+- **`.app`**: `height: 100vh; height: 100svh; height: 100dvh` triple fallback for iOS Safari.
+  `overflow: hidden` to prevent sidebar growth from triggering canvas resize.
+- **Single breakpoint** `@media (max-width: 768px)`:
+  - `.stage`: `height: clamp(300px, 56vh, 600px)`
+  - `.sidebar`: 2-column grid, controls card spans full width and sits at `order: -1` (top).
+  - `.mode-bar`: 2×2 grid, buttons `min-height: 32px`.
+  - FPV overlay: horizontal row, hides dashboard card, shows only slim speed controls strip.
+  - Spawn: tap-mode toggle instead of shift+click.
+- Canvas has `touchAction: 'none'` to prevent browser scroll interception.
+- **FPV mobile scene settings** (detected via `isMob = /Mobi|Android|iPhone|iPad/i.test(UA) || W <= 768`):
+  - `antialias: false`, `shadowMap.enabled: false`, `pixelRatio: 1`.
+  - `FogExp2 density: 0.022` (vs 0.006), camera far: 120m.
+  - `MeshLambertMaterial` everywhere (vs `MeshStandardMaterial`).
+  - LAMP_COUNT: 10/side (vs 46), BLDG_COUNT: 10/side (vs 23), TREE_COUNT: 5/side (vs 11).
+  - DASH_COUNT: 20 (vs 63), Stars: 80 (vs 280).
+  - No window panes, no bollards, no doors/awnings/cafés, no park/playground/parking slots.
 
 ---
 
@@ -312,7 +389,7 @@ else → fade to baselineRef.current * MAX_VISUAL_BRI
 ```ts
 const LAMP_WATTS = 80              // wattage per lamp at full
 const PRICE_PER_KWH = 0.15         // €/kWh public lighting
-const CO2_PER_KWH = 0.13           // Portuguese grid (updated from EU avg 0.25)
+const CO2_PER_KWH = 0.13           // Portuguese grid 2023 — APA official data
 const HOURS_PER_YEAR_NIGHT = 4100  // night hours/year
 const PED_SPEED = 1.4              // m/s
 const CAR_SPEED = 11               // m/s (~40 km/h)
@@ -321,44 +398,41 @@ const LAMP_REACH_PED = 180         // corridor front radius for pedestrians (px)
 const LAMP_REACH_CAR = 300         // corridor front radius for cars (px)
 const LAMP_REACH_BEHIND_PED = 260  // safety rear margin for pedestrians (px)
 const LAMP_REACH_BEHIND_CAR = 200  // safety rear margin for cars (px)
-const MAX_VISUAL_BRI = 0.85        // visual brightness cap (both modes equal at peak)
+const MAX_VISUAL_BRI = 0.58        // multiplicative scale: brightness × this = visual (smooth, no dead zone)
 ```
 
-### `FPV3D.tsx` (scene constants)
+### `FPV3D.tsx` (scene constants — desktop values, mobile in parentheses)
 
 ```ts
-BLDG_COUNT = 23, BLDG_SPACING = 22m, BLDG_DEPTH = 14m, BLDG_WIDTH = 11m
+BLDG_COUNT = 23 (mob: 10), BLDG_SPACING = 22m, BLDG_DEPTH = 14m, BLDG_WIDTH = 11m
 BLDG_X_L = -12.5m, BLDG_X_R = +12.5m
-LAMP_COUNT = 46 (23/side), LAMP_SPACING = 11m
-TREE_COUNT = 11 per side, TREE_SPACING = 48m
-DASH_COUNT = 63, DASH_SPACING = 8m
+LAMP_COUNT = 46 (mob: 10) per side, LAMP_SPACING = 11m
+TREE_COUNT = 11 (mob: 5) per side, TREE_SPACING = 48m
+DASH_COUNT = 63 (mob: 20), DASH_SPACING = 8m
+Stars = 280 (mob: 80)
 PointLight: color 0xffd060, base intensity 18, distance 13m, decay 2
 Animation: bri * 16 → PointLight.intensity
-FogExp2 density: 0.009
-Camera FOV: 72°, near: 0.1m, far: 300m
-Lookahead scale: 8 m/sec
+FogExp2 density: 0.006 (mob: 0.022)
+Camera FOV: 72° min (auto widens on portrait), near: 0.1m, far: 300m (mob: 120m)
+MAX_VISUAL_BRI = 0.68 (FPV internal; separate from CitySimulator's 0.58)
+Lookahead scale: 8 m per lookahead unit × corridorSpeedMult
 ```
 
 ---
 
 ## Roadmap (in priority order, before the World Final)
 
-1. ~~**Polish visual**~~ ✅ **Done** — buildings, atmospheric vignette, smoother
-   halos, reactive mesh, refined typography, darker palette, Outfit font.
-2. ~~**Three.js Citizen View**~~ ✅ **Done** — full 3D WebGL scene with
-   realistic buildings (4 slot types), streetlamps, trees, bollards, park/playground/
-   parking areas, real PointLights, corridor brightness, speed system, look-behind,
-   glassmorphic UI overlay.
-3. **Lisbon-scale preset** — a button that multiplies displayed numbers to
-   represent 70,000 lamps and surfaces the headline €4M/year savings figure.
-4. **Live time-series chart** — last 60s of power consumption, with a shadow
-   line showing always-on for comparison. Visually very powerful.
-5. **Cinematic / "Play story" mode** — auto-runs a 30-second scripted sequence
+1. ~~**Polish visual**~~ ✅ **Done**
+2. ~~**Three.js Citizen View**~~ ✅ **Done**
+3. ~~**Lisbon-scale preset**~~ ✅ **Done** — button in controls, scales all metrics to 70,000 lamps, €4M/year.
+4. ~~**Live time-series chart**~~ ✅ **Done** — 60s ring buffer canvas chart with LumiNation amber area and always-on dashed line.
+5. ~~**Mobile-friendly layout**~~ ✅ **Done** — full responsive CSS, mobile FPV optimizations (Lambert materials, reduced counts, no shadows), touch spawn, iOS Safari height fix.
+6. **Cinematic / "Play story" mode** — auto-runs a 30-second scripted sequence
    ideal for stage use: quiet street → first pedestrian → corridor activates →
    metrics tick up → reset.
-6. **Sound design (optional)** — subtle "lamp wake" tone when lamps activate.
+7. **Sound design (optional)** — subtle "lamp wake" tone when lamps activate.
    Toggleable; off by default for stage safety.
-7. **Recordable fallback video** — capture the demo in OBS as backup if live
+8. **Recordable fallback video** — capture the demo in OBS as backup if live
    demo breaks on stage.
 
 ---
@@ -378,3 +452,7 @@ Lookahead scale: 8 m/sec
   English.
 - `FPV3D.tsx` **is tracked by git** — changes are versioned normally and
   `git checkout` can revert it. Still, be careful before making large changes.
+- Mobile and desktop are both production targets. Any new feature must consider both.
+- The `isMob` detection in `FPV3D.tsx` is done inside the `useEffect` closure
+  (not from the `useIsMobile` hook) because the hook's React state isn't reliably
+  available at WebGL init time. Keep this pattern.
