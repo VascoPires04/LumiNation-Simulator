@@ -146,10 +146,15 @@ input[type="range"] {
     overflow: hidden;
   }
   .app--v2 {
-    position: fixed;
-    inset: 0;
-    height: auto; /* inset:0 sets the height correctly */
-    overflow: hidden;
+    position: fixed !important;
+    inset: 0 !important;
+    height: auto !important; /* inset:0 sets the height; !important beats later .app { height:100dvh } rule */
+    overflow: hidden !important;
+  }
+  /* Disable momentum scrolling on the internal scroll driver — prevents iOS
+     from creating a scroll layer that competes with the viewport lock.        */
+  .scroll-doc {
+    -webkit-overflow-scrolling: auto;
   }
 }
 
