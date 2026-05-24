@@ -3,7 +3,7 @@
 // Max:     theoretical max = all lamps fully dimmed
 // Animates smoothly with requestAnimationFrame interpolation.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { arc } from 'd3-shape'
 import { interpolateNumber } from 'd3-interpolate'
 import { SimTotals } from '../hooks/useSimTotals'
@@ -30,11 +30,22 @@ function formatCO2(kg: number): { val: string; unit: string } {
 }
 
 export default function CO2Gauge({ totals, isMobile, history: _history }: Props) {
-  const animRef  = useRef<number>(0)
-  const prevFill = useRef(0)
+  const animRef      = useRef<number>(0)
+  const prevFill     = useRef(0)
+  const containerRef = useRef<HTMLDivElement>(null)
   const [fillAngle, setFillAngle] = useState(START_ANGLE)
+  const [availW, setAvailW] = useState(isMobile ? 200 : 240)
 
-  const SIZE = isMobile ? 200 : 240
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setAvailW(el.offsetWidth))
+    ro.observe(el)
+    setAvailW(el.offsetWidth)
+    return () => ro.disconnect()
+  }, [])
+
+  const SIZE = Math.min(isMobile ? 200 : 240, availW - 8)
   const CX   = SIZE / 2
   const CY   = SIZE / 2 + (isMobile ? 10 : 14)
   const R_OUT = SIZE * 0.40
@@ -106,7 +117,7 @@ export default function CO2Gauge({ totals, isMobile, history: _history }: Props)
   const pct  = totals ? Math.round(fillRatio * 100) : 0
 
   return (
-    <div className="co2-gauge-wrap">
+    <div ref={containerRef} className="co2-gauge-wrap">
       <div className="dash-card-label">CO₂ AVOIDED · ANNUAL PROJECTION</div>
       <svg width={SIZE} height={SIZE} style={{ overflow: 'visible', display: 'block', margin: '0 auto' }}>
         <defs>
