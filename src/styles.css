@@ -1538,6 +1538,12 @@ input[type="range"] {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 18px;
+  max-height: clamp(260px, 32vh, 380px);
+}
+
+.dash-bottom-card {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .dash-bottom-card { overflow: hidden; }
@@ -1595,7 +1601,9 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  justify-content: space-evenly;
+  height: 100%;
+  gap: 0;
   padding: 4px 0;
 }
 .co2-comparison {

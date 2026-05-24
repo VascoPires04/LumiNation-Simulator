@@ -35,18 +35,26 @@ export default function CO2Gauge({ totals, isMobile, history: _history }: Props)
   const containerRef = useRef<HTMLDivElement>(null)
   const [fillAngle, setFillAngle] = useState(START_ANGLE)
   const [availW, setAvailW] = useState(isMobile ? 200 : 240)
+  const [availH, setAvailH] = useState(isMobile ? 300 : 380)
 
   useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setAvailW(el.offsetWidth))
+    const ro = new ResizeObserver(() => {
+      setAvailW(el.offsetWidth)
+      setAvailH(el.offsetHeight)
+    })
     ro.observe(el)
     setAvailW(el.offsetWidth)
+    setAvailH(el.offsetHeight)
     return () => ro.disconnect()
   }, [])
 
-  // Card has 20px padding each side; subtract that plus a small buffer
-  const SIZE    = Math.min(isMobile ? 180 : 240, Math.max(80, availW - 44))
+  // Fit to whichever is the bottleneck — width or height.
+  // The SVG arc takes ~70% of height; remaining ~30% is for labels above/below.
+  const sizeByW = availW - 44
+  const sizeByH = availH * 0.62
+  const SIZE = Math.min(isMobile ? 180 : 260, Math.max(100, Math.min(sizeByW, sizeByH)))
   const SVG_H   = Math.round(SIZE * (isMobile ? 1.35 : 1.25))
   const CX      = SIZE / 2
   const CY      = SIZE / 2 + (isMobile ? 8 : 14)
@@ -158,37 +166,29 @@ export default function CO2Gauge({ totals, isMobile, history: _history }: Props)
 
         {/* Centre text — positioned absolutely in SVG coords */}
         <text
-          x={CX} y={CY - TRACK_W * 0.5}
+          x={CX} y={CY - TRACK_W * 0.3}
           textAnchor="middle"
           fontFamily="Outfit, Inter, sans-serif"
           fontWeight={500}
-          fontSize={isMobile ? 24 : 30}
+          fontSize={22}
           fill="#FAC775"
           letterSpacing="-0.02em"
         >{val}</text>
         <text
-          x={CX} y={CY + (isMobile ? 16 : 20)}
+          x={CX} y={CY + 14}
           textAnchor="middle"
           fontFamily="Inter, sans-serif"
-          fontSize={isMobile ? 10 : 11}
+          fontSize={11}
           fill="rgba(240,240,245,0.6)"
           letterSpacing="0.05em"
           style={{ textTransform: 'uppercase' }}
         >{unit} / year</text>
-        <text
-          x={CX} y={CY + (isMobile ? 32 : 38)}
-          textAnchor="middle"
-          fontFamily="Inter, sans-serif"
-          fontSize={isMobile ? 9 : 10}
-          fill="rgba(240,240,245,0.38)"
-        >Lisbon · 70k lamps</text>
-
         {/* Percentage at arc tip */}
         <text
-          x={CX} y={CY + R_OUT + (isMobile ? 20 : 24)}
+          x={CX} y={CY + R_OUT + 18}
           textAnchor="middle"
           fontFamily="Inter, sans-serif"
-          fontSize={isMobile ? 11 : 12}
+          fontSize={12}
           fill="rgba(240,240,245,0.55)"
         >{pct}% of max savings</text>
       </svg>

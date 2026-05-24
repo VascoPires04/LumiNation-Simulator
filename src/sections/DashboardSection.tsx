@@ -67,6 +67,7 @@ export default function DashboardSection({ onInView, isMobile, paused, onPause, 
           <p className="dash-subtitle">
             Live data from your session · last {elapsed}
             {paused && <span className="dash-frozen-badge"> · frozen</span>}
+            <br />Lisbon scale · 70,000 lamps
           </p>
         </div>
         {/* Pause — mobile only (desktop uses HUD sidebar) */}
