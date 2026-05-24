@@ -28,7 +28,7 @@ function Sparkline({ values, uid, h, w, elapsed }: {
 }) {
   if (w < 20 || values.length < 2) return <svg width={w} height={h} />
   const fSize = Math.max(6, Math.round(h * 0.14))
-  const ML = Math.round(fSize * 4.8)
+  const ML = Math.round(fSize * 6.5)
   const MR = 4, MT = 4
   const MB = fSize + 6
   const m      = max(values) ?? 1
@@ -36,7 +36,8 @@ function Sparkline({ values, uid, h, w, elapsed }: {
   const iH     = h - MT - MB
   const niceY  = scaleLinear().domain([0, Math.max(m, 1e-9)]).nice()
   const yMax   = (niceY.domain() as [number, number])[1]
-  const rawTicks = niceY.ticks(4).filter(t => t > 0)
+  const nTicks = h < 70 ? 3 : 4
+  const rawTicks = niceY.ticks(nTicks).filter(t => t > 0)
   const seen = new Set<string>()
   const ticks = rawTicks.filter(t => {
     const label = fmtEur(t)
@@ -63,17 +64,15 @@ function Sparkline({ values, uid, h, w, elapsed }: {
         <clipPath id={`scE-${uid}`}><rect width={iW} height={iH} /></clipPath>
       </defs>
 
-      {/* Grid lines at every tick, label only the top one */}
-      {ticks.map((t, i) => (
+      {/* Grid lines + label at every tick */}
+      {ticks.map(t => (
         <g key={t}>
-          {i === ticks.length - 1 && (
-            <text x={ML - 4} y={MT + y(t) + 4} textAnchor="end"
-              fontSize={fSize} fill="rgba(255,255,255,0.55)" fontFamily="Inter,sans-serif">
-              {fmtEur(t)}
-            </text>
-          )}
+          <text x={ML - 4} y={MT + y(t) + 4} textAnchor="end"
+            fontSize={fSize} fill="rgba(240,240,245,0.38)" fontFamily="Inter,sans-serif">
+            {fmtEur(t)}
+          </text>
           <line x1={ML} x2={w - MR} y1={MT + y(t)} y2={MT + y(t)}
-            stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
+            stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
         </g>
       ))}
 
@@ -109,7 +108,7 @@ export default function EurCard({ history, totals, isMobile, expandable = false 
   )
   const elapsed = Math.round(history.length / 2)
   const eur = totals?.eurSavedAnnual ?? 0
-  const H   = isMobile ? 48 : 64
+  const H   = isMobile ? 90 : 64
 
   const inner = (
     <div className="money-card-wrap" style={{ position: 'relative' }}>

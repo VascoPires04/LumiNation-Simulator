@@ -1094,26 +1094,29 @@ input[type="range"] {
   -webkit-backdrop-filter: blur(10px);
 }
 
-/* Drag handle row — tiny clickable/draggable bar above content */
+/* Drag handle row — generous touch target above content */
 .hud-controls-handle-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 0 4px;
+  padding: 14px 0 10px;
   cursor: grab;
   pointer-events: auto;
+  /* Extend tap area beyond visible bounds */
+  margin: 0 -16px;
 }
 .hud-controls-handle-row:active { cursor: grabbing; }
 
 .hud-controls-handle {
-  width: 32px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(240,240,245,0.25);
+  width: 44px;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(240,240,245,0.30);
   transition: background 0.15s;
 }
-.hud-controls-handle-row:hover .hud-controls-handle {
-  background: rgba(240,240,245,0.5);
+.hud-controls-handle-row:hover .hud-controls-handle,
+.hud-controls-handle-row:active .hud-controls-handle {
+  background: rgba(250,199,117,0.6);
 }
 
 /* Body — panel that slides as one unit (handle + content) */
@@ -1861,12 +1864,15 @@ input[type="range"] {
 
   .dash-title { font-size: clamp(1.3rem, 5vw, 1.7rem); }
 
-  /* Single column — 4 rows */
+  /* Single column — 3 rows, each card has a comfortable min-height */
   .dash-bottom-cards {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
     max-height: none;
-    gap: 12px;
+    gap: 16px;
+  }
+  .dash-bottom-cards .dash-bottom-card {
+    min-height: clamp(160px, 28vh, 220px);
   }
   .dash-bottom-cards .dash-bottom-card:first-child {
     grid-row: auto;
