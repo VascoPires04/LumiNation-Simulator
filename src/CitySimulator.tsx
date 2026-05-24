@@ -133,6 +133,7 @@ export default function CitySimulator({
   const zoomRef = useRef(1)
   const targetZoomRef = useRef(1)
   const pinchRef = useRef<{ dist: number; zoom: number } | null>(null)
+  const wasPinchingRef = useRef(false)
   const virtualBoundsRef = useRef({ vx0: 0, vy0: 0, vx1: 600, vy1: 400, vW: 600, vH: 400 })
   const streetPosRef = useRef<{ cols: number[]; rows: number[] }>({ cols: [], rows: [] })
 
@@ -1505,6 +1506,7 @@ if (pausedRef.current) return
 
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (e.touches.length === 2) {
+      wasPinchingRef.current = true
       const dx = e.touches[0].clientX - e.touches[1].clientX
       const dy = e.touches[0].clientY - e.touches[1].clientY
       pinchRef.current = { dist: Math.hypot(dx, dy), zoom: zoomRef.current }
@@ -1526,13 +1528,17 @@ if (pausedRef.current) return
 
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (e.touches.length < 2) pinchRef.current = null
-    // Only spawn on single-finger tap (not after a pinch gesture)
-    if (e.changedTouches.length === 1 && !pinchRef.current) {
-      const touch = e.changedTouches[0]
-      const rect = canvasRef.current!.getBoundingClientRect()
-      const { x, y } = toSimCoords(touch.clientX - rect.left, touch.clientY - rect.top)
-      const a = spawnAgent(x, y, activeSpawnModeRef.current)
-      if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
+    // Once all fingers are lifted, check if this was a plain tap (not a pinch)
+    if (e.touches.length === 0) {
+      const wasPinching = wasPinchingRef.current
+      wasPinchingRef.current = false
+      if (!wasPinching && e.changedTouches.length === 1) {
+        const touch = e.changedTouches[0]
+        const rect = canvasRef.current!.getBoundingClientRect()
+        const { x, y } = toSimCoords(touch.clientX - rect.left, touch.clientY - rect.top)
+        const a = spawnAgent(x, y, activeSpawnModeRef.current)
+        if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
+      }
     }
   }
 
