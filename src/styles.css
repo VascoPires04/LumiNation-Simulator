@@ -152,10 +152,12 @@ input[type="range"] {
     height: 100% !important; /* beats later .app { height:100dvh } rule */
     overflow: hidden !important;
   }
-  /* scroll-doc: disable scrolling on mobile — curtain is timer-based, no scroll needed */
+  /* scroll-doc: on mobile, scrolling is only needed for the dashboard section.
+     Keep pointer-events none so canvas touches still work, but allow overflow
+     so the dashboard's own scroll container can function. */
   .scroll-doc {
     overflow: hidden;
-    pointer-events: none; /* canvas gets all touch events directly */
+    pointer-events: none;
   }
 }
 
@@ -285,7 +287,7 @@ input[type="range"] {
 
 .stage-hint {
   position: absolute;
-  left: 14px;
+  left: 74px; /* cleared past the 48px info button + margin */
   bottom: 14px;
   font-size: 12px;
   color: var(--text-dim);
@@ -1092,26 +1094,29 @@ input[type="range"] {
   -webkit-backdrop-filter: blur(10px);
 }
 
-/* Drag handle row — tiny clickable/draggable bar above content */
+/* Drag handle row — generous touch target above content */
 .hud-controls-handle-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 0 4px;
+  padding: 14px 0 10px;
   cursor: grab;
   pointer-events: auto;
+  /* Extend tap area beyond visible bounds */
+  margin: 0 -16px;
 }
 .hud-controls-handle-row:active { cursor: grabbing; }
 
 .hud-controls-handle {
-  width: 32px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(240,240,245,0.25);
+  width: 44px;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(240,240,245,0.30);
   transition: background 0.15s;
 }
-.hud-controls-handle-row:hover .hud-controls-handle {
-  background: rgba(240,240,245,0.5);
+.hud-controls-handle-row:hover .hud-controls-handle,
+.hud-controls-handle-row:active .hud-controls-handle {
+  background: rgba(250,199,117,0.6);
 }
 
 /* Body — panel that slides as one unit (handle + content) */
@@ -1124,7 +1129,7 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding-top: 16px;
+  padding-top: 28px;
   padding-bottom: 8px;
 }
 
@@ -1285,7 +1290,7 @@ input[type="range"] {
     top: auto;
     right: 0;
     left: 0;
-    bottom: 0;
+    bottom: clamp(48px, 7vh, 80px);
     width: 100%;
     flex-direction: column;
     gap: 8px;
@@ -1392,6 +1397,154 @@ input[type="range"] {
   .brand-mark { width: 30px; height: 30px; font-size: 15px; }
 }
 
+/* ── Info button ── */
+.info-btn {
+  position: fixed;
+  bottom: clamp(20px, 4vh, 36px);
+  left: clamp(16px, 3vw, 32px);
+  z-index: 12;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(20,20,28,0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 0.5px solid rgba(250,199,117,0.35);
+  color: var(--amber);
+  font-size: calc(48px * 0.46);
+  font-style: italic;
+  font-family: Georgia, serif;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.info-btn:hover {
+  background: rgba(250,199,117,0.14);
+  border-color: rgba(250,199,117,0.65);
+}
+
+/* ── Info hint arrow — bounces once then fades ── */
+@keyframes hint-bounce {
+  0%   { transform: translateX(-50%) translateY(0);   opacity: 0; }
+  15%  { transform: translateX(-50%) translateY(0);   opacity: 1; }
+  40%  { transform: translateX(-50%) translateY(-8px); }
+  60%  { transform: translateX(-50%) translateY(0);   }
+  75%  { transform: translateX(-50%) translateY(-5px); }
+  88%  { transform: translateX(-50%) translateY(0);   }
+  100% { transform: translateX(-50%) translateY(0);   opacity: 0; }
+}
+.info-hint-arrow {
+  position: fixed;
+  bottom: calc(clamp(20px, 4vh, 36px) + 56px);
+  /* centred over the 48px info button: left edge + half button width, then translate back */
+  left: calc(clamp(16px, 3vw, 32px) + 24px);
+  transform: translateX(-50%);
+  width: auto;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  overflow: visible;
+  animation: hint-bounce 3.2s ease-in-out forwards;
+  pointer-events: none;
+}
+.info-hint-arrow span {
+  font-size: clamp(10px, 3.2vw, 13px);
+  font-weight: 600;
+  color: var(--amber);
+  font-family: Inter, sans-serif;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+.info-hint-caret {
+  font-size: clamp(20px, 5.5vw, 26px);
+  line-height: 1;
+  color: var(--amber);
+  text-align: center;
+}
+
+/* ── Info modal ── */
+.info-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.info-modal {
+  position: relative;
+  background: rgba(14,14,20,0.96);
+  border: 0.5px solid rgba(250,199,117,0.18);
+  border-radius: 20px;
+  padding: clamp(24px, 4vw, 40px);
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 32px 80px -16px rgba(0,0,0,0.7);
+}
+.info-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.35);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.15s;
+}
+.info-modal-close:hover { color: var(--text); }
+.info-modal-tag {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber);
+  opacity: 0.7;
+  margin-bottom: 14px;
+}
+.info-modal-title {
+  font-family: var(--font-heading);
+  font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.35;
+  margin: 0 0 20px;
+  letter-spacing: -0.02em;
+}
+.info-modal-body {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.65;
+  margin: 0 0 14px;
+}
+.info-modal-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 0.5px solid rgba(255,255,255,0.07);
+}
+.info-modal-hint span {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.info-modal-hint span::before {
+  content: '→ ';
+  color: var(--amber);
+  opacity: 0.6;
+}
+
 /* ── Mobile spawn buttons — rendered in App.tsx above scroll-doc ─────────── */
 .mobile-spawn-btns {
   display: none;
@@ -1414,6 +1567,351 @@ input[type="range"] {
     border-radius: 7px;
     line-height: 1;
   }
+}
+
+/* ── Phase 4: Particle background ──────────────────────────────────────── */
+.particle-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+
+/* ── Phase 4: Dashboard section ─────────────────────────────────────────── */
+
+/*
+  Desktop: left-pad normally, right-pad enough to clear the fixed HUD sidebar.
+  HUD sidebar is at right: clamp(48px,6vw,120px), width: clamp(200px,20vw,280px).
+  So content must end before: right + width ≈ clamp(260px,26vw,410px).
+  We add a comfortable 24px gap on top → padding-right: clamp(284px,28vw,440px).
+*/
+.dashboard-section {
+  padding: 88px clamp(24px, 4vw, 60px) 40px;
+  padding-right: clamp(284px, 28vw, 440px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.dash-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+
+/* Step 3 — bigger title */
+.dash-title {
+  font-family: var(--font-heading);
+  font-size: clamp(1.5rem, 2.8vw, 2.2rem);
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.dash-subtitle {
+  font-size: clamp(13px, 1.1vw, 15px);
+  color: rgba(245,245,248,0.5);
+  margin: 6px 0 0;
+}
+
+.dash-frozen-badge { color: var(--amber); }
+
+.dash-pause-btn {
+  background: rgba(255,255,255,0.04);
+  border: 0.5px solid rgba(255,255,255,0.18);
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.dash-pause-btn:hover { border-color: rgba(255,255,255,0.35); color: var(--text); }
+.dash-pause-btn.active {
+  background: rgba(250,199,117,0.08);
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+/* HUD sidebar dash actions (pause + back) */
+.hud-dash-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dash-mobile-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.dash-back-btn {
+  background: rgba(250,199,117,0.08);
+  border: 0.5px solid rgba(250,199,117,0.35);
+  color: var(--amber);
+  font-size: 12px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.dash-back-btn:hover { background: rgba(250,199,117,0.14); }
+.dash-back-btn--bottom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 14px;
+  font-size: 14px;
+}
+
+/* Charts area */
+.dash-charts-area {
+  display: flex;
+  flex-direction: column;
+  gap: 38px;
+}
+
+/* PowerChart card — full width of the content area */
+.dash-chart-row { width: 100%; }
+
+/* Step 2 — 3-card row below the power chart */
+.dash-bottom-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 18px;
+  max-height: clamp(260px, 32vh, 380px);
+}
+
+.dash-bottom-card {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dash-bottom-card { overflow: hidden; }
+
+/* Cards */
+.dash-card {
+  background: rgba(20,20,28,0.6);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 0.5px solid rgba(250,199,117,0.12);
+  border-radius: 16px;
+  box-shadow: 0 20px 50px -16px rgba(0,0,0,0.55),
+              inset 0 0 0 0.5px rgba(255,255,255,0.04);
+  padding: 16px 20px 14px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+@media (hover: hover) {
+  .dash-card:hover {
+    transform: scale(1.003);
+    box-shadow: 0 24px 60px -14px rgba(0,0,0,0.62),
+                inset 0 0 0 0.5px rgba(255,255,255,0.06);
+    border-color: rgba(250,199,117,0.22);
+  }
+}
+
+.dash-card-label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.dash-chart-legend {
+  margin-top: 2px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dash-legend-label {
+  font-size: 10px;
+  font-family: Inter, sans-serif;
+  color: rgba(240,240,245,0.5);
+  letter-spacing: 0.02em;
+}
+
+.dash-legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 3px;
+  border-radius: 2px;
+}
+.dash-legend-dot--amber { background: #FAC775; }
+.dash-legend-dot--green { background: #6ee7a0; opacity: 0.8; }
+
+.dash-legend-line {
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  margin-left: 6px;
+}
+.dash-legend-line--alwayson { background: #FF9500; opacity: 0.85; }
+
+/* Empty state */
+.dash-empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-muted);
+}
+.dash-empty-hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+
+/* PowerChart */
+.power-chart-wrap { width: 100%; overflow: hidden; }
+.power-chart-wrap svg { display: block; }
+
+/* CO₂ Gauge */
+.co2-gauge-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  height: 100%;
+  gap: 0;
+  padding: 4px 0;
+}
+.co2-comparison {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  max-width: 28ch;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* EurCard / EnergyCard — step 3 bigger numbers */
+.money-card-wrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  gap: 4px;
+}
+.sparkline-wrap {
+  padding-top: 16px;
+  width: 100%;
+  overflow: hidden;
+}
+.sparkline-wrap svg {
+  display: block;
+  width: 100% !important;
+}
+.money-big-number {
+  font-family: var(--font-heading);
+  font-size: clamp(2rem, 3.2vw, 3rem);
+  font-weight: 500;
+  color: var(--amber);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin: 4px 0 2px;
+}
+.money-unit {
+  font-size: 0.5em;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+.money-sublabel {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* Card expand overlay (step 4) */
+.card-expand-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 199;
+}
+.card-expand-overlay {
+  position: fixed; inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.card-expand-panel {
+  pointer-events: auto;
+  width: min(80vw, 700px);
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 32px;
+}
+.card-expand-btn {
+  position: absolute;
+  top: 10px; right: 10px;
+  background: transparent;
+  border: 0.5px solid rgba(255,255,255,0.15);
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.card-expand-btn:hover { border-color: rgba(255,255,255,0.35); color: var(--text); }
+
+/* ── Dashboard mobile ── */
+@media (max-width: 768px) {
+  .dashboard-section {
+    padding: 72px 12px 32px;
+    padding-right: 12px;
+    gap: 12px;
+    /* Make dashboard itself scrollable on mobile — fixed height + overflow */
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    pointer-events: auto;
+    background: rgba(5, 5, 8, 0.96);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    /* Hidden by default — shown via JS when dashInView */
+    display: none;
+  }
+  .dashboard-section.is-visible {
+    display: flex;
+  }
+
+  .dash-title { font-size: clamp(1.3rem, 5vw, 1.7rem); }
+
+  /* Single column — 3 rows, each card has a comfortable min-height */
+  .dash-bottom-cards {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    max-height: none;
+    gap: 16px;
+  }
+  .dash-bottom-cards .dash-bottom-card {
+    min-height: clamp(160px, 28vh, 220px);
+  }
+  .dash-bottom-cards .dash-bottom-card:first-child {
+    grid-row: auto;
+  }
+
+  .money-big-number { font-size: clamp(1.5rem, 7vw, 2.2rem); }
+
+  .card-expand-panel { width: 96vw; max-height: 90vh; padding: 20px 16px; }
 }
 
 /* ── prefers-reduced-motion ─────────────────────────────────────────────── */

@@ -62,6 +62,8 @@ interface Props {
   externalSpawnRef?: React.MutableRefObject<((cx: number, cy: number) => void) | null>
   // External spawn mode — lets parent control ped/car toggle
   externalSpawnModeRef?: React.MutableRefObject<'ped' | 'car'>
+  // External zoom — lets parent forward wheel events that it intercepts
+  externalZoomRef?: React.MutableRefObject<((delta: number) => void) | null>
 }
 
 // Constants — tweak these and the whole sim re-balances
@@ -77,9 +79,6 @@ const LAMP_REACH_CAR = 25
 const LAMP_REACH_BEHIND_PED = 70
 const LAMP_REACH_BEHIND_CAR = 60
 const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
-const PARK_CI = 1
-const PARK_RI = 2
-
 const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
 function seededRng(seed: number) {
@@ -90,50 +89,10 @@ function seededRng(seed: number) {
   }
 }
 
-function buildCityBlocks(W: number, H: number): Building[] {
-  const buildings: Building[] = []
-  const inset = 18
-  const xZones: [number, number][] = [
-    [0, 0.18 * W - inset],
-    [0.18 * W + inset, 0.50 * W - inset],
-    [0.50 * W + inset, 0.82 * W - inset],
-    [0.82 * W + inset, W],
-  ]
-  const yZones: [number, number][] = [
-    [0, 0.20 * H - inset],
-    [0.20 * H + inset, 0.50 * H - inset],
-    [0.50 * H + inset, 0.80 * H - inset],
-    [0.80 * H + inset, H],
-  ]
-  const btypes: ('residential' | 'commercial' | 'office')[] = ['residential', 'commercial', 'office']
-  for (let ci = 0; ci < 4; ci++) {
-    for (let ri = 0; ri < 4; ri++) {
-      if (ci === PARK_CI && ri === PARK_RI) continue
-      const btype = btypes[(ci + ri) % 3]
-      const [x0, x1] = xZones[ci]
-      const [y0, y1] = yZones[ri]
-      const cellW = x1 - x0
-      const cellH = y1 - y0
-      if (cellW < 12 || cellH < 12) continue
-      const rng = seededRng(ci * 41 + ri * 13 + 7)
-      const nCols = 2 + Math.floor(rng() * 2)
-      const nRows = 2 + Math.floor(rng() * 2)
-      for (let bc = 0; bc < nCols; bc++) {
-        for (let br = 0; br < nRows; br++) {
-          if (rng() < 0.18) continue
-          const stepX = cellW / nCols
-          const stepY = cellH / nRows
-          const gap = 3
-          const bw = stepX - gap * 2
-          const bh = stepY - gap * 2
-          if (bw > 4 && bh > 4) {
-            buildings.push({ x: x0 + bc * stepX + gap, y: y0 + br * stepY + gap, w: bw, h: bh, btype })
-          }
-        }
-      }
-    }
-  }
-  return buildings
+function getVirtualBounds(W: number, H: number, z: number) {
+  const vW = W / z, vH = H / z
+  const vx0 = (W - vW) / 2, vy0 = (H - vH) / 2
+  return { vx0, vy0, vx1: vx0 + vW, vy1: vy0 + vH, vW, vH }
 }
 
 export default function CitySimulator({
@@ -150,6 +109,7 @@ export default function CitySimulator({
   showFullSidebar = true,
   externalSpawnRef,
   externalSpawnModeRef,
+  externalZoomRef,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -168,6 +128,14 @@ export default function CitySimulator({
   const agentsRef = useRef<Agent[]>([])
   const trackedRef = useRef<Agent | null>(null)
   const dimsRef = useRef({ W: 0, H: 0 })
+
+  // Zoom state — re-layouts city when changed
+  const zoomRef = useRef(1)
+  const targetZoomRef = useRef(1)
+  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null)
+  const wasPinchingRef = useRef(false)
+  const virtualBoundsRef = useRef({ vx0: 0, vy0: 0, vx1: 600, vy1: 400, vW: 600, vH: 400 })
+  const streetPosRef = useRef<{ cols: number[]; rows: number[] }>({ cols: [], rows: [] })
 
   // ambient forces lumination mode so the corridor is always visible as backdrop
   const effectiveMode: Mode = variant === 'ambient' ? 'lumination' : mode
@@ -268,83 +236,130 @@ export default function CitySimulator({
 
   // --- Layout the city ---
   function layoutCity(width: number, height: number) {
-    const lamps: Lamp[] = []
+    // Always generate for the full zoom-out range (min zoom = 0.4)
+    // draw() clips to the current zoom — no re-layout needed during zoom
+    const { vx0, vy0, vx1, vy1 } = getVirtualBounds(width, height, 0.4)
+
+    const colStep = width * 0.32
+    const rowStep = height * 0.30
+    const lampOffset = 16
+
+    // Columns centered at W/2, extending to fill visible virtual range
+    const colX: number[] = []
+    for (let x = width * 0.5; x > vx0 - colStep; x -= colStep) colX.unshift(x)
+    for (let x = width * 0.5 + colStep; x < vx1 + colStep; x += colStep) colX.push(x)
+
+    // Rows centered at H/2, extending to fill visible virtual range
+    const rowY: number[] = []
+    for (let y = height * 0.5; y > vy0 - rowStep; y -= rowStep) rowY.unshift(y)
+    for (let y = height * 0.5 + rowStep; y < vy1 + rowStep; y += rowStep) rowY.push(y)
+
+    streetPosRef.current = { cols: colX, rows: rowY }
+
     const streets: Street[] = []
-    const cols = [0.18, 0.5, 0.82]
-    const rows = [0.2, 0.5, 0.8]
+    rowY.forEach(y => streets.push({ ax: vx0 - 60, ay: y, bx: vx1 + 60, by: y, dir: 'h' }))
+    colX.forEach(x => streets.push({ ax: x, ay: vy0 - 60, bx: x, by: vy1 + 60, dir: 'v' }))
 
-    rows.forEach(ry => {
-      streets.push({ ax: 0, ay: ry * height, bx: width, by: ry * height, dir: 'h' })
-    })
-    cols.forEach(cx => {
-      streets.push({ ax: cx * width, ay: 0, bx: cx * width, by: height, dir: 'v' })
-    })
-
-    const spacing = Math.min(width, height) * 0.11
+    // Lamps: same density as original (Math.min(W,H) * 0.11)
+    const lampStep = Math.min(width, height) * 0.11
+    const lamps: Lamp[] = []
     streets.forEach((s, sid) => {
       if (s.dir === 'h') {
-        for (let x = spacing * 0.5; x < width; x += spacing) {
-          lamps.push({ x, y: s.ay - 20, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'top' })
-          lamps.push({ x, y: s.ay + 20, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'bot' })
+        for (let x = vx0; x <= vx1 + lampStep; x += lampStep) {
+          lamps.push({ x, y: s.ay - lampOffset, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'top' })
+          lamps.push({ x, y: s.ay + lampOffset, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'bot' })
         }
       } else {
-        for (let y = spacing * 0.5; y < height; y += spacing) {
-          lamps.push({ x: s.ax - 20, y, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'lft' })
-          lamps.push({ x: s.ax + 20, y, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'rgt' })
+        for (let y = vy0; y <= vy1 + lampStep; y += lampStep) {
+          lamps.push({ x: s.ax - lampOffset, y, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'lft' })
+          lamps.push({ x: s.ax + lampOffset, y, brightness: baselineRef.current, target: baselineRef.current, streetId: sid, side: 'rgt' })
+        }
+      }
+    })
+
+    // Buildings: between adjacent streets
+    const inset = 14
+    const xBounds = [vx0, ...colX.flatMap(x => [x - inset, x + inset]), vx1].sort((a, b) => a - b)
+    const yBounds = [vy0, ...rowY.flatMap(y => [y - inset, y + inset]), vy1].sort((a, b) => a - b)
+    const btypes: ('residential' | 'commercial' | 'office')[] = ['residential', 'commercial', 'office']
+    const buildings: Building[] = []
+    for (let ci = 0; ci < xBounds.length - 1; ci++) {
+      for (let ri = 0; ri < yBounds.length - 1; ri++) {
+        const x0 = xBounds[ci], x1 = xBounds[ci + 1]
+        const y0 = yBounds[ri], y1 = yBounds[ri + 1]
+        const bW = x1 - x0, bH = y1 - y0
+        if (bW < inset * 2 + 4 || bH < inset * 2 + 4) continue // street zone
+        const blockCi = Math.round(x0 / colStep)
+        const blockRi = Math.round(y0 / rowStep)
+        const btype = btypes[((blockCi + blockRi) % 3 + 3) % 3]
+        const rng = seededRng(blockCi * 41 + blockRi * 13 + 7)
+        const nCols = 2 + Math.floor(rng() * 2)
+        const nRows = 2 + Math.floor(rng() * 2)
+        for (let bc = 0; bc < nCols; bc++) {
+          for (let br = 0; br < nRows; br++) {
+            if (rng() < 0.18) continue
+            const stepX = bW / nCols, stepY = bH / nRows
+            const gap = 3
+            const bw = stepX - gap * 2, bh = stepY - gap * 2
+            if (bw > 4 && bh > 4) {
+              buildings.push({ x: x0 + bc * stepX + gap, y: y0 + br * stepY + gap, w: bw, h: bh, btype })
+            }
+          }
+        }
+      }
+    }
+
+    // Park zone: block just left of center column, just below center row
+    const pkXStart = xBounds.find(x => Math.abs(x - (width * 0.5 - colStep - inset)) < 20) ?? vx0
+    const pkXEnd = xBounds.find(x => Math.abs(x - (width * 0.5 - inset)) < 20) ?? (width * 0.5 - inset)
+    const pkYStart = yBounds.find(y => Math.abs(y - (height * 0.5 + inset)) < 20) ?? (height * 0.5 + inset)
+    const pkYEnd = yBounds.find(y => Math.abs(y - (height * 0.5 + rowStep - inset)) < 20) ?? (height * 0.5 + rowStep - inset)
+    parkRef.current = pkXEnd > pkXStart && pkYEnd > pkYStart
+      ? { x: pkXStart, y: pkYStart, w: pkXEnd - pkXStart, h: pkYEnd - pkYStart }
+      : null
+
+    // Trees along streets
+    const trees: Tree[] = []
+    streets.forEach(s => {
+      const posKey = s.dir === 'h' ? Math.round(s.ay / rowStep * 100) : Math.round(s.ax / colStep * 100)
+      const tRng = seededRng(posKey * 137 + 42)
+      if (s.dir === 'h') {
+        for (let x = vx0 + lampStep * 0.5; x < vx1; x += lampStep) {
+          if (tRng() < 0.28) trees.push({ x, y: s.ay - lampOffset })
+          if (tRng() < 0.20) trees.push({ x, y: s.ay + lampOffset })
+        }
+      } else {
+        for (let y = vy0 + lampStep * 0.5; y < vy1; y += lampStep) {
+          if (tRng() < 0.24) trees.push({ x: s.ax - lampOffset, y })
+          if (tRng() < 0.18) trees.push({ x: s.ax + lampOffset, y })
         }
       }
     })
 
     lampsRef.current = lamps
     streetsRef.current = streets
-    buildingsRef.current = buildCityBlocks(width, height)
-
-    // Park zone boundaries
-    const insetPk = 18
-    const xZonesPk: [number, number][] = [
-      [0, 0.18 * width - insetPk],
-      [0.18 * width + insetPk, 0.50 * width - insetPk],
-      [0.50 * width + insetPk, 0.82 * width - insetPk],
-      [0.82 * width + insetPk, width],
-    ]
-    const yZonesPk: [number, number][] = [
-      [0, 0.20 * height - insetPk],
-      [0.20 * height + insetPk, 0.50 * height - insetPk],
-      [0.50 * height + insetPk, 0.80 * height - insetPk],
-      [0.80 * height + insetPk, height],
-    ]
-    const [px0, px1] = xZonesPk[PARK_CI]
-    const [py0, py1] = yZonesPk[PARK_RI]
-    parkRef.current = { x: px0, y: py0, w: px1 - px0, h: py1 - py0 }
-
-    // Trees along sidewalks — sparse, asymmetric, realistic (not every street, not every side)
-    const trees: Tree[] = []
-    streets.forEach((s, si) => {
-      const tRng = seededRng(si * 137 + 42)
-      if (s.dir === 'h') {
-        for (let x = spacing; x < width; x += spacing) {
-          if (tRng() < 0.28) trees.push({ x, y: s.ay - 20 })
-          if (tRng() < 0.20) trees.push({ x, y: s.ay + 20 })
-        }
-      } else {
-        for (let y = spacing; y < height; y += spacing) {
-          if (tRng() < 0.24) trees.push({ x: s.ax - 20, y })
-          if (tRng() < 0.18) trees.push({ x: s.ax + 20, y })
-        }
-      }
-    })
+    buildingsRef.current = buildings
     treesRef.current = trees
+
+    // Remap existing agent street references to new street objects (positions unchanged)
+    for (const a of agentsRef.current) {
+      const newStreet = streets.find(s =>
+        s.dir === a.street.dir &&
+        (s.dir === 'h' ? Math.abs(s.ay - a.street.ay) < 5 : Math.abs(s.ax - a.street.ax) < 5)
+      )
+      if (newStreet) a.street = newStreet
+    }
   }
 
   // --- Spawn agents ---
   function nearestStreet(px: number, py: number) {
-    const { W, H } = dimsRef.current
+    const { vx0, vy0, vx1, vy1 } = virtualBoundsRef.current
     let best: { s: Street; qx: number; qy: number } | null = null
     let bestD = Infinity
     for (const s of streetsRef.current) {
       let qx: number, qy: number
-      if (s.dir === 'h') { qx = Math.max(0, Math.min(W, px)); qy = s.ay }
-      else { qx = s.ax; qy = Math.max(0, Math.min(H, py)) }
+      if (s.dir === 'h') { qx = Math.max(vx0, Math.min(vx1, px)); qy = s.ay }
+      else { qx = s.ax; qy = Math.max(vy0, Math.min(vy1, py)) }
       const d = Math.hypot(px - qx, py - qy)
       if (d < bestD) { bestD = d; best = { s, qx, qy } }
     }
@@ -355,7 +370,7 @@ export default function CitySimulator({
     const hit = nearestStreet(px, py)
     if (!hit) return null
     const { s, qx, qy } = hit
-    const speed = type === 'car' ? CAR_SPEED : PED_SPEED
+    const speed = (type === 'car' ? CAR_SPEED : PED_SPEED)
     const sign = forceSign !== undefined ? forceSign : (Math.random() < 0.5 ? -1 : 1)
     const a: Agent = {
       x: qx, y: qy,
@@ -370,25 +385,21 @@ export default function CitySimulator({
   }
 
   function spawnRandomEdge(type: AgentType) {
-    const { W, H } = dimsRef.current
+    const { vx0, vy0, vx1, vy1 } = virtualBoundsRef.current
     const streets = streetsRef.current
     const s = streets[Math.floor(Math.random() * streets.length)]
     if (s.dir === 'h') {
-      // Always spawn moving inward: left edge → moving right (+1), right edge → moving left (-1)
       const fromLeft = Math.random() < 0.5
-      spawnAgent(fromLeft ? 2 : W - 2, s.ay, type, fromLeft ? 1 : -1)
+      spawnAgent(fromLeft ? vx0 + 2 : vx1 - 2, s.ay, type, fromLeft ? 1 : -1)
     } else {
-      // Top edge → moving down (+1), bottom edge → moving up (-1)
       const fromTop = Math.random() < 0.5
-      spawnAgent(s.ax, fromTop ? 2 : H - 2, type, fromTop ? 1 : -1)
+      spawnAgent(s.ax, fromTop ? vy0 + 2 : vy1 - 2, type, fromTop ? 1 : -1)
     }
   }
 
   // --- Physics step ---
   function step(dt: number) {
     const agents = agentsRef.current
-    const { W, H } = dimsRef.current
-
     for (const a of agents) {
       a.x += a.vx * dt / METERS_PER_PIXEL
       a.y += a.vy * dt / METERS_PER_PIXEL
@@ -396,7 +407,8 @@ export default function CitySimulator({
       a.stride += dt * (a.type === 'car' ? 0 : 8)
     }
 
-    agentsRef.current = agents.filter(a => a.x > -30 && a.x < W + 30 && a.y > -30 && a.y < H + 30)
+    const { vx0, vy0, vx1, vy1 } = virtualBoundsRef.current
+    agentsRef.current = agents.filter(a => a.x > vx0 - 60 && a.x < vx1 + 60 && a.y > vy0 - 60 && a.y < vy1 + 60)
     if (trackedRef.current && !agentsRef.current.includes(trackedRef.current)) {
       trackedRef.current = agentsRef.current.find(a => a.type === 'ped') || null
     }
@@ -427,56 +439,49 @@ export default function CitySimulator({
     // reach stays full-size so (a) the corridor looks long ahead and (b) the
     // Lookahead slider has a visible effect. Reference width: 960px desktop.
     const backScale = Math.min(1, dimsRef.current.W / 960)
+    // Only process lamps near the visible area — huge perf win for the extended pre-generated city
+    const { vx0: svx0, vy0: svy0, vx1: svx1, vy1: svy1 } = virtualBoundsRef.current
+    const corrMargin = 500
+    const stepLamps = lampsRef.current.filter(l =>
+      l.x > svx0 - corrMargin && l.x < svx1 + corrMargin &&
+      l.y > svy0 - corrMargin && l.y < svy1 + corrMargin)
     for (const l of lampsRef.current) l.target = baselineRef.current
     for (const a of agentsRef.current) {
       const isCar = a.type === 'car'
       const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))
       const dx = a.vx / sp
       const dy = a.vy / sp
-      // lookaheadPx: visual scale proportional to agent speed — a car at 11 m/s
-      // gets ~7.8× more corridor than a pedestrian at 1.4 m/s, reflecting the
-      // real predictive need: faster agents need lights further ahead.
       const lookaheadPx = lookaheadRef.current * 21 * Math.sqrt(sp / PED_SPEED)
-      // Both forward and rear reach scale with lookahead slider.
-      const reachAhead  = (isCar ? LAMP_REACH_CAR  : LAMP_REACH_PED)  + lookaheadPx
+      const reachAhead  = (isCar ? LAMP_REACH_CAR  : LAMP_REACH_PED) + lookaheadPx
       const reachBehind = ((isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) + lookaheadPx * 1.6) * backScale
-      const fx = a.x + dx * lookaheadPx
-      const fy = a.y + dy * lookaheadPx
-      // Use the street object reference directly rather than indexOf — indexOf
-      // returns -1 after a turn if the street reference drifted, leaving the
-      // agent unlit. Comparing by object identity is safe and O(1).
       const agentStreet = a.street
 
-      for (const l of lampsRef.current) {
+      for (const l of stepLamps) {
         const sameStreet = streetsRef.current[l.streetId] === agentStreet
 
-        // Cross-street lamps only get a small intersection spillover (50px max)
         if (!sameStreet) {
           const d = Math.hypot(l.x - a.x, l.y - a.y)
-          if (d < 50) {
-            const boost = 1 - (d / 50)
-            l.target = Math.max(l.target, boost)  // reach up to 1.0 (100%) at intersection center
+          const spillover = 50
+          if (d < spillover) {
+            const boost = 1 - (d / spillover)
+            l.target = Math.max(l.target, boost)
           }
           continue
         }
 
-        // Same-street corridor segment logic
-        // Project the lamp onto the pedestrian/vehicle motion ray
         const distAlong = (l.x - a.x) * dx + (l.y - a.y) * dy
-
-        // Solid light corridor that spans from reachBehind (rear safety margin) to (lookaheadPx + reachAhead) (front prediction margin)
         if (distAlong >= -reachBehind && distAlong <= (lookaheadPx + reachAhead)) {
-          l.target = 1.0  // Active corridor lights are fully at 100% (safety first!)
+          l.target = 1.0
         }
       }
     }
 
-    for (const l of lampsRef.current) {
+    for (const l of stepLamps) {
+      if (l.brightness === l.target) continue
       const rising = l.target > l.brightness
-      const rate = rising ? 3.2 : 1.2  // smooth warm-up fade-in (3.2), gradual dim-down (1.2)
+      const rate = rising ? 3.2 : 1.2
       const ease = 1 - Math.exp(-dt * rate)
       l.brightness += (l.target - l.brightness) * ease
-      // Snap to target when very close — prevents hovering at 0.97 instead of 1.0
       if (Math.abs(l.target - l.brightness) < 0.01) l.brightness = l.target
     }
 
@@ -599,31 +604,36 @@ export default function CitySimulator({
 
   function drawCityTopDown(ctx: CanvasRenderingContext2D, useBaseline: boolean) {
     const { W, H } = dimsRef.current
+    const { vx0, vy0, vx1, vy1, vW, vH } = virtualBoundsRef.current
 
-    // Ground/terrain base
+    // Cull to visible virtual bounds — avoids drawing off-screen elements
+    const visBuildings = buildingsRef.current.filter(b =>
+      b.x < vx1 && b.x + b.w > vx0 && b.y < vy1 && b.y + b.h > vy0)
+    const visTrees = treesRef.current.filter(t =>
+      t.x > vx0 - 12 && t.x < vx1 + 12 && t.y > vy0 - 12 && t.y < vy1 + 12)
+
+    // Ground/terrain base (covers full visible virtual area)
     ctx.fillStyle = '#08080e'
-    ctx.fillRect(0, 0, W, H)
+    ctx.fillRect(vx0, vy0, vW, vH)
 
     // Park zone (green space)
     const park = parkRef.current
     if (park) {
-      // Green ground
       const pg = ctx.createLinearGradient(park.x, park.y, park.x + park.w, park.y + park.h)
       pg.addColorStop(0, '#0a1e0c')
       pg.addColorStop(1, '#091508')
       ctx.fillStyle = pg
       ctx.fillRect(park.x, park.y, park.w, park.h)
-
     }
 
     // Building shadows — SE offset creates height illusion
-    for (const bld of buildingsRef.current) {
+    for (const bld of visBuildings) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.62)'
       ctx.fillRect(bld.x + 4, bld.y + 4, bld.w, bld.h)
     }
 
     // Building footprints with strong type tints + edge lighting
-    for (const bld of buildingsRef.current) {
+    for (const bld of visBuildings) {
       const bGrd = ctx.createLinearGradient(bld.x, bld.y, bld.x + bld.w, bld.y + bld.h)
       if (bld.btype === 'residential') {
         bGrd.addColorStop(0, '#1e1316'); bGrd.addColorStop(1, '#281c22')
@@ -684,13 +694,10 @@ export default function CitySimulator({
     }
     ctx.setLineDash([])
 
-    // Crosswalks — zebra stripes at all 9 intersections
-    const streetCols = [0.18, 0.5, 0.82]
-    const streetRows = [0.2, 0.5, 0.8]
+    // Crosswalks — zebra stripes at all intersections
     ctx.fillStyle = 'rgba(200, 205, 240, 0.14)'
-    streetCols.forEach(cxF => {
-      streetRows.forEach(ryF => {
-        const ix = cxF * W, iy = ryF * H
+    streetPosRef.current.cols.forEach(ix => {
+      streetPosRef.current.rows.forEach(iy => {
         for (let i = 0; i < 4; i++) {
           ctx.fillRect(ix - 34 - i * 5, iy - 13, 3, 26)
           ctx.fillRect(ix + 28 + i * 5, iy - 13, 3, 26)
@@ -717,7 +724,7 @@ export default function CitySimulator({
     }
 
     // Trees along sidewalks — 4-ring canopy, slightly smaller
-    for (const t of treesRef.current) {
+    for (const t of visTrees) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.42)'
       ctx.beginPath(); ctx.arc(t.x + 2, t.y + 2, 8, 0, Math.PI * 2); ctx.fill()
       ctx.fillStyle = 'rgba(8, 42, 11, 0.97)'
@@ -729,9 +736,15 @@ export default function CitySimulator({
     }
 
     // Communication mesh — opacity reacts to lamp brightness + amber pulse
+    // Scale glow radius with canvas size so it looks the same on all screen sizes
+    const glowScale = Math.min(W, H) / 580
+    const glowR = (14 + 110) * glowScale + 4  // max possible glow radius + margin
+    const visLamps = lampsRef.current.filter(l =>
+      l.x > vx0 - glowR && l.x < vx1 + glowR && l.y > vy0 - glowR && l.y < vy1 + glowR)
+
     ctx.lineWidth = 1
     const byStreet = new Map<string, Lamp[]>()
-    lampsRef.current.forEach(l => {
+    visLamps.forEach(l => {
       const key = `${l.streetId}-${l.side}`
       if (!byStreet.has(key)) byStreet.set(key, [])
       byStreet.get(key)!.push(l)
@@ -749,15 +762,12 @@ export default function CitySimulator({
 
     // Lamps + halos — lamps inside roundabout zone are merged into a single center lamp
     const roundX = W * 0.5, roundY = H * 0.5, roundZone = 40
-    const roundLamps = lampsRef.current.filter(l => Math.hypot(l.x - roundX, l.y - roundY) < roundZone)
+    const roundLamps = visLamps.filter(l => Math.hypot(l.x - roundX, l.y - roundY) < roundZone)
     const roundB = roundLamps.length > 0
       ? (useBaseline ? MAX_VISUAL_BRI : (roundLamps.reduce((s, l) => s + l.brightness, 0) / roundLamps.length) * MAX_VISUAL_BRI)
       : baselineRef.current
 
-    // Scale glow radius with canvas size so it looks the same on all screen sizes
-    const glowScale = Math.min(W, H) / 580
-
-    for (const l of lampsRef.current) {
+    for (const l of visLamps) {
       if (Math.hypot(l.x - roundX, l.y - roundY) < roundZone) continue
       const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
       const r = (14 + b * 110) * glowScale
@@ -798,12 +808,12 @@ export default function CitySimulator({
       else drawPedestrian(ctx, a, bri)
     }
 
-    // Atmospheric vignette
-    const vg = ctx.createRadialGradient(W / 2, H / 2, W * 0.28, W / 2, H / 2, W * 0.78)
+    // Atmospheric vignette — centered on screen center, covers full virtual area
+    const vg = ctx.createRadialGradient(W / 2, H / 2, vW * 0.28, W / 2, H / 2, vW * 0.78)
     vg.addColorStop(0, 'rgba(0,0,0,0)')
     vg.addColorStop(1, 'rgba(0,0,0,0.48)')
     ctx.fillStyle = vg
-    ctx.fillRect(0, 0, W, H)
+    ctx.fillRect(vx0, vy0, vW, vH)
   }
 
   function drawFPV(ctx: CanvasRenderingContext2D) {
@@ -1114,7 +1124,6 @@ export default function CitySimulator({
       } else if (item.type === 'lamp') {
         const scale = 1 / item.z
         const relativeSide = item.relativeSide
-        const lamp = item.lamp!
         // Citizen View: calculate brightness dynamically based on lookahead and baseline
         // - All active streetlights in the corridor have the exact same 100% physical light output (MAX_VISUAL_BRI)
         // - Distant lamps fade smoothly to the baseline brightness slider percentage
@@ -1230,21 +1239,43 @@ export default function CitySimulator({
   function draw(ctx: CanvasRenderingContext2D) {
     const { W, H } = dimsRef.current
     const m = modeRef.current
+    const z = zoomRef.current
+    const bounds = getVirtualBounds(W, H, z)
+    virtualBoundsRef.current = bounds
+    const { vx0, vy0, vW, vH } = bounds
+
+    ctx.clearRect(0, 0, W, H)
+
+    if (m === 'fpv') {
+      drawFPV(ctx)
+      return
+    }
+
+    ctx.save()
+    ctx.translate(W / 2, H / 2)
+    ctx.scale(z, z)
+    ctx.translate(-W / 2, -H / 2)
+
+    // Fill dark background covering full visible virtual area
+    ctx.fillStyle = '#08080e'
+    ctx.fillRect(vx0, vy0, vW, vH)
+
     if (m === 'compare') {
-      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W / 2, H); ctx.clip()
+      const halfVW = vW / 2
+      ctx.save(); ctx.beginPath(); ctx.rect(vx0, vy0, halfVW, vH); ctx.clip()
       drawCityTopDown(ctx, true)
       ctx.restore()
-      ctx.save(); ctx.beginPath(); ctx.rect(W / 2, 0, W / 2, H); ctx.clip()
+      ctx.save(); ctx.beginPath(); ctx.rect(vx0 + halfVW, vy0, halfVW, vH); ctx.clip()
       drawCityTopDown(ctx, false)
       ctx.restore()
       ctx.strokeStyle = 'rgba(255,255,255,0.18)'
       ctx.lineWidth = 1
-      ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke()
-    } else if (m === 'fpv') {
-      drawFPV(ctx)
+      ctx.beginPath(); ctx.moveTo(vx0 + halfVW, vy0); ctx.lineTo(vx0 + halfVW, vy0 + vH); ctx.stroke()
     } else {
       drawCityTopDown(ctx, m === 'baseline')
     }
+
+    ctx.restore()
   }
 
   // --- Scenario auto-spawn ---
@@ -1299,7 +1330,10 @@ export default function CitySimulator({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       // Re-layout when width changes OR when height changes by more than 20px
       // (e.g. switching between mobile/desktop stage heights)
-      if (W !== prevW || Math.abs(H - prevH) > 20) layoutCity(W, H)
+      if (W !== prevW || Math.abs(H - prevH) > 20) {
+        virtualBoundsRef.current = getVirtualBounds(W, H, zoomRef.current)
+        layoutCity(W, H)
+      }
     }
     resize()
     const ro = new ResizeObserver(resize)
@@ -1309,6 +1343,7 @@ export default function CitySimulator({
     let lastAmbientFrame = 0
     let raf = 0
     let statsTick = 0
+    let busTick   = 0   // separate 2Hz gate for simBus (dashboard history)
 
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop)
@@ -1317,6 +1352,17 @@ export default function CitySimulator({
       if (variantRef.current === 'ambient') lastAmbientFrame = now
       const dt = Math.min(0.1, (now - lastTick) / 1000)
       lastTick = now
+
+
+      // Smooth zoom easing — each wheel tick sets targetZoom, we glide towards it
+      if (zoomRef.current !== targetZoomRef.current) {
+        const ease = 1 - Math.exp(-dt * 10)
+        zoomRef.current += (targetZoomRef.current - zoomRef.current) * ease
+        if (Math.abs(targetZoomRef.current - zoomRef.current) < 0.001) {
+          zoomRef.current = targetZoomRef.current
+        }
+      }
+
 if (pausedRef.current) return
       handleScenario(dt)
       const power = step(dt)
@@ -1346,17 +1392,26 @@ if (pausedRef.current) return
           lampCount: N,
           fullPower: full,
         })
-        // Emit to simBus so Dashboard + compact overlay can subscribe
+      }
+
+      // simBus emit at 2Hz — dashboard history; skip ambient (backdrop, not a data source)
+      busTick += dt
+      if (busTick >= 0.5 && variantRef.current !== 'ambient') {
+        busTick = 0
+        const N2 = lampsRef.current.length
+        const full2 = N2 * LAMP_WATTS
+        const instSaved2 = full2 - power.luminationPower
+        const annKwh2 = (instSaved2 / 1000) * HOURS_PER_YEAR_NIGHT
         simBus.emit({
           t: performance.now(),
           powerW: power.luminationPower,
-          baselineW: full,
-          eurSaved: eurSavedNow,
-          co2Kg: co2SavedNow,
+          baselineW: full2,
+          eurSaved: Math.round(annKwh2 * PRICE_PER_KWH),
+          co2Kg:    Math.round(annKwh2 * CO2_PER_KWH),
           kwhSaved: kwhSavedRef.current,
-          peds: pedsNow,
-          cars: carsNow,
-          lampCount: N,
+          peds: agentsRef.current.filter(a => a.type === 'ped').length,
+          cars: agentsRef.current.filter(a => a.type === 'car').length,
+          lampCount: N2,
         })
       }
 
@@ -1385,33 +1440,106 @@ if (pausedRef.current) return
       const canvas = canvasRef.current
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
-      const a = spawnAgent(cx - rect.left, cy - rect.top, activeSpawnModeRef.current)
+      const { x, y } = toSimCoords(cx - rect.left, cy - rect.top)
+      const a = spawnAgent(x, y, activeSpawnModeRef.current)
       if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
     }
     return () => { if (externalSpawnRef) externalSpawnRef.current = null }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // stable: spawnAgent uses only refs internally
 
+  useEffect(() => {
+    if (!externalZoomRef) return
+    externalZoomRef.current = (delta: number) => {
+      targetZoomRef.current = Math.min(3, Math.max(0.4, targetZoomRef.current * delta))
+    }
+    return () => { if (externalZoomRef) externalZoomRef.current = null }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Convert screen coordinates to simulation coordinates (accounting for zoom)
+  const toSimCoords = (screenX: number, screenY: number) => {
+    const { W, H } = dimsRef.current
+    const z = zoomRef.current
+    const cx = W / 2, cy = H / 2
+    return {
+      x: (screenX - cx) / z + cx,
+      y: (screenY - cy) / z + cy,
+    }
+  }
+
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current!.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-    // On mobile, ghost clicks arrive here after touch — respect spawnModeRef.
-    // On desktop, shift+click still works as before.
+    const { x, y } = toSimCoords(e.clientX - rect.left, e.clientY - rect.top)
     const isCar = e.shiftKey || activeSpawnModeRef.current === 'car'
     const a = spawnAgent(x, y, isCar ? 'car' : 'ped')
     if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
   }
 
+  // Track how much of the stage is visible — used to gate zoom vs page-scroll
+  const stageVisibilityRef = useRef(0)
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const io = new IntersectionObserver(
+      ([entry]) => { stageVisibilityRef.current = entry.intersectionRatio },
+      { threshold: Array.from({ length: 21 }, (_, i) => i / 20) }
+    )
+    io.observe(stage)
+    return () => io.disconnect()
+  }, [])
+
+  // Wheel zoom registered via DOM directly (passive:false) so preventDefault works.
+  // Only intercepts when the stage is ≥80% visible — otherwise lets the page scroll.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !interactive) return
+    const onWheel = (e: WheelEvent) => {
+      if (stageVisibilityRef.current < 0.8) return  // let page scroll when half-visible
+      e.preventDefault()
+      const delta = e.deltaY > 0 ? 0.9 : 1.1
+      targetZoomRef.current = Math.min(3, Math.max(0.4, targetZoomRef.current * delta))
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', onWheel)
+  }, [interactive])
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 2) {
+      wasPinchingRef.current = true
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      pinchRef.current = { dist: Math.hypot(dx, dy), zoom: zoomRef.current }
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      e.preventDefault()
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      const dist = Math.hypot(dx, dy)
+      const ratio = dist / pinchRef.current.dist
+      const pz = Math.min(3, Math.max(0.4, pinchRef.current.zoom * ratio))
+      zoomRef.current = pz
+      targetZoomRef.current = pz
+    }
+  }
+
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    e.preventDefault()
-    const touch = e.changedTouches[0]
-    if (!touch) return
-    const rect = canvasRef.current!.getBoundingClientRect()
-    const x = touch.clientX - rect.left
-    const y = touch.clientY - rect.top
-    const a = spawnAgent(x, y, activeSpawnModeRef.current)
-    if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
+    if (e.touches.length < 2) pinchRef.current = null
+    // Once all fingers are lifted, check if this was a plain tap (not a pinch)
+    if (e.touches.length === 0) {
+      const wasPinching = wasPinchingRef.current
+      wasPinchingRef.current = false
+      if (!wasPinching && e.changedTouches.length === 1) {
+        const touch = e.changedTouches[0]
+        const rect = canvasRef.current!.getBoundingClientRect()
+        const { x, y } = toSimCoords(touch.clientX - rect.left, touch.clientY - rect.top)
+        const a = spawnAgent(x, y, activeSpawnModeRef.current)
+        if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
+      }
+    }
   }
 
   // --- Render ---
@@ -1423,6 +1551,8 @@ if (pausedRef.current) return
         <canvas
           ref={canvasRef}
           onClick={interactive ? handleClick : undefined}
+          onTouchStart={interactive ? handleTouchStart : undefined}
+          onTouchMove={interactive ? handleTouchMove : undefined}
           onTouchEnd={interactive ? handleTouchEnd : undefined}
           style={{
             display: effectiveMode === 'fpv' ? 'none' : undefined,

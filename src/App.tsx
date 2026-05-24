@@ -20,6 +20,8 @@ import LandingCurtain from './sections/LandingSection'
 import { useSimHistory } from './hooks/useSimHistory'
 import { useIsMobile } from './hooks/useIsMobile'
 import HeadlineMetric from './components/HeadlineMetric'
+import ParticleBackground from './components/ParticleBackground'
+import DashboardSection from './sections/DashboardSection'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 
@@ -35,29 +37,73 @@ export default function App() {
   const [spawnMode, setSpawnMode]     = useState<'ped' | 'car'>('ped')
   const [tooltip, setTooltip]         = useState<'baseline' | 'lookahead' | null>(null)
   const externalSpawnModeRef = useRef<'ped' | 'car'>('ped')
-  const hudNavRef    = useRef<HTMLElement>(null)
-  const [hudMax, setHudMax] = useState(220)
+  const hudNavRef     = useRef<HTMLElement>(null)
+  const hudInnerRef   = useRef<HTMLDivElement>(null)
+  const hudMaxRef     = useRef(260)
+  const [hudMax, setHudMax] = useState(260)
 
-  const hudY    = useMotionValue(0)
-  const [hudOpen, setHudOpen] = useState(true)
+  const hudY       = useMotionValue(260)  // start collapsed
+  const [hudOpen, setHudOpen] = useState(false)
+  const [infoBaseBottom, setInfoBaseBottom] = useState(80)
+  const infoBtnBottom  = useTransform(hudY, v => Math.max(8, infoBaseBottom - v))
+  const infoHintBottom = useTransform(hudY, v => Math.max(8, infoBaseBottom - v + 64))
   const springCfg = { type: 'spring' as const, stiffness: 400, damping: 38 }
 
+  // Observe inner content height — hudMax always equals content height so
+  // sliding by hudMax pushes content fully off-screen on any phone
+  useEffect(() => {
+    if (!isMobile) return
+    const el = hudInnerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight + 40 // +40 for handle row + padding
+      hudMaxRef.current = h
+      setHudMax(h)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [isMobile])
+
+  const HUD_OPEN_Y = Math.round(window.innerHeight * 0.06)  // ~6vh — responsive to screen height
   const hudSnap = (_: unknown, info: { velocity: { y: number } }) => {
     const cur = hudY.get()
     const vel = info.velocity.y
-    if (hudOpen ? (cur > hudMax * 0.4 || vel > 300) : (cur < hudMax * 0.6 || vel < -300)) {
-      animate(hudY, hudOpen ? hudMax : 0, springCfg)
+    const max = hudMaxRef.current
+    if (hudOpen ? (cur > max * 0.4 || vel > 300) : (cur < max * 0.6 || vel < -300)) {
+      animate(hudY, hudOpen ? max : HUD_OPEN_Y, springCfg)
       setHudOpen(o => !o)
     } else {
-      animate(hudY, hudOpen ? 0 : hudMax, springCfg)
+      animate(hudY, hudOpen ? HUD_OPEN_Y : max, springCfg)
     }
   }
   const hudToggle = () => {
-    animate(hudY, hudOpen ? hudMax : 0, springCfg)
+    const max = hudMaxRef.current
+    animate(hudY, hudOpen ? max : HUD_OPEN_Y, springCfg)
     setHudOpen(o => !o)
   }
   const scrollRef        = useRef<HTMLDivElement>(null)
   const externalSpawnRef = useRef<((cx: number, cy: number) => void) | null>(null)
+  const externalZoomRef  = useRef<((delta: number) => void) | null>(null)
+
+  const curtainVisibleRef = useRef(true)
+  const dashInViewRef     = useRef(false)
+
+  // Intercept wheel on scroll-doc and forward to zoom when over the simulation
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      // Only zoom when curtain is gone and dashboard is not in view
+      if (!externalZoomRef.current) return
+      if (curtainVisibleRef.current || dashInViewRef.current) return
+      e.preventDefault()
+      e.stopPropagation()
+      const delta = e.deltaY > 0 ? 0.9 : 1.1
+      externalZoomRef.current(delta)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
   const touchStartRef    = useRef<{ x: number; y: number } | null>(null)
   const lastTouchRef     = useRef(0) // timestamp — blocks ghost click after touch
   const { scrollY } = useScroll({ container: scrollRef })
@@ -74,11 +120,13 @@ export default function App() {
   const sidebarOpacity = useTransform(scrollY, [LIFT * 0.1, LIFT * 0.45], [0, 1])
   const [sidebarVisible, setSidebarVisible] = useState(false)
 
-  // Measure nav position once sidebar becomes visible, cap panel travel to keep bar on-screen
+  // Measure nav position for info button placement
   useEffect(() => {
     if (!sidebarVisible || !hudNavRef.current) return
     const rect = hudNavRef.current.getBoundingClientRect()
-    setHudMax(Math.max(60, window.innerHeight - rect.top - 24))
+    setInfoBaseBottom(window.innerHeight - rect.top - 24
+      
+    )
   }, [sidebarVisible])
 
   // ── Topbar — fades in as curtain lifts (Effect E) ─────────────────────────
@@ -116,6 +164,7 @@ export default function App() {
 
   // Effective values — mobile uses timer-based, desktop uses scroll-based
   const effectiveCurtainVisible  = isMobile ? !mobileCurtainGone  : curtainVisible
+  curtainVisibleRef.current = effectiveCurtainVisible
   const effectiveSidebarOpacity  = isMobile ? mobileHudOpacity    : sidebarOpacity
   const effectiveTopbarOpacity   = isMobile ? mobileTopbarOpacity : topbarOpacity
   const effectiveSidebarVisible  = sidebarVisible
@@ -156,7 +205,73 @@ export default function App() {
     return () => document.removeEventListener('touchmove', handler)
   }, [])
 
-  // Desktop scroll listener — updates curtain/sidebar/topbar visibility from scroll
+  // ── Pause state — shared by HUD sidebar and dashboard ────────────────────
+  const [paused, setPaused] = useState(false)
+  const [showInfo, setShowInfo] = useState(false)
+  const [showInfoHint, setShowInfoHint] = useState(false)
+
+  // Show bouncing hint every time the curtain lifts
+  useEffect(() => {
+    if (effectiveCurtainVisible) return
+    setShowInfoHint(true)
+    const t = setTimeout(() => setShowInfoHint(false), 3200)
+    return () => clearTimeout(t)
+  }, [effectiveCurtainVisible])
+
+  // ── Dashboard: canvas fades linearly with scroll ──────────────────────────
+  const [dashInView, setDashInView] = useState(false)
+  dashInViewRef.current = dashInView
+  const canvasLayerOpacity = useMotionValue(1)
+  const dashOffsetRef = useRef(0)
+
+  // ── Mobile: hide HUD when dashboard scrolls into view ────────────────────
+  // Use a ref so initial mount (dashInView=false) doesn't override the curtain fade-in sequence
+  const hasVisitedDashRef = useRef(false)
+  useEffect(() => {
+    if (!isMobile) return
+    if (dashInView) {
+      hasVisitedDashRef.current = true
+      animate(mobileHudOpacity, 0, { duration: 0.35, ease: 'easeInOut' })
+    } else if (hasVisitedDashRef.current) {
+      animate(mobileHudOpacity, 1, { duration: 0.35, ease: 'easeInOut' })
+    }
+  }, [isMobile, dashInView, mobileHudOpacity])
+
+  // Measure dashboard position once (and on resize)
+  useEffect(() => {
+    const measure = () => {
+      const el = document.getElementById('dashboard')
+      if (el) dashOffsetRef.current = el.offsetTop
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+
+  // ── Scroll snap — snaps to simulator or dashboard when user stops mid-way ──
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    let timer: ReturnType<typeof setTimeout>
+
+    const onScroll = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (!isMobile) return
+        const v   = el.scrollTop
+        const sim = (document.querySelector('.sim-section-spacer') as HTMLElement | null)?.offsetTop ?? LIFT
+        const dash = dashOffsetRef.current
+        if (v <= sim || v >= dash) return   // outside the snap zone — let user scroll freely
+        const mid = (sim + dash) / 2
+        el.scrollTo({ top: v < mid ? sim : dash, behavior: 'smooth' })
+      }, 180)
+    }
+
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => { el.removeEventListener('scroll', onScroll); clearTimeout(timer) }
+  }, [])
+
+  // ── Desktop scroll listener — curtain/sidebar/topbar + linear canvas fade ──
   useEffect(() => {
     return scrollY.on('change', v => {
       setTopbarVisible(v > LIFT * 0.25)
@@ -164,17 +279,30 @@ export default function App() {
       const visible = v < LIFT * 0.65
       setCurtainVisible(visible)
       if (visible) setUserCleared(false)
+
+      // Canvas fades out as dashboard scrolls into view, linearly with scroll
+      if (!isMobile) {
+        const dashTop  = dashOffsetRef.current
+        const vh       = window.innerHeight
+        const fadeStart = dashTop - vh * 0.85   // canvas starts fading when dashboard is ~85vh below viewport top
+        const fadeEnd   = dashTop - vh * 0.05   // fully faded when dashboard nearly fills the screen
+        const ratio = Math.max(0, Math.min(1, (v - fadeStart) / Math.max(1, fadeEnd - fadeStart)))
+        canvasLayerOpacity.set(1 - ratio)
+      }
     })
-  }, [scrollY])
+  }, [scrollY, isMobile, canvasLayerOpacity])
 
   return (
     <MotionConfig reducedMotion="user">
       <div className="app app--v2">
 
-        {/* ── Layer 0: persistent fixed canvas — always z:0 below scroll-doc ── */}
+        {/* ── Layer 0a: particle background — fades in when dashboard in view ── */}
+        <ParticleBackground visible={dashInView} isMobile={isMobile} />
+
+        {/* ── Layer 0b: persistent fixed canvas — fades out when dashboard in view ── */}
         <motion.div
           className="canvas-layer"
-          style={{ scale: canvasScale, y: canvasY }}
+          style={{ scale: canvasScale, y: canvasY, opacity: canvasLayerOpacity }}
         >
           <CitySimulator
             mode={mode}
@@ -189,11 +317,12 @@ export default function App() {
             onLookaheadChange={setLookaheadSec}
             externalSpawnRef={externalSpawnRef}
             externalSpawnModeRef={externalSpawnModeRef}
+            externalZoomRef={externalZoomRef}
           />
         </motion.div>
 
         {/* ── Mobile spawn buttons — z:10, above scroll-doc, only after curtain lifts ── */}
-        {isMobile && !effectiveCurtainVisible && mode !== 'fpv' && (
+        {isMobile && !effectiveCurtainVisible && mode !== 'fpv' && !dashInView && (
           <motion.div
             className="mobile-spawn-btns"
             initial={{ opacity: 0 }}
@@ -211,6 +340,57 @@ export default function App() {
           </motion.div>
         )}
 
+        {/* ── Info button + first-time hint arrow ── */}
+        {!effectiveCurtainVisible && !dashInView && (
+          <>
+            {showInfoHint && (
+              <motion.div
+                className="info-hint-arrow"
+                aria-hidden="true"
+                style={isMobile ? { bottom: infoHintBottom } : undefined}
+              >
+                <span>Click here</span>
+                <span className="info-hint-caret">↓</span>
+              </motion.div>
+            )}
+            <motion.button
+              className="info-btn"
+              onClick={() => setShowInfo(true)}
+              aria-label="About LumiNation"
+              style={isMobile ? { bottom: infoBtnBottom } : undefined}
+            >i</motion.button>
+          </>
+        )}
+
+        {/* ── Info modal ── */}
+        {showInfo && (
+          <div className="info-modal-backdrop" onClick={() => setShowInfo(false)}>
+            <div className="info-modal" onClick={e => e.stopPropagation()}>
+              <button className="info-modal-close" onClick={() => setShowInfo(false)}>✕</button>
+              <div className="info-modal-tag">LumiNation · live simulator</div>
+              <h2 className="info-modal-title">"We are not turning the lights off.<br />We are turning them on intelligently."</h2>
+              <p className="info-modal-body">
+                LumiNation retrofits existing streetlights with a small sensor module that detects pedestrians and vehicles, then coordinates with nearby lamps to create a smooth corridor of light that travels with you — illuminating ahead and gently dimming behind.
+              </p>
+              <p className="info-modal-body">
+                This simulator shows a top-down view of a city block at night. Lamps respond in real time to agents moving through the streets. Use the controls to adjust baseline brightness and corridor reach, spawn pedestrians or cars, and compare LumiNation against always-on lighting.
+              </p>
+              <div className="info-modal-hint">
+                {isMobile
+                  ? <>
+                      <span>Tap anywhere on the street to spawn a pedestrian</span>
+                      <span>Use the <strong>Ped / Car toggle</strong> in the controls to switch agent type</span>
+                    </>
+                  : <>
+                      <span>Click anywhere on the street to spawn a pedestrian</span>
+                      <span>Shift + click to spawn a car</span>
+                    </>
+                }
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Layer 1: flat dim veil — softens canvas at landing state ──────── */}
         <motion.div
           className="canvas-dim-veil"
@@ -222,11 +402,12 @@ export default function App() {
              Desktop: both right-side, headline above controls.
              Mobile:  headline top-center, controls bottom bar.          ── */}
         {mode !== 'fpv' && (
-          <>
+          <motion.div
+            style={{ opacity: effectiveSidebarOpacity, pointerEvents: effectiveSidebarVisible && !(isMobile && dashInView) ? undefined : 'none' }}
+          >
             {/* Headline — display only, no interaction */}
             <motion.div
               className="hud-headline"
-              style={{ opacity: effectiveSidebarOpacity }}
               aria-live="polite"
               aria-label="Live savings estimate"
             >
@@ -241,10 +422,6 @@ export default function App() {
             <motion.nav
               ref={hudNavRef}
               className="hud-controls"
-              style={{
-                opacity: effectiveSidebarOpacity,
-                pointerEvents: effectiveSidebarVisible ? undefined : 'none',
-              }}
               aria-label="Simulator controls"
             >
               {/* Draggable on mobile only — static on desktop */}
@@ -252,7 +429,7 @@ export default function App() {
                 className="hud-controls-body"
                 style={isMobile ? { y: hudY } : undefined}
                 drag={isMobile ? 'y' : false}
-                dragConstraints={isMobile ? { top: 0, bottom: hudMax } : undefined}
+                dragConstraints={isMobile ? { top: HUD_OPEN_Y, bottom: hudMax } : undefined}
                 dragElastic={isMobile ? { top: 0.02, bottom: 0.02 } : undefined}
                 onDragEnd={isMobile ? hudSnap : undefined}
               >
@@ -263,7 +440,7 @@ export default function App() {
                   </div>
                 )}
 
-                <div className="hud-controls-inner" style={{ pointerEvents: hudOpen ? 'auto' : 'none' }}>
+                <div ref={hudInnerRef} className="hud-controls-inner" style={{ pointerEvents: hudOpen ? 'auto' : 'none' }}>
                   <div className="hud-section">
                     <p className="hud-section-desc">Switch between modes to visualize the impact.</p>
                     <div className="sim-compact-modes">
@@ -331,24 +508,52 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button
-                    className="sim-cta"
-                    onClick={() => {
-                      const el = document.getElementById('dashboard')
-                      if (el && scrollRef.current) {
-                        scrollRef.current.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
-                      }
-                    }}
-                  >
-                    Explore the data
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                      <path d="M7 2v10M2 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </button>
+                  {dashInView ? (
+                    /* Dashboard context — pause + back */
+                    <div className="hud-dash-actions">
+                      <button
+                        className={`dash-pause-btn${paused ? ' active' : ''}`}
+                        onClick={() => setPaused(p => !p)}
+                      >
+                        {paused ? '▶ Resume data' : '⏸ Pause data'}
+                      </button>
+                      <button
+                        className="sim-cta"
+                        onClick={() => {
+                          setDashInView(false)
+                          canvasLayerOpacity.set(1)
+                          const simSpacer = document.querySelector('.sim-section-spacer') as HTMLElement | null
+                          scrollRef.current?.scrollTo({ top: simSpacer ? simSpacer.offsetTop : 650, behavior: 'smooth' })
+                        }}
+                      >
+                        ↑ Back to the city
+                      </button>
+                    </div>
+                  ) : (
+                    /* Simulator context — explore CTA */
+                    <button
+                      className="sim-cta"
+                      onClick={() => {
+                        if (isMobile) {
+                          setDashInView(true)
+                        } else {
+                          const el = document.getElementById('dashboard')
+                          if (el && scrollRef.current) {
+                            scrollRef.current.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
+                          }
+                        }
+                      }}
+                    >
+                      Explore the data
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                        <path d="M7 2v10M2 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </motion.div>
             </motion.nav>
-          </>
+          </motion.div>
         )}
 
         {/* ── Layer 3: curtain ─────────────────────────────────────────────────
@@ -408,8 +613,22 @@ export default function App() {
           {/* Simulator section spacer — keeps scroll height for sidebar context */}
           <div className="sim-section-spacer" aria-hidden="true" />
 
-          {/* Dashboard placeholder — Phase 4 will fill this */}
-          <section id="dashboard" className="dashboard-placeholder" aria-label="Dashboard" />
+          <DashboardSection
+            onInView={setDashInView}
+            inView={dashInView}
+            isMobile={isMobile}
+            scrollRef={scrollRef}
+            paused={paused}
+            onPause={setPaused}
+            onBackToCity={() => {
+              setDashInView(false)
+              canvasLayerOpacity.set(1)
+              if (!isMobile) {
+                const simSpacer = document.querySelector('.sim-section-spacer') as HTMLElement | null
+                scrollRef.current?.scrollTo({ top: simSpacer ? simSpacer.offsetTop : 650, behavior: 'smooth' })
+              }
+            }}
+          />
 
           <footer className="footer">
             <span>LumiNation · Red Bull Basement Portugal 2026 · Instituto Superior Técnico</span>
@@ -450,7 +669,15 @@ export default function App() {
             <div className="mode-bar">
               {mode === 'fpv'
                 ? <button className="active" onClick={() => setMode('lumination')}>← Simulation</button>
-                : <button onClick={() => setMode('fpv')}>Citizen view</button>
+                : <button onClick={() => {
+                    setMode('fpv')
+                    if (dashInView) {
+                      setDashInView(false)
+                      canvasLayerOpacity.set(1)
+                      const simSpacer = document.querySelector('.sim-section-spacer') as HTMLElement | null
+                      scrollRef.current?.scrollTo({ top: simSpacer ? simSpacer.offsetTop : 650, behavior: 'smooth' })
+                    }
+                  }}>Citizen view</button>
               }
             </div>
           )}
