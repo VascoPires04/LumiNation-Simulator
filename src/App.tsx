@@ -190,6 +190,29 @@ export default function App() {
     return () => window.removeEventListener('resize', measure)
   }, [])
 
+  // ── Scroll snap — snaps to simulator or dashboard when user stops mid-way ──
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    let timer: ReturnType<typeof setTimeout>
+
+    const onScroll = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (!isMobile) return
+        const v   = el.scrollTop
+        const sim = (document.querySelector('.sim-section-spacer') as HTMLElement | null)?.offsetTop ?? LIFT
+        const dash = dashOffsetRef.current
+        if (v <= sim || v >= dash) return   // outside the snap zone — let user scroll freely
+        const mid = (sim + dash) / 2
+        el.scrollTo({ top: v < mid ? sim : dash, behavior: 'smooth' })
+      }, 180)
+    }
+
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => { el.removeEventListener('scroll', onScroll); clearTimeout(timer) }
+  }, [])
+
   // ── Desktop scroll listener — curtain/sidebar/topbar + linear canvas fade ──
   useEffect(() => {
     return scrollY.on('change', v => {
@@ -529,7 +552,15 @@ export default function App() {
             <div className="mode-bar">
               {mode === 'fpv'
                 ? <button className="active" onClick={() => setMode('lumination')}>← Simulation</button>
-                : <button onClick={() => setMode('fpv')}>Citizen view</button>
+                : <button onClick={() => {
+                    setMode('fpv')
+                    if (dashInView) {
+                      setDashInView(false)
+                      canvasLayerOpacity.set(1)
+                      const simSpacer = document.querySelector('.sim-section-spacer') as HTMLElement | null
+                      scrollRef.current?.scrollTo({ top: simSpacer ? simSpacer.offsetTop : 650, behavior: 'smooth' })
+                    }
+                  }}>Citizen view</button>
               }
             </div>
           )}
