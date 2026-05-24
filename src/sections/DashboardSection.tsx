@@ -45,8 +45,8 @@ export default function DashboardSection({ onInView, inView, isMobile, paused, o
     const el = rootRef.current
     if (!el) return
     const observer = new IntersectionObserver(
-      ([entry]) => onInView(entry.intersectionRatio > 0.3),
-      { threshold: [0.0, 0.3, 0.6, 1.0] }
+      ([entry]) => onInView(entry.intersectionRatio > 0),
+      { threshold: [0, 0.01] }
     )
     observer.observe(el)
     return () => observer.disconnect()

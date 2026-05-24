@@ -83,6 +83,27 @@ export default function App() {
   }
   const scrollRef        = useRef<HTMLDivElement>(null)
   const externalSpawnRef = useRef<((cx: number, cy: number) => void) | null>(null)
+  const externalZoomRef  = useRef<((delta: number) => void) | null>(null)
+
+  const curtainVisibleRef = useRef(true)
+  const dashInViewRef     = useRef(false)
+
+  // Intercept wheel on scroll-doc and forward to zoom when over the simulation
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      // Only zoom when curtain is gone and dashboard is not in view
+      if (!externalZoomRef.current) return
+      if (curtainVisibleRef.current || dashInViewRef.current) return
+      e.preventDefault()
+      e.stopPropagation()
+      const delta = e.deltaY > 0 ? 0.9 : 1.1
+      externalZoomRef.current(delta)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
   const touchStartRef    = useRef<{ x: number; y: number } | null>(null)
   const lastTouchRef     = useRef(0) // timestamp — blocks ghost click after touch
   const { scrollY } = useScroll({ container: scrollRef })
@@ -143,6 +164,7 @@ export default function App() {
 
   // Effective values — mobile uses timer-based, desktop uses scroll-based
   const effectiveCurtainVisible  = isMobile ? !mobileCurtainGone  : curtainVisible
+  curtainVisibleRef.current = effectiveCurtainVisible
   const effectiveSidebarOpacity  = isMobile ? mobileHudOpacity    : sidebarOpacity
   const effectiveTopbarOpacity   = isMobile ? mobileTopbarOpacity : topbarOpacity
   const effectiveSidebarVisible  = sidebarVisible
@@ -198,6 +220,7 @@ export default function App() {
 
   // ── Dashboard: canvas fades linearly with scroll ──────────────────────────
   const [dashInView, setDashInView] = useState(false)
+  dashInViewRef.current = dashInView
   const canvasLayerOpacity = useMotionValue(1)
   const dashOffsetRef = useRef(0)
 
@@ -294,6 +317,7 @@ export default function App() {
             onLookaheadChange={setLookaheadSec}
             externalSpawnRef={externalSpawnRef}
             externalSpawnModeRef={externalSpawnModeRef}
+            externalZoomRef={externalZoomRef}
           />
         </motion.div>
 
@@ -352,8 +376,16 @@ export default function App() {
                 This simulator shows a top-down view of a city block at night. Lamps respond in real time to agents moving through the streets. Use the controls to adjust baseline brightness and corridor reach, spawn pedestrians or cars, and compare LumiNation against always-on lighting.
               </p>
               <div className="info-modal-hint">
-                <span>Click anywhere on the street to spawn a pedestrian</span>
-                {!isMobile && <span>Shift + click to spawn a car</span>}
+                {isMobile
+                  ? <>
+                      <span>Tap anywhere on the street to spawn a pedestrian</span>
+                      <span>Use the <strong>Ped / Car toggle</strong> in the controls to switch agent type</span>
+                    </>
+                  : <>
+                      <span>Click anywhere on the street to spawn a pedestrian</span>
+                      <span>Shift + click to spawn a car</span>
+                    </>
+                }
               </div>
             </div>
           </div>
