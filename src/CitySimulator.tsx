@@ -81,6 +81,44 @@ const LAMP_REACH_BEHIND_CAR = 60
 const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
+// ── Isometric projection ──────────────────────────────────────────────────────
+// Toggle: set to true to enable isometric rendering. false = flat top-down.
+const ISO_MODE = false
+// Tile ratio: screen width : height = 2 : 1  (classic isometric)
+const ISO_TILE_W = 2
+const ISO_TILE_H = 1
+
+/**
+ * Project world coordinates (wx, wy) to screen (sx, sy).
+ * In flat mode this is a no-op. In ISO mode it applies a 2:1 dimetric transform.
+ * The pivot is the canvas centre (W/2, H/2) — same anchor as the zoom transform.
+ */
+function isoProject(wx: number, wy: number, W: number, H: number): { sx: number; sy: number } {
+  if (!ISO_MODE) return { sx: wx, sy: wy }
+  const cx = W / 2, cy = H / 2
+  // Translate to canvas-centre-relative coords, apply iso, translate back
+  const rx = wx - cx, ry = wy - cy
+  return {
+    sx: cx + (rx - ry) * (ISO_TILE_W / 2),
+    sy: cy + (rx + ry) * (ISO_TILE_H / 2),
+  }
+}
+
+/**
+ * Inverse: screen tap (sx, sy) → world (wx, wy). Used for spawn-on-tap.
+ * In flat mode this is a no-op.
+ */
+function isoUnproject(sx: number, sy: number, W: number, H: number): { wx: number; wy: number } {
+  if (!ISO_MODE) return { wx: sx, wy: sy }
+  const cx = W / 2, cy = H / 2
+  const dx = sx - cx, dy = sy - cy
+  // Invert the 2:1 iso matrix
+  const rx =  dx / ISO_TILE_W + dy / ISO_TILE_H
+  const ry = -dx / ISO_TILE_W + dy / ISO_TILE_H
+  return { wx: cx + rx, wy: cy + ry }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function seededRng(seed: number) {
   let s = ((seed + 1) * 2654435761) >>> 0 || 1
   return () => {

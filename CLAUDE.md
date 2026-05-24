@@ -167,81 +167,164 @@ demo built to show the adaptive light corridor in action. It's the artifact we
 plan to use on stage at the Silicon Valley World Final, plus as a marketing /
 investor-facing piece.
 
-**Stack:** React 18 + TypeScript + Vite + Three.js (^0.184.0). No backend. All client-side.
+**Stack:** React 18 + TypeScript + Vite + Three.js (^0.184.0) + Framer Motion + D3. No backend. All client-side.
 **Published:** Replit (public URL). All files tracked by git including `FPV3D.tsx`.
 
 **Files of interest:**
-- `src/App.tsx` — shell: topbar with 4 mode buttons, renders `<CitySimulator>`, footer.
+- `src/App.tsx` — V2 shell: fixed canvas layer + scroll-driven landing curtain + compact HUD + DashboardSection. Framer Motion throughout. ~690 lines.
 - `src/CitySimulator.tsx` — all simulation logic (city layout, agents, lamps, physics,
-  drawing, scenarios, Lisbon scale, live chart). All key tunables are at the top.
+  drawing, scenarios, Lisbon scale, zoom system). All key tunables are at the top.
+  Emits samples to `sim-bus` at ~2Hz.
 - `src/FPV3D.tsx` — Three.js Citizen View (~1750 lines). Completely independent
   from the Canvas 2D system; receives simulation state as React refs via props.
+- `src/sim-bus.ts` — module-level event emitter. `CitySimulator` calls `simBus.emit()`;
+  dashboard components subscribe via `simBus.on()`. Zero React dependency — safe in rAF loops.
+- `src/sections/LandingSection.tsx` — spring-driven curtain with wordmark, slogan, scroll
+  cue. Parallax: each layer has independent Y travel and opacity easing via Framer Motion.
+- `src/sections/DashboardSection.tsx` — data dashboard below the simulator. Owns
+  pause/freeze state; passes frozen or live data to chart components.
+- `src/components/PowerChart.tsx` — D3 SVG dual-line chart. LumiNation amber area +
+  always-on orange line + savings gap fill + hover crosshair. Lisbon-scaled.
+- `src/components/CO2Gauge.tsx` — D3 arc-based radial gauge (270°). Smooth rAF animation.
+  Shows annual CO₂ saved + km-of-driving equivalent. Lisbon-scaled.
+- `src/components/EurCard.tsx` — annual € savings card with D3 sparkline. Lisbon-scaled.
+- `src/components/EnergyCard.tsx` — session kWh saved card with D3 sparkline. Lisbon-scaled.
+- `src/components/HeadlineMetric.tsx` — live Lisbon-scaled savings headline in the HUD.
+- `src/components/ParticleBackground.tsx` — ambient particle effect, fades in when
+  dashboard is in view.
+- `src/components/SimControls.tsx` — extracted control widgets (used internally).
 - `src/hooks/useIsMobile.ts` — `window.matchMedia` hook, breakpoint 768px.
+- `src/hooks/useSimHistory.ts` — subscribes to `simBus`, maintains rolling array of
+  `SimSample[]` up to `maxSamples`. Re-renders at ~2Hz.
+- `src/hooks/useSimTotals.ts` — subscribes to `simBus`, returns latest sample with
+  Lisbon scaling (70,000 lamps) already applied as `SimTotals`.
 - `src/styles.css` — global styles + LumiNation brand tokens + full mobile layout.
 - `SIMULATION_VALUES_RESEARCH_REPORT.txt` — research on Portuguese energy values.
+- `docs/ISOMETRIC_PLAN.md` — step-by-step plan for upgrading the city top-down view to isometric Canvas 2D rendering.
+- `docs/V2_PLAN.md` — earlier V2 planning document.
 
 ---
 
-## Site flow & screens
+## Site flow & screens (V2 architecture)
 
-The app is a single page. No routing. `App.tsx` holds a `mode` state that switches
-what `CitySimulator.tsx` renders (and whether `FPV3D.tsx` is mounted).
+The app is a single page. No routing. `App.tsx` is the orchestrator — it owns a
+fixed canvas layer that never unmounts and a scrollable document on top that drives
+all reveal animations.
 
-### Top bar (always visible)
-- Left: amber "L" brand mark (glowing box-shadow) + "LumiNation" heading + tagline
-  "The adaptive light corridor · live simulator"
-- Right (desktop) / below brand (mobile 2×2 grid): 4 mode buttons
+### Z-index stack (bottom → top)
 
-### 4 mode buttons → 4 screens
+```
+0  canvas-layer       — position:fixed, full viewport — CitySimulator (no sidebar)
+1  canvas-dim-veil    — position:fixed, pointer-events:none — dims canvas at landing
+2  hud-headline       — position:fixed — Lisbon-scaled headline, fades in with HUD
+2  hud-controls       — position:fixed — mode buttons + sliders, fades in with HUD
+3  landing-curtain    — position:fixed, pointer-events:none — lifts on scroll
+4  scroll-doc         — position:relative, pointer-events:none — transparent, drives height
+                        DashboardSection lives here (below the scroll spacers)
+100 topbar            — position:fixed — fades in as curtain lifts
+```
 
-**1. LumiNation** (default, `mode='lumination'`)
-- 2D top-down canvas: 3×3 city grid, dark night palette.
-- Adaptive corridor active: lamps near pedestrians/cars illuminate ahead, dim behind.
-- Communication mesh lines between adjacent lamps, opacity reacts to brightness.
-- Sidebar visible (right on desktop, top on mobile).
+### Landing curtain (`LandingSection.tsx`)
 
-**2. Always-on** (`mode='baseline'`)
-- Same 2D canvas but all lamps rendered at `MAX_VISUAL_BRI` permanently.
-- Useful to show the contrast: "this is what cities do today."
+Covers the full viewport at load. Contains:
+- **Wordmark** — "LumiNation", deepest parallax (–260px travel on desktop scroll).
+- **Slogan** — "Light that moves with you", mid parallax (–200px).
+- **Scroll cue** — "scroll to explore" + animated drip arrow, fades earliest.
 
-**3. Compare** (`mode='compare'`)
-- Split-screen: left half = LumiNation, right half = Always-on.
-- Same simulation state drives both halves — direct side-by-side comparison.
-- Sidebar visible.
+Desktop: scroll-driven lift. `useSpring(scrollY, { stiffness:180, damping:42 })` gives
+physical inertia. Curtain lifts completely over `LIFT = 600px` of scroll.
 
-**4. Citizen view** (`mode='fpv'`)
-- Full `FPV3D.tsx` Three.js scene mounts; canvas is hidden.
-- First-person walk down a city street at night, corridor of light ahead of you.
-- Glassmorphic overlay with: Walk / Jog / Sprint buttons + Citizen Dashboard stats.
-- Sidebar still visible below on mobile (metrics, controls).
+Mobile: auto-dismisses with a fade after **1 second**. No scroll required. Curtain DOM
+unmounts 800ms after fade starts.
 
-### Sidebar (right on desktop, bottom on mobile — always shown except in fpv on some layouts)
+### HUD (compact controls — always present once curtain lifts)
 
-**Controls card:**
-- Baseline brightness slider (15–100%)
-- Lookahead time slider
-- Scenario selector: Manual / Quiet residential 3am / Busy avenue 8pm / Mixed 11pm
-- Spawn buttons: "Spawn Pedestrian" / "Spawn Car" (desktop), tap-mode toggle (mobile)
-- **Lisbon Scale** toggle button — multiplies all displayed metrics by 70,000/lampCount
-  to surface the €4M/year headline figure for Lisbon's 70,000 streetlights.
-- Pause / Resume / Clear buttons
+Two fixed elements that fade in together as the curtain lifts:
 
-**Metrics card:**
-- Power now (W or kW or MW with Lisbon scale)
-- % of always-on power
-- Session kWh saved
-- Annual € savings (projected)
-- Annual CO₂ savings (kg or t)
-- Live pedestrian + vehicle counts
+**`hud-headline`** — top-right (desktop) / top-center (mobile)
+- Live Lisbon-scaled annual savings (`HeadlineMetric` component).
+- Display only, no interaction.
 
-**Live power chart (canvas element):**
-- 60-second ring buffer (120 entries × 0.5s) drawn each time stats update.
-- Amber filled area = LumiNation power over time.
-- Dashed white line = always-on reference.
-- Y axis: 0 → full power. X axis: last 60 seconds.
+**`hud-controls`** — bottom-right (desktop) / bottom sheet draggable (mobile)
+- Mode switcher: LumiNation / Always-on / Compare (3 buttons).
+- Baseline brightness slider (0–100%).
+- Light corridor slider (0.5–8s lookahead).
+- **"Explore the data" CTA** — scrolls to `#dashboard` (desktop) or triggers in-place
+  dashboard view (mobile).
+- When `dashInView=true`, CTA is replaced by **Pause data / Resume data** + **↑ Back to the city**.
 
-### Footer (always visible)
+Mobile bottom sheet: draggable up/down with snap. `hudY` MotionValue drives `y` offset.
+`hudMax` is measured dynamically via `ResizeObserver` so it always matches content height.
+
+### Modes (`mode` state in App.tsx)
+
+**`lumination`** (default) — adaptive corridor active.
+**`baseline`** — all lamps at max brightness (always-on reference).
+**`compare`** — split-screen left=LumiNation / right=Always-on.
+**`fpv`** — desktop only; `FPV3D.tsx` Three.js scene. Citizen view.
+
+Mode is set via the `hud-controls` mode switcher (3 buttons) or the topbar Citizen view button.
+
+### Topbar (fades in as curtain lifts)
+
+Glassmorphic header, `position:fixed`, `z-index:100`. Contains:
+- Brand mark "L" + "LumiNation" + tagline.
+- Clicking "L" scrolls back to top (desktop only).
+- **Citizen view** button (desktop only — too heavy for mobile).
+
+### Info button + modal
+
+A floating "i" button appears once the curtain is gone. First-time users also see a
+bouncing "Click here ↓" hint for 3.2s.
+
+Clicking opens an info modal: what LumiNation is, how the simulator works, spawn
+instructions (tap vs shift+click depending on platform).
+
+### Dashboard section (`DashboardSection.tsx`)
+
+Lives inside the scroll-doc, below two invisible spacers. Revealed by scrolling.
+
+When `dashInView` becomes true:
+- The canvas fades out linearly with scroll (`canvasLayerOpacity` MotionValue).
+- `ParticleBackground` fades in (ambient particles behind the dashboard).
+- On mobile: the HUD fades out to avoid overlap.
+
+The section manages a **pause/freeze** toggle. When paused, it captures a snapshot
+of `liveHistory` and `liveTotals` and serves the frozen data to all chart components.
+
+**Dashboard charts (all Lisbon-scaled to 70,000 lamps):**
+
+- `PowerChart` — D3 SVG. Full-width top row. Dual-line: amber area (LumiNation power,
+  0→now) + orange line (always-on reference). Savings gap fill between them. D3 axes
+  with formatted time ticks. Hover crosshair shows exact values + % savings at that
+  moment. "X% saved now" badge bottom-right. `paused` state shows "data frozen" watermark.
+
+- `CO2Gauge` — D3 arc (270°, -135° → +135°). Fills from left with amber gradient as
+  savings ratio increases. Smooth rAF animation (400ms ease-in-out interpolation).
+  Shows: annual CO₂ value + unit, % of max savings, km-of-driving equivalent.
+
+- `EurCard` — Annual projected € savings with D3 sparkline (session history, amber fill +
+  line). Expandable to overlay panel on click.
+
+- `EnergyCard` — Cumulative session kWh saved with D3 sparkline. Same expandable pattern.
+
+**Data pipeline:**
+```
+CitySimulator (rAF loop)
+  → simBus.emit() at ~2Hz
+    → useSimHistory(600) — 300s rolling array for dashboard
+    → useSimTotals()     — latest sample, Lisbon-scaled, typed as SimTotals
+      → PowerChart, CO2Gauge, EurCard, EnergyCard
+```
+
+### Footer (inside scroll-doc, below dashboard)
 `LumiNation · Red Bull Basement Portugal 2026 · Instituto Superior Técnico` + `v0.1 · early prototype`
+
+### Scroll snap (mobile only)
+
+After scrolling stops, a 180ms debounce checks if scroll position is in the
+"gap" between the simulator spacer and the dashboard. If so, it snaps to whichever
+is nearer — no half-revealed states on mobile.
 
 ---
 
@@ -277,6 +360,32 @@ what `CitySimulator.tsx` renders (and whether `FPV3D.tsx` is mounted).
   Resize bug fixed: sidebar growth no longer triggers canvas resize (overflow:hidden on .app).
 - **Live power chart** — 60s ring buffer drawn on a `<canvas>` in the sidebar.
   Amber area = LumiNation; dashed white = always-on. Drawn via `useEffect` on stats change.
+
+#### Zoom / pan system (added 2026-05)
+
+- **Drone flyover zoom** — mouse wheel (desktop) and pinch (mobile) zoom the canvas
+  in and out. Zoom range: 0.4× (full city overview) to 3× (close-up).
+- **Extended city pre-generation** — `layoutCity` generates streets, lamps,
+  buildings, and trees for the full zoom-out extent (`getVirtualBounds(W, H, 0.4)`)
+  at resize time. No re-layout during zoom transitions — elements stay in place as
+  the view scales, giving a true drone effect.
+- **Centered scale transform** — `draw()` applies `ctx.translate(W/2,H/2); ctx.scale(z,z);
+  ctx.translate(-W/2,-H/2)` so zoom anchors to the canvas center.
+- **Smooth zoom** — `targetZoomRef` stores the desired zoom; the render loop applies
+  exponential easing `1 - Math.exp(-dt * 10)` each frame so zoom transitions are
+  fluid, not stepped.
+- **Visibility culling** — `draw()` and `step()` skip elements outside
+  `virtualBoundsRef` (the current virtual coordinate range at the current zoom).
+  `step()` uses a 500px margin so corridor logic stays correct near edges.
+- **Scroll vs zoom guard** — a canvas-level `IntersectionObserver` tracks what
+  fraction of the stage is visible (`stageVisibilityRef`). The wheel listener
+  only intercepts scroll when `stageVisibilityRef ≥ 0.8`; otherwise the page
+  scrolls normally. Dashboard `IntersectionObserver` threshold is `> 0` (fires
+  as soon as any pixel is visible) to prevent the guard from misfiring during
+  half-scroll transitions.
+- **Pinch-spawn fix** — `wasPinchingRef` flag prevents finger-release from
+  spawning agents after a pinch gesture. A spawn only fires if `wasPinchingRef`
+  is `false` at touch end.
 
 ### Citizen view (FPV — `src/FPV3D.tsx`, Three.js WebGL)
 
@@ -427,13 +536,17 @@ Lookahead scale: 8 m per lookahead unit × corridorSpeedMult
 3. ~~**Lisbon-scale preset**~~ ✅ **Done** — button in controls, scales all metrics to 70,000 lamps, €4M/year.
 4. ~~**Live time-series chart**~~ ✅ **Done** — 60s ring buffer canvas chart with LumiNation amber area and always-on dashed line.
 5. ~~**Mobile-friendly layout**~~ ✅ **Done** — full responsive CSS, mobile FPV optimizations (Lambert materials, reduced counts, no shadows), touch spawn, iOS Safari height fix.
-6. **Cinematic / "Play story" mode** — auto-runs a 30-second scripted sequence
+6. ~~**Zoom / drone flyover**~~ ✅ **Done** — pinch + wheel zoom (0.4×–3×), extended city pre-generation, smooth easing, scroll/zoom guard, pinch-spawn fix.
+7. **Isometric city upgrade** — convert flat top-down to isometric canvas rendering
+   with building height, depth, wall-light corridor pooling. Plan in `docs/ISOMETRIC_PLAN.md`.
+   Estimated effort: 3–5 focused sessions. Stops at Step 5 (wall light) are shippable.
+8. **Cinematic / "Play story" mode** — auto-runs a 30-second scripted sequence
    ideal for stage use: quiet street → first pedestrian → corridor activates →
    metrics tick up → reset.
-7. **Sound design (optional)** — subtle "lamp wake" tone when lamps activate.
+9. **Sound design (optional)** — subtle "lamp wake" tone when lamps activate.
    Toggleable; off by default for stage safety.
-8. **Recordable fallback video** — capture the demo in OBS as backup if live
-   demo breaks on stage.
+10. **Recordable fallback video** — capture the demo in OBS as backup if live
+    demo breaks on stage.
 
 ---
 
