@@ -285,7 +285,7 @@ input[type="range"] {
 
 .stage-hint {
   position: absolute;
-  left: 14px;
+  left: 74px; /* cleared past the 48px info button + margin */
   bottom: 14px;
   font-size: 12px;
   color: var(--text-dim);
@@ -1392,6 +1392,152 @@ input[type="range"] {
   .brand-mark { width: 30px; height: 30px; font-size: 15px; }
 }
 
+/* ── Info button ── */
+.info-btn {
+  position: fixed;
+  bottom: clamp(20px, 4vh, 36px);
+  left: clamp(16px, 3vw, 32px);
+  z-index: 12;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(20,20,28,0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 0.5px solid rgba(250,199,117,0.35);
+  color: var(--amber);
+  font-size: calc(48px * 0.46);
+  font-style: italic;
+  font-family: Georgia, serif;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.info-btn:hover {
+  background: rgba(250,199,117,0.14);
+  border-color: rgba(250,199,117,0.65);
+}
+
+/* ── Info hint arrow — bounces once then fades ── */
+@keyframes hint-bounce {
+  0%   { transform: translateY(0);   opacity: 0; }
+  15%  { opacity: 1; }
+  40%  { transform: translateY(-8px); }
+  60%  { transform: translateY(0);   }
+  75%  { transform: translateY(-5px); }
+  88%  { transform: translateY(0);   }
+  100% { transform: translateY(0);   opacity: 0; }
+}
+.info-hint-arrow {
+  position: fixed;
+  /* bottom edge of hint sits just above the button */
+  bottom: calc(clamp(20px, 4vh, 36px) + 56px);
+  /* left matches button exactly; width matches button so text overflows centred */
+  left: clamp(16px, 3vw, 32px);
+  width: 48px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  overflow: visible;
+  animation: hint-bounce 3.2s ease-in-out forwards;
+  pointer-events: none;
+}
+.info-hint-arrow span {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--amber);
+  font-family: Inter, sans-serif;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
+.info-hint-caret {
+  font-size: 30px;
+  line-height: 1;
+  color: var(--amber);
+}
+
+/* ── Info modal ── */
+.info-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.info-modal {
+  position: relative;
+  background: rgba(14,14,20,0.96);
+  border: 0.5px solid rgba(250,199,117,0.18);
+  border-radius: 20px;
+  padding: clamp(24px, 4vw, 40px);
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 32px 80px -16px rgba(0,0,0,0.7);
+}
+.info-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.35);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.15s;
+}
+.info-modal-close:hover { color: var(--text); }
+.info-modal-tag {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber);
+  opacity: 0.7;
+  margin-bottom: 14px;
+}
+.info-modal-title {
+  font-family: var(--font-heading);
+  font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.35;
+  margin: 0 0 20px;
+  letter-spacing: -0.02em;
+}
+.info-modal-body {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.65;
+  margin: 0 0 14px;
+}
+.info-modal-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 0.5px solid rgba(255,255,255,0.07);
+}
+.info-modal-hint span {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.info-modal-hint span::before {
+  content: '→ ';
+  color: var(--amber);
+  opacity: 0.6;
+}
+
 /* ── Mobile spawn buttons — rendered in App.tsx above scroll-doc ─────────── */
 .mobile-spawn-btns {
   display: none;
@@ -1620,12 +1766,15 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   height: 100%;
+  max-height: 100%;
+  overflow: hidden;
   gap: 4px;
 }
 .sparkline-wrap {
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: 8px;
   width: 100%;
+  overflow: hidden;
 }
 .money-big-number {
   font-family: var(--font-heading);

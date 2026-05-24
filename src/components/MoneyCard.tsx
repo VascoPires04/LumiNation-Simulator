@@ -90,7 +90,7 @@ export default function MoneyCard({ history, totals, isMobile }: Props) {
     <div className="money-card-wrap">
       {/* Top half: € savings */}
       <div className="money-half">
-        <div className="dash-card-label">SAVED (ANNUALISED · LISBON)</div>
+        <div className="dash-card-label">SAVED (ANUAL · LISBON)</div>
         <div className="money-big-number">{fmtEur(eur)}</div>
         <div className="money-sublabel">per year projected</div>
         <Sparkline values={eurValues} w={SPARK_W} />

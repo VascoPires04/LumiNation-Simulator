@@ -51,16 +51,24 @@ export default function CO2Gauge({ totals, isMobile, history: _history }: Props)
   }, [])
 
   // Fit to whichever is the bottleneck — width or height.
-  // The SVG arc takes ~70% of height; remaining ~30% is for labels above/below.
-  const sizeByW = availW - 44
-  const sizeByH = availH * 0.62
-  const SIZE = Math.min(isMobile ? 180 : 260, Math.max(100, Math.min(sizeByW, sizeByH)))
-  const SVG_H   = Math.round(SIZE * (isMobile ? 1.35 : 1.25))
+  const sizeByW = availW - 32
+  const sizeByH = availH * 0.68
+  const SIZE    = Math.min(isMobile ? 200 : 260, Math.max(110, Math.min(sizeByW, sizeByH)))
+  const fKm     = Math.round(Math.min(SIZE * 0.065, 10))
+  // Three text rows below the arc — evenly spaced
+  const yUnit   = (SIZE / 2 - SIZE * 0.06) + SIZE * 0.40 * 0.82 + Math.round(Math.min(SIZE * 0.075, 13))
+  const yKm     = (SIZE / 2 - SIZE * 0.06) + SIZE * 0.40 + Math.round(Math.min(SIZE * 0.07, 11)) + fKm * 4 + 14
+  const yPct    = (yUnit + yKm) / 2   // exact midpoint → even spacing
+  const SVG_H   = Math.round(yKm + fKm * 2 + 14)
   const CX      = SIZE / 2
-  const CY      = SIZE / 2 + (isMobile ? 8 : 14)
+  const CY      = SIZE / 2 - SIZE * 0.06  // arc opens at bottom → visual centre sits above maths centre
   const R_OUT   = SIZE * 0.40
   const R_IN    = SIZE * 0.29
-  const TRACK_W = R_OUT - R_IN
+
+  // Font sizes proportional to SIZE
+  const fVal  = Math.round(Math.min(SIZE * 0.20, 38))   // bigger — only number inside ring
+  const fUnit = Math.round(Math.min(SIZE * 0.075, 13))  // unit sits in the open gap below
+  const fPct  = Math.round(Math.min(SIZE * 0.07, 11))
 
   // Target fill ratio
   const fillRatio = totals && totals.baselineW > 0
@@ -164,39 +172,53 @@ export default function CO2Gauge({ totals, isMobile, history: _history }: Props)
           ))}
         </g>
 
-        {/* Centre text — positioned absolutely in SVG coords */}
+        {/* Number only — centred inside the ring */}
         <text
-          x={CX} y={CY - TRACK_W * 0.3}
+          x={CX} y={CY + fVal * 0.36}
           textAnchor="middle"
           fontFamily="Outfit, Inter, sans-serif"
           fontWeight={500}
-          fontSize={22}
+          fontSize={fVal}
           fill="#FAC775"
           letterSpacing="-0.02em"
         >{val}</text>
+
+        {/* Unit — sits in the open gap at the bottom of the 270° arc */}
         <text
-          x={CX} y={CY + 14}
+          x={CX} y={CY + R_OUT * 0.82 + fUnit}
           textAnchor="middle"
           fontFamily="Inter, sans-serif"
-          fontSize={11}
-          fill="rgba(240,240,245,0.6)"
-          letterSpacing="0.05em"
+          fontSize={fUnit}
+          fill="rgba(240,240,245,0.55)"
+          letterSpacing="0.06em"
           style={{ textTransform: 'uppercase' }}
         >{unit} / year</text>
-        {/* Percentage at arc tip */}
+
+        {/* % of max savings — between unit and km text */}
         <text
-          x={CX} y={CY + R_OUT + 18}
+          x={CX} y={yPct}
           textAnchor="middle"
           fontFamily="Inter, sans-serif"
-          fontSize={12}
+          fontSize={fPct}
           fill="rgba(240,240,245,0.55)"
         >{pct}% of max savings</text>
-      </svg>
 
-      {/* Comparison context */}
-      <p className="co2-comparison">
-        ≈ {kmEq.toLocaleString()} thousand km of driving avoided per year
-      </p>
+        {/* km equivalent — two lines so it always fits */}
+        <text
+          x={CX} y={yKm}
+          textAnchor="middle"
+          fontFamily="Inter, sans-serif"
+          fontSize={fKm}
+          fill="rgba(240,240,245,0.32)"
+        >≈ {kmEq.toLocaleString()} thousand km</text>
+        <text
+          x={CX} y={yKm + fKm + 2}
+          textAnchor="middle"
+          fontFamily="Inter, sans-serif"
+          fontSize={fKm}
+          fill="rgba(240,240,245,0.32)"
+        >of driving avoided per year</text>
+      </svg>
     </div>
   )
 }

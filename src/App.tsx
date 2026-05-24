@@ -160,6 +160,16 @@ export default function App() {
 
   // ── Pause state — shared by HUD sidebar and dashboard ────────────────────
   const [paused, setPaused] = useState(false)
+  const [showInfo, setShowInfo] = useState(false)
+  const [showInfoHint, setShowInfoHint] = useState(false)
+
+  // Show bouncing hint every time the curtain lifts
+  useEffect(() => {
+    if (effectiveCurtainVisible) return
+    setShowInfoHint(true)
+    const t = setTimeout(() => setShowInfoHint(false), 3200)
+    return () => clearTimeout(t)
+  }, [effectiveCurtainVisible])
 
   // ── Dashboard: canvas fades linearly with scroll ──────────────────────────
   const [dashInView, setDashInView] = useState(false)
@@ -279,6 +289,40 @@ export default function App() {
               onClick={() => { externalSpawnModeRef.current = 'car'; setSpawnMode('car') }}
             >🚗</button>
           </motion.div>
+        )}
+
+        {/* ── Info button + first-time hint arrow ── */}
+        {!effectiveCurtainVisible && !dashInView && (
+          <>
+            {showInfoHint && (
+              <div className="info-hint-arrow" aria-hidden="true">
+                <span>Click here</span>
+                <span className="info-hint-caret">↓</span>
+              </div>
+            )}
+            <button className="info-btn" onClick={() => setShowInfo(true)} aria-label="About LumiNation">i</button>
+          </>
+        )}
+
+        {/* ── Info modal ── */}
+        {showInfo && (
+          <div className="info-modal-backdrop" onClick={() => setShowInfo(false)}>
+            <div className="info-modal" onClick={e => e.stopPropagation()}>
+              <button className="info-modal-close" onClick={() => setShowInfo(false)}>✕</button>
+              <div className="info-modal-tag">LumiNation · live simulator</div>
+              <h2 className="info-modal-title">"We are not turning the lights off.<br />We are turning them on intelligently."</h2>
+              <p className="info-modal-body">
+                LumiNation retrofits existing streetlights with a small sensor module that detects pedestrians and vehicles, then coordinates with nearby lamps to create a smooth corridor of light that travels with you — illuminating ahead and gently dimming behind.
+              </p>
+              <p className="info-modal-body">
+                This simulator shows a top-down view of a city block at night. Lamps respond in real time to agents moving through the streets. Use the controls to adjust baseline brightness and corridor reach, spawn pedestrians or cars, and compare LumiNation against always-on lighting.
+              </p>
+              <div className="info-modal-hint">
+                <span>Click anywhere on the street to spawn a pedestrian</span>
+                {!isMobile && <span>Shift + click to spawn a car</span>}
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ── Layer 1: flat dim veil — softens canvas at landing state ──────── */}
