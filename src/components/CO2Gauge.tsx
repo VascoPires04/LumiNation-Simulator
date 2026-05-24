@@ -45,11 +45,13 @@ export default function CO2Gauge({ totals, isMobile, history: _history }: Props)
     return () => ro.disconnect()
   }, [])
 
-  const SIZE = Math.min(isMobile ? 200 : 240, availW - 8)
-  const CX   = SIZE / 2
-  const CY   = SIZE / 2 + (isMobile ? 10 : 14)
-  const R_OUT = SIZE * 0.40
-  const R_IN  = SIZE * 0.29
+  // Card has 20px padding each side; subtract that plus a small buffer
+  const SIZE    = Math.min(isMobile ? 180 : 240, Math.max(80, availW - 44))
+  const SVG_H   = Math.round(SIZE * (isMobile ? 1.35 : 1.25))
+  const CX      = SIZE / 2
+  const CY      = SIZE / 2 + (isMobile ? 8 : 14)
+  const R_OUT   = SIZE * 0.40
+  const R_IN    = SIZE * 0.29
   const TRACK_W = R_OUT - R_IN
 
   // Target fill ratio
@@ -119,7 +121,7 @@ export default function CO2Gauge({ totals, isMobile, history: _history }: Props)
   return (
     <div ref={containerRef} className="co2-gauge-wrap">
       <div className="dash-card-label">CO₂ AVOIDED · ANNUAL PROJECTION</div>
-      <svg width={SIZE} height={SIZE} style={{ overflow: 'visible', display: 'block', margin: '0 auto' }}>
+      <svg width={SIZE} height={SVG_H} style={{ overflow: 'visible', display: 'block', margin: '0 auto' }}>
         <defs>
           <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%"   stopColor="#EF9F27" stopOpacity="0.85" />
