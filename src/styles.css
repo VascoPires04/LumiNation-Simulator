@@ -152,10 +152,12 @@ input[type="range"] {
     height: 100% !important; /* beats later .app { height:100dvh } rule */
     overflow: hidden !important;
   }
-  /* scroll-doc: disable scrolling on mobile — curtain is timer-based, no scroll needed */
+  /* scroll-doc: on mobile, scrolling is only needed for the dashboard section.
+     Keep pointer-events none so canvas touches still work, but allow overflow
+     so the dashboard's own scroll container can function. */
   .scroll-doc {
     overflow: hidden;
-    pointer-events: none; /* canvas gets all touch events directly */
+    pointer-events: none;
   }
 }
 
@@ -1124,7 +1126,7 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding-top: 16px;
+  padding-top: 28px;
   padding-bottom: 8px;
 }
 
@@ -1285,7 +1287,7 @@ input[type="range"] {
     top: auto;
     right: 0;
     left: 0;
-    bottom: 0;
+    bottom: clamp(48px, 7vh, 80px);
     width: 100%;
     flex-direction: column;
     gap: 8px;
@@ -1423,21 +1425,21 @@ input[type="range"] {
 
 /* ── Info hint arrow — bounces once then fades ── */
 @keyframes hint-bounce {
-  0%   { transform: translateY(0);   opacity: 0; }
-  15%  { opacity: 1; }
-  40%  { transform: translateY(-8px); }
-  60%  { transform: translateY(0);   }
-  75%  { transform: translateY(-5px); }
-  88%  { transform: translateY(0);   }
-  100% { transform: translateY(0);   opacity: 0; }
+  0%   { transform: translateX(-50%) translateY(0);   opacity: 0; }
+  15%  { transform: translateX(-50%) translateY(0);   opacity: 1; }
+  40%  { transform: translateX(-50%) translateY(-8px); }
+  60%  { transform: translateX(-50%) translateY(0);   }
+  75%  { transform: translateX(-50%) translateY(-5px); }
+  88%  { transform: translateX(-50%) translateY(0);   }
+  100% { transform: translateX(-50%) translateY(0);   opacity: 0; }
 }
 .info-hint-arrow {
   position: fixed;
-  /* bottom edge of hint sits just above the button */
   bottom: calc(clamp(20px, 4vh, 36px) + 56px);
-  /* left matches button exactly; width matches button so text overflows centred */
-  left: clamp(16px, 3vw, 32px);
-  width: 48px;
+  /* centred over the 48px info button: left edge + half button width, then translate back */
+  left: calc(clamp(16px, 3vw, 32px) + 24px);
+  transform: translateX(-50%);
+  width: auto;
   z-index: 12;
   display: flex;
   flex-direction: column;
@@ -1448,17 +1450,19 @@ input[type="range"] {
   pointer-events: none;
 }
 .info-hint-arrow span {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: clamp(10px, 3.2vw, 13px);
+  font-weight: 600;
   color: var(--amber);
   font-family: Inter, sans-serif;
   white-space: nowrap;
   letter-spacing: 0.04em;
+  text-align: center;
 }
 .info-hint-caret {
-  font-size: 30px;
+  font-size: clamp(20px, 5.5vw, 26px);
   line-height: 1;
   color: var(--amber);
+  text-align: center;
 }
 
 /* ── Info modal ── */
@@ -1662,11 +1666,12 @@ input[type="range"] {
 }
 .dash-back-btn:hover { background: rgba(250,199,117,0.14); }
 .dash-back-btn--bottom {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   padding: 14px;
   font-size: 14px;
-  text-align: center;
 }
 
 /* Charts area */
@@ -1833,21 +1838,38 @@ input[type="range"] {
 /* ── Dashboard mobile ── */
 @media (max-width: 768px) {
   .dashboard-section {
-    padding: 72px 12px 80px; /* top: clears fixed topbar (~56px) + breathing room */
-    padding-right: 12px;      /* no sidebar on mobile */
+    padding: 72px 12px 32px;
+    padding-right: 12px;
     gap: 12px;
+    /* Make dashboard itself scrollable on mobile — fixed height + overflow */
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    pointer-events: auto;
+    background: rgba(5, 5, 8, 0.96);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    /* Hidden by default — shown via JS when dashInView */
+    display: none;
+  }
+  .dashboard-section.is-visible {
+    display: flex;
   }
 
   .dash-title { font-size: clamp(1.3rem, 5vw, 1.7rem); }
 
-  /* Step 5 — CO₂ left (spans 2 rows), € top-right, kWh bottom-right */
+  /* Single column — 4 rows */
   .dash-bottom-cards {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
-    gap: 10px;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    max-height: none;
+    gap: 12px;
   }
   .dash-bottom-cards .dash-bottom-card:first-child {
-    grid-row: 1 / 3; /* CO₂ spans both rows */
+    grid-row: auto;
   }
 
   .money-big-number { font-size: clamp(1.5rem, 7vw, 2.2rem); }

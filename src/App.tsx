@@ -37,25 +37,48 @@ export default function App() {
   const [spawnMode, setSpawnMode]     = useState<'ped' | 'car'>('ped')
   const [tooltip, setTooltip]         = useState<'baseline' | 'lookahead' | null>(null)
   const externalSpawnModeRef = useRef<'ped' | 'car'>('ped')
-  const hudNavRef    = useRef<HTMLElement>(null)
-  const [hudMax, setHudMax] = useState(220)
+  const hudNavRef     = useRef<HTMLElement>(null)
+  const hudInnerRef   = useRef<HTMLDivElement>(null)
+  const hudMaxRef     = useRef(260)
+  const [hudMax, setHudMax] = useState(260)
 
-  const hudY    = useMotionValue(0)
-  const [hudOpen, setHudOpen] = useState(true)
+  const hudY       = useMotionValue(260)  // start collapsed
+  const [hudOpen, setHudOpen] = useState(false)
+  const [infoBaseBottom, setInfoBaseBottom] = useState(80)
+  const infoBtnBottom  = useTransform(hudY, v => Math.max(8, infoBaseBottom - v))
+  const infoHintBottom = useTransform(hudY, v => Math.max(8, infoBaseBottom - v + 64))
   const springCfg = { type: 'spring' as const, stiffness: 400, damping: 38 }
 
+  // Observe inner content height — hudMax always equals content height so
+  // sliding by hudMax pushes content fully off-screen on any phone
+  useEffect(() => {
+    if (!isMobile) return
+    const el = hudInnerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight + 40 // +40 for handle row + padding
+      hudMaxRef.current = h
+      setHudMax(h)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [isMobile])
+
+  const HUD_OPEN_Y = Math.round(window.innerHeight * 0.06)  // ~6vh — responsive to screen height
   const hudSnap = (_: unknown, info: { velocity: { y: number } }) => {
     const cur = hudY.get()
     const vel = info.velocity.y
-    if (hudOpen ? (cur > hudMax * 0.4 || vel > 300) : (cur < hudMax * 0.6 || vel < -300)) {
-      animate(hudY, hudOpen ? hudMax : 0, springCfg)
+    const max = hudMaxRef.current
+    if (hudOpen ? (cur > max * 0.4 || vel > 300) : (cur < max * 0.6 || vel < -300)) {
+      animate(hudY, hudOpen ? max : HUD_OPEN_Y, springCfg)
       setHudOpen(o => !o)
     } else {
-      animate(hudY, hudOpen ? 0 : hudMax, springCfg)
+      animate(hudY, hudOpen ? HUD_OPEN_Y : max, springCfg)
     }
   }
   const hudToggle = () => {
-    animate(hudY, hudOpen ? hudMax : 0, springCfg)
+    const max = hudMaxRef.current
+    animate(hudY, hudOpen ? max : HUD_OPEN_Y, springCfg)
     setHudOpen(o => !o)
   }
   const scrollRef        = useRef<HTMLDivElement>(null)
@@ -76,11 +99,13 @@ export default function App() {
   const sidebarOpacity = useTransform(scrollY, [LIFT * 0.1, LIFT * 0.45], [0, 1])
   const [sidebarVisible, setSidebarVisible] = useState(false)
 
-  // Measure nav position once sidebar becomes visible, cap panel travel to keep bar on-screen
+  // Measure nav position for info button placement
   useEffect(() => {
     if (!sidebarVisible || !hudNavRef.current) return
     const rect = hudNavRef.current.getBoundingClientRect()
-    setHudMax(Math.max(60, window.innerHeight - rect.top - 24))
+    setInfoBaseBottom(window.innerHeight - rect.top - 24
+      
+    )
   }, [sidebarVisible])
 
   // ── Topbar — fades in as curtain lifts (Effect E) ─────────────────────────
@@ -295,12 +320,21 @@ export default function App() {
         {!effectiveCurtainVisible && !dashInView && (
           <>
             {showInfoHint && (
-              <div className="info-hint-arrow" aria-hidden="true">
+              <motion.div
+                className="info-hint-arrow"
+                aria-hidden="true"
+                style={isMobile ? { bottom: infoHintBottom } : undefined}
+              >
                 <span>Click here</span>
                 <span className="info-hint-caret">↓</span>
-              </div>
+              </motion.div>
             )}
-            <button className="info-btn" onClick={() => setShowInfo(true)} aria-label="About LumiNation">i</button>
+            <motion.button
+              className="info-btn"
+              onClick={() => setShowInfo(true)}
+              aria-label="About LumiNation"
+              style={isMobile ? { bottom: infoBtnBottom } : undefined}
+            >i</motion.button>
           </>
         )}
 
@@ -363,7 +397,7 @@ export default function App() {
                 className="hud-controls-body"
                 style={isMobile ? { y: hudY } : undefined}
                 drag={isMobile ? 'y' : false}
-                dragConstraints={isMobile ? { top: 0, bottom: hudMax } : undefined}
+                dragConstraints={isMobile ? { top: HUD_OPEN_Y, bottom: hudMax } : undefined}
                 dragElastic={isMobile ? { top: 0.02, bottom: 0.02 } : undefined}
                 onDragEnd={isMobile ? hudSnap : undefined}
               >
@@ -374,7 +408,7 @@ export default function App() {
                   </div>
                 )}
 
-                <div className="hud-controls-inner" style={{ pointerEvents: hudOpen ? 'auto' : 'none' }}>
+                <div ref={hudInnerRef} className="hud-controls-inner" style={{ pointerEvents: hudOpen ? 'auto' : 'none' }}>
                   <div className="hud-section">
                     <p className="hud-section-desc">Switch between modes to visualize the impact.</p>
                     <div className="sim-compact-modes">
@@ -468,9 +502,13 @@ export default function App() {
                     <button
                       className="sim-cta"
                       onClick={() => {
-                        const el = document.getElementById('dashboard')
-                        if (el && scrollRef.current) {
-                          scrollRef.current.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
+                        if (isMobile) {
+                          setDashInView(true)
+                        } else {
+                          const el = document.getElementById('dashboard')
+                          if (el && scrollRef.current) {
+                            scrollRef.current.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
+                          }
                         }
                       }}
                     >
@@ -545,6 +583,7 @@ export default function App() {
 
           <DashboardSection
             onInView={setDashInView}
+            inView={dashInView}
             isMobile={isMobile}
             scrollRef={scrollRef}
             paused={paused}
@@ -552,8 +591,10 @@ export default function App() {
             onBackToCity={() => {
               setDashInView(false)
               canvasLayerOpacity.set(1)
-              const simSpacer = document.querySelector('.sim-section-spacer') as HTMLElement | null
-              scrollRef.current?.scrollTo({ top: simSpacer ? simSpacer.offsetTop : 650, behavior: 'smooth' })
+              if (!isMobile) {
+                const simSpacer = document.querySelector('.sim-section-spacer') as HTMLElement | null
+                scrollRef.current?.scrollTo({ top: simSpacer ? simSpacer.offsetTop : 650, behavior: 'smooth' })
+              }
             }}
           />
 

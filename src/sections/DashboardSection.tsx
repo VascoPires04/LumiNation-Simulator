@@ -13,6 +13,7 @@ import EnergyCard from '../components/EnergyCard'
 
 interface Props {
   onInView:     (v: boolean) => void
+  inView:       boolean
   isMobile:     boolean
   scrollRef:    React.RefObject<HTMLDivElement>
   paused:       boolean
@@ -20,7 +21,7 @@ interface Props {
   onBackToCity: () => void
 }
 
-export default function DashboardSection({ onInView, isMobile, paused, onPause, onBackToCity }: Props) {
+export default function DashboardSection({ onInView, inView, isMobile, paused, onPause, onBackToCity }: Props) {
   const rootRef = useRef<HTMLElement>(null)
 
   const liveHistory = useSimHistory(600)
@@ -59,7 +60,7 @@ export default function DashboardSection({ onInView, isMobile, paused, onPause, 
   })()
 
   return (
-    <section ref={rootRef} id="dashboard" className="dashboard-section" aria-label="Live data dashboard">
+    <section ref={rootRef} id="dashboard" className={`dashboard-section${isMobile && inView ? ' is-visible' : ''}`} aria-label="Live data dashboard">
 
       <div className="dash-header">
         <div>
