@@ -110,12 +110,13 @@ export default function DashboardSection({ onInView, isMobile, paused, onPause, 
             </div>
           </div>
 
-          {isMobile && (
-            <button className="dash-back-btn dash-back-btn--bottom" onClick={onBackToCity}>
-              ↑ Back to city
-            </button>
-          )}
         </div>
+      )}
+
+      {isMobile && (
+        <button className="dash-back-btn dash-back-btn--bottom" onClick={onBackToCity}>
+          ↑ Back to city
+        </button>
       )}
 
     </section>
