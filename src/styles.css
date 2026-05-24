@@ -1731,12 +1731,39 @@ input[type="range"] {
   margin-bottom: 10px;
 }
 
-.dash-chart-caption {
-  font-size: 11px;
-  color: var(--text-dim);
-  margin-top: 6px;
-  text-align: center;
+.dash-chart-legend {
+  margin-top: 2px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
+
+.dash-legend-label {
+  font-size: 10px;
+  font-family: Inter, sans-serif;
+  color: rgba(240,240,245,0.5);
+  letter-spacing: 0.02em;
+}
+
+.dash-legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 3px;
+  border-radius: 2px;
+}
+.dash-legend-dot--amber { background: #FAC775; }
+.dash-legend-dot--green { background: #6ee7a0; opacity: 0.8; }
+
+.dash-legend-line {
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  margin-left: 6px;
+}
+.dash-legend-line--alwayson { background: #FF9500; opacity: 0.85; }
 
 /* Empty state */
 .dash-empty {
@@ -1773,16 +1800,20 @@ input[type="range"] {
 .money-card-wrap {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   height: 100%;
   max-height: 100%;
   overflow: hidden;
   gap: 4px;
 }
 .sparkline-wrap {
-  margin-top: auto;
-  padding-top: 8px;
+  padding-top: 16px;
   width: 100%;
   overflow: hidden;
+}
+.sparkline-wrap svg {
+  display: block;
+  width: 100% !important;
 }
 .money-big-number {
   font-family: var(--font-heading);

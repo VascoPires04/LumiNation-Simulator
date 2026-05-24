@@ -93,10 +93,13 @@ export default function DashboardSection({ onInView, inView, isMobile, paused, o
         <div className="dash-charts-area">
           <div className="dash-card dash-chart-row">
             <div className="dash-card-label">POWER OVER TIME</div>
+            <div className="dash-chart-legend">
+              <span className="dash-legend-dot dash-legend-dot--amber" />
+              <span className="dash-legend-label">LumiNation</span>
+              <span className="dash-legend-line dash-legend-line--alwayson" />
+              <span className="dash-legend-label">Always-on</span>
+            </div>
             <PowerChart history={displayHistory} paused={paused} isMobile={isMobile} />
-            <p className="dash-chart-caption">
-              Amber = LumiNation · cream = always-on · gap = energy saved · scroll/pinch to zoom
-            </p>
           </div>
 
           <div className="dash-bottom-cards">

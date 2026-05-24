@@ -32,7 +32,7 @@ function Sparkline({ values, uid, h, w, elapsed }: {
   values: number[]; uid: string; h: number; w: number; elapsed: number
 }) {
   if (w < 20 || values.length < 2) return <svg width={w} height={h} />
-  const fSize = Math.max(6, Math.round(h * 0.14))
+  const fSize = Math.min(Math.max(6, Math.round(h * 0.12)), 11)
   const ML = Math.round(fSize * 6.5)
   const MR = 4
   const MT = fSize + 2   // room for top label text above the chart area
@@ -108,17 +108,25 @@ function Sparkline({ values, uid, h, w, elapsed }: {
 
 export default function EnergyCard({ history, totals, isMobile, expandable = false }: Props) {
   const [expanded, setExpanded] = useState(false)
+  const cardRef  = useRef<HTMLDivElement>(null)
   const wrapRef  = useRef<HTMLDivElement>(null)
   const [sparkW, setSparkW] = useState(200)
+  const [sparkH, setSparkH] = useState(isMobile ? 90 : 110)
 
   useLayoutEffect(() => {
-    const el = wrapRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => setSparkW(el.offsetWidth))
-    ro.observe(el)
-    setSparkW(el.offsetWidth)
+    const card = cardRef.current
+    const wrap = wrapRef.current
+    if (!card || !wrap) return
+    const update = () => {
+      setSparkW(wrap.offsetWidth)
+      if (!isMobile) setSparkH(Math.max(60, card.offsetHeight * 0.55))
+    }
+    const ro = new ResizeObserver(update)
+    ro.observe(card)
+    ro.observe(wrap)
+    update()
     return () => ro.disconnect()
-  }, [])
+  }, [isMobile])
 
   const kwhValues = useMemo(() =>
     history.map(s => s.kwhSaved * (LISBON / Math.max(s.lampCount, 1))),
@@ -127,10 +135,10 @@ export default function EnergyCard({ history, totals, isMobile, expandable = fal
   const elapsed = Math.round(history.length / 2)
   const kwh = totals?.kwhSaved ?? 0
   const { val: kwhVal, unit: kwhUnit } = fmtKwh(kwh)
-  const H   = isMobile ? 90 : 64
+  const H   = isMobile ? 90 : sparkH
 
   const inner = (
-    <div className="money-card-wrap" style={{ position: 'relative' }}>
+    <div className="money-card-wrap" ref={cardRef} style={{ position: 'relative' }}>
       {expandable && (
         <button className="card-expand-btn" onClick={() => setExpanded(e => !e)}
           aria-label={expanded ? 'Collapse' : 'Expand'}>

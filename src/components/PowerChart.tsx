@@ -12,8 +12,8 @@ import { area, curveMonotoneX, line } from 'd3-shape'
 import { SimSample } from '../sim-bus'
 
 const LISBON = 70_000
-const AMBER  = '#FAC775'
-const CREAM  = 'rgba(255,240,200,0.92)'
+const AMBER  = '#FF9500'
+const ORANGE = '#C85000'
 
 interface Props {
   history:  SimSample[]
@@ -192,8 +192,6 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
     return { x: xScale(closest.t), ...closest }
   }, [hoverX, data, xScale])
 
-  const { unit: yUnit } = fmtPower(yMax)
-
   // Current savings %
   const latest  = data[data.length - 1]
   const savePct = latest && latest.baseline > 0
@@ -213,16 +211,16 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
       >
         <defs>
           <linearGradient id="lumiAreaGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor={AMBER} stopOpacity="0.55" />
-            <stop offset="100%" stopColor={AMBER} stopOpacity="0.08" />
+            <stop offset="0%"   stopColor="#FF9500" stopOpacity="0.30" />
+            <stop offset="100%" stopColor="#FF9500" stopOpacity="0.0" />
           </linearGradient>
           <linearGradient id="baselineAreaGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#fff8e8" stopOpacity="0.13" />
-            <stop offset="100%" stopColor="#fff8e8" stopOpacity="0.03" />
+            <stop offset="30%"  stopColor="#F99040" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#F99040" stopOpacity="0.0" />
           </linearGradient>
           <linearGradient id="savingsGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#6ee7a0" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="#6ee7a0" stopOpacity="0.04" />
+            <stop offset="0%"   stopColor="#C85000" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#C85000" stopOpacity="0.04" />
           </linearGradient>
           <clipPath id="chartClip">
             <rect width={iW} height={iH} />
@@ -237,26 +235,28 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
           </filter>
         </defs>
 
-        {/* Y unit label */}
-        <text
-          x={8} y={mg.top + iH / 2}
-          fill="rgba(240,240,245,0.3)"
-          fontSize={8}
-          fontFamily="Inter,sans-serif"
-          textAnchor="middle"
-          transform={`rotate(-90,8,${mg.top + iH / 2})`}
-        >{yUnit}</text>
 
         <g transform={`translate(${mg.left},${mg.top})`}>
           {/* Chart bg */}
           <rect width={iW} height={iH} fill="rgba(255,255,255,0.012)" rx={4} />
 
-          {/* Grid */}
+          {/* Horizontal grid */}
           {yScale.ticks(isMobile ? 3 : 4).map(tick => (
             <line
-              key={tick}
+              key={`h-${tick}`}
               x1={0} x2={iW}
               y1={yScale(tick)} y2={yScale(tick)}
+              stroke="rgba(255,255,255,0.055)"
+              strokeWidth={1}
+            />
+          ))}
+
+          {/* Vertical grid */}
+          {xScale.ticks(isMobile ? 3 : 5).map((tick, i) => (
+            <line
+              key={`v-${i}`}
+              x1={xScale(tick)} x2={xScale(tick)}
+              y1={0} y2={iH}
               stroke="rgba(255,255,255,0.055)"
               strokeWidth={1}
             />
@@ -272,27 +272,17 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
             {/* LumiNation amber area fill (0 → lumi) */}
             <path d={lumiAreaPath} fill="url(#lumiAreaGrad)" />
 
-            {/* LumiNation top edge — glowing amber */}
-            <path d={lumiLinePath} fill="none" stroke={AMBER} strokeWidth={2.5} filter="url(#amberGlow)" />
-            <path d={lumiLinePath} fill="none" stroke={AMBER} strokeWidth={1.5} opacity={0.95} />
+            {/* LumiNation top edge */}
+            <path d={lumiLinePath} fill="none" stroke={AMBER} strokeWidth={2.5} opacity={0.9} />
 
-            {/* Always-on reference — bright cream line above, clearly visible */}
-            <path d={baselinePath} fill="none" stroke={CREAM} strokeWidth={2} filter="url(#creamGlow)" />
-            <path d={baselinePath} fill="none" stroke={CREAM} strokeWidth={1.5} opacity={0.9} />
+            {/* Always-on reference — brighter orange line above */}
+            <path d={baselinePath} fill="none" stroke={ORANGE} strokeWidth={4} filter="url(#creamGlow)" />
+            <path d={baselinePath} fill="none" stroke={ORANGE} strokeWidth={2.5} opacity={0.9} />
           </g>
 
           {/* Axes */}
           <g ref={xAxisRef} transform={`translate(0,${iH})`} />
           <g ref={yAxisRef} />
-
-          {/* Legend */}
-          <g transform={`translate(6,4)`}>
-            <rect x={0} y={0} width={isMobile ? 142 : 158} height={16} rx={4} fill="rgba(10,10,18,0.6)" />
-            <rect width={8} height={3} x={6} y={6.5} rx={1} fill={AMBER} opacity={0.9} />
-            <text x={18} y={11} fill="rgba(240,240,245,0.7)" fontSize={9} fontFamily="Inter,sans-serif">LumiNation</text>
-            <line x1={isMobile ? 80 : 88} x2={isMobile ? 96 : 104} y1={8} y2={8} stroke={CREAM} strokeWidth={1.5} />
-            <text x={isMobile ? 100 : 108} y={11} fill="rgba(240,240,245,0.7)" fontSize={9} fontFamily="Inter,sans-serif">Always-on</text>
-          </g>
 
           {/* Savings badge — bottom right inside chart */}
           <g transform={`translate(${iW - (isMobile ? 68 : 76)},${iH - (isMobile ? 36 : 44)})`}>
@@ -326,9 +316,10 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
                 strokeDasharray="3 2"
               />
               <circle cx={hoverPoint.x} cy={yScale(hoverPoint.lumi)}    r={3.5} fill={AMBER} />
-              <circle cx={hoverPoint.x} cy={yScale(hoverPoint.baseline)} r={3}   fill={CREAM} />
+              <circle cx={hoverPoint.x} cy={yScale(hoverPoint.baseline)} r={3}   fill={ORANGE} />
               {(() => {
-                const tx = hoverPoint.x > iW * 0.65 ? hoverPoint.x - 102 : hoverPoint.x + 8
+                const boxW = isMobile ? 148 : 160
+                const tx = hoverPoint.x > iW * 0.65 ? hoverPoint.x - boxW - 8 : hoverPoint.x + 8
                 const { val: lv, unit: lu } = fmtPower(hoverPoint.lumi)
                 const { val: bv }           = fmtPower(hoverPoint.baseline)
                 const pct = hoverPoint.baseline > 0
@@ -336,9 +327,9 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
                   : 0
                 return (
                   <g transform={`translate(${tx},8)`}>
-                    <rect rx={5} width={96} height={52} fill="rgba(10,10,18,0.93)" stroke="rgba(255,255,255,0.08)" strokeWidth={0.5} />
-                    <text x={8} y={16} fill={AMBER}              fontSize={10} fontFamily="Inter,sans-serif" fontWeight={600}>{lv} {lu} · LumiNation</text>
-                    <text x={8} y={30} fill="rgba(255,240,200,0.8)" fontSize={9}  fontFamily="Inter,sans-serif">{bv} {lu} · always-on</text>
+                    <rect rx={5} width={boxW} height={52} fill="rgba(10,10,18,0.93)" stroke="rgba(255,255,255,0.08)" strokeWidth={0.5} />
+                    <text x={8} y={16} fill={AMBER}                 fontSize={10} fontFamily="Inter,sans-serif" fontWeight={600}>{lv} {lu} · LumiNation</text>
+                    <text x={8} y={30} fill="rgba(255,200,140,0.8)" fontSize={9}  fontFamily="Inter,sans-serif">{bv} {lu} · always-on</text>
                     <text x={8} y={44} fill="rgba(100,220,100,0.85)" fontSize={9}  fontFamily="Inter,sans-serif">{pct}% less right now</text>
                   </g>
                 )
