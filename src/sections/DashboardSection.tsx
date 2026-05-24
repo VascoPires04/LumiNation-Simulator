@@ -3,7 +3,7 @@
 // Desktop: 3 cards in equal columns. Mobile: CO₂ left (spans 2 rows), € + kWh stacked right.
 // Pause state lifted to App.tsx.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSimHistory } from '../hooks/useSimHistory'
 import { useSimTotals } from '../hooks/useSimTotals'
 import PowerChart  from '../components/PowerChart'
@@ -26,18 +26,19 @@ export default function DashboardSection({ onInView, isMobile, paused, onPause, 
   const liveHistory = useSimHistory(600)
   const liveTotals  = useSimTotals()
 
-  const frozenHistory = useRef(liveHistory)
-  const frozenTotals  = useRef(liveTotals)
+  const [frozenHistory, setFrozenHistory] = useState(liveHistory)
+  const [frozenTotals,  setFrozenTotals]  = useState(liveTotals)
 
-  useEffect(() => {
-    if (paused) {
-      frozenHistory.current = [...liveHistory]
-      frozenTotals.current  = liveTotals
+  const handlePause = (p: boolean) => {
+    if (p) {
+      setFrozenHistory([...liveHistory])
+      setFrozenTotals(liveTotals)
     }
-  }, [paused]) // eslint-disable-line react-hooks/exhaustive-deps
+    onPause(p)
+  }
 
-  const displayHistory = paused ? frozenHistory.current : liveHistory
-  const displayTotals  = paused ? frozenTotals.current  : liveTotals
+  const displayHistory = paused ? frozenHistory : liveHistory
+  const displayTotals  = paused ? frozenTotals  : liveTotals
 
   useEffect(() => {
     const el = rootRef.current
@@ -72,7 +73,7 @@ export default function DashboardSection({ onInView, isMobile, paused, onPause, 
         {isMobile && (
           <button
             className={`dash-pause-btn${paused ? ' active' : ''}`}
-            onClick={() => onPause(!paused)}
+            onClick={() => handlePause(!paused)}
           >
             {paused ? '▶ Resume' : '⏸ Pause'}
           </button>

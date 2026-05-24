@@ -167,9 +167,16 @@ export default function App() {
   const dashOffsetRef = useRef(0)
 
   // ── Mobile: hide HUD when dashboard scrolls into view ────────────────────
+  // Use a ref so initial mount (dashInView=false) doesn't override the curtain fade-in sequence
+  const hasVisitedDashRef = useRef(false)
   useEffect(() => {
     if (!isMobile) return
-    animate(mobileHudOpacity, dashInView ? 0 : 1, { duration: 0.35, ease: 'easeInOut' })
+    if (dashInView) {
+      hasVisitedDashRef.current = true
+      animate(mobileHudOpacity, 0, { duration: 0.35, ease: 'easeInOut' })
+    } else if (hasVisitedDashRef.current) {
+      animate(mobileHudOpacity, 1, { duration: 0.35, ease: 'easeInOut' })
+    }
   }, [isMobile, dashInView, mobileHudOpacity])
 
   // Measure dashboard position once (and on resize)
@@ -233,7 +240,7 @@ export default function App() {
         </motion.div>
 
         {/* ── Mobile spawn buttons — z:10, above scroll-doc, only after curtain lifts ── */}
-        {isMobile && !effectiveCurtainVisible && mode !== 'fpv' && (
+        {isMobile && !effectiveCurtainVisible && mode !== 'fpv' && !dashInView && (
           <motion.div
             className="mobile-spawn-btns"
             initial={{ opacity: 0 }}
