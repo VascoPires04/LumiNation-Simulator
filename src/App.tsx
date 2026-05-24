@@ -20,6 +20,8 @@ import LandingCurtain from './sections/LandingSection'
 import { useSimHistory } from './hooks/useSimHistory'
 import { useIsMobile } from './hooks/useIsMobile'
 import HeadlineMetric from './components/HeadlineMetric'
+import ParticleBackground from './components/ParticleBackground'
+import DashboardSection from './sections/DashboardSection'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 
@@ -156,7 +158,32 @@ export default function App() {
     return () => document.removeEventListener('touchmove', handler)
   }, [])
 
-  // Desktop scroll listener — updates curtain/sidebar/topbar visibility from scroll
+  // ── Pause state — shared by HUD sidebar and dashboard ────────────────────
+  const [paused, setPaused] = useState(false)
+
+  // ── Dashboard: canvas fades linearly with scroll ──────────────────────────
+  const [dashInView, setDashInView] = useState(false)
+  const canvasLayerOpacity = useMotionValue(1)
+  const dashOffsetRef = useRef(0)
+
+  // ── Mobile: hide HUD when dashboard scrolls into view ────────────────────
+  useEffect(() => {
+    if (!isMobile) return
+    animate(mobileHudOpacity, dashInView ? 0 : 1, { duration: 0.35, ease: 'easeInOut' })
+  }, [isMobile, dashInView, mobileHudOpacity])
+
+  // Measure dashboard position once (and on resize)
+  useEffect(() => {
+    const measure = () => {
+      const el = document.getElementById('dashboard')
+      if (el) dashOffsetRef.current = el.offsetTop
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+
+  // ── Desktop scroll listener — curtain/sidebar/topbar + linear canvas fade ──
   useEffect(() => {
     return scrollY.on('change', v => {
       setTopbarVisible(v > LIFT * 0.25)
@@ -164,17 +191,30 @@ export default function App() {
       const visible = v < LIFT * 0.65
       setCurtainVisible(visible)
       if (visible) setUserCleared(false)
+
+      // Canvas fades out as dashboard scrolls into view, linearly with scroll
+      if (!isMobile) {
+        const dashTop  = dashOffsetRef.current
+        const vh       = window.innerHeight
+        const fadeStart = dashTop - vh * 0.85   // canvas starts fading when dashboard is ~85vh below viewport top
+        const fadeEnd   = dashTop - vh * 0.05   // fully faded when dashboard nearly fills the screen
+        const ratio = Math.max(0, Math.min(1, (v - fadeStart) / Math.max(1, fadeEnd - fadeStart)))
+        canvasLayerOpacity.set(1 - ratio)
+      }
     })
-  }, [scrollY])
+  }, [scrollY, isMobile, canvasLayerOpacity])
 
   return (
     <MotionConfig reducedMotion="user">
       <div className="app app--v2">
 
-        {/* ── Layer 0: persistent fixed canvas — always z:0 below scroll-doc ── */}
+        {/* ── Layer 0a: particle background — fades in when dashboard in view ── */}
+        <ParticleBackground visible={dashInView} isMobile={isMobile} />
+
+        {/* ── Layer 0b: persistent fixed canvas — fades out when dashboard in view ── */}
         <motion.div
           className="canvas-layer"
-          style={{ scale: canvasScale, y: canvasY }}
+          style={{ scale: canvasScale, y: canvasY, opacity: canvasLayerOpacity }}
         >
           <CitySimulator
             mode={mode}
@@ -222,11 +262,12 @@ export default function App() {
              Desktop: both right-side, headline above controls.
              Mobile:  headline top-center, controls bottom bar.          ── */}
         {mode !== 'fpv' && (
-          <>
+          <motion.div
+            style={{ opacity: effectiveSidebarOpacity, pointerEvents: effectiveSidebarVisible && !(isMobile && dashInView) ? undefined : 'none' }}
+          >
             {/* Headline — display only, no interaction */}
             <motion.div
               className="hud-headline"
-              style={{ opacity: effectiveSidebarOpacity }}
               aria-live="polite"
               aria-label="Live savings estimate"
             >
@@ -241,10 +282,6 @@ export default function App() {
             <motion.nav
               ref={hudNavRef}
               className="hud-controls"
-              style={{
-                opacity: effectiveSidebarOpacity,
-                pointerEvents: effectiveSidebarVisible ? undefined : 'none',
-              }}
               aria-label="Simulator controls"
             >
               {/* Draggable on mobile only — static on desktop */}
@@ -331,24 +368,48 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button
-                    className="sim-cta"
-                    onClick={() => {
-                      const el = document.getElementById('dashboard')
-                      if (el && scrollRef.current) {
-                        scrollRef.current.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
-                      }
-                    }}
-                  >
-                    Explore the data
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                      <path d="M7 2v10M2 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </button>
+                  {dashInView ? (
+                    /* Dashboard context — pause + back */
+                    <div className="hud-dash-actions">
+                      <button
+                        className={`dash-pause-btn${paused ? ' active' : ''}`}
+                        onClick={() => setPaused(p => !p)}
+                      >
+                        {paused ? '▶ Resume data' : '⏸ Pause data'}
+                      </button>
+                      <button
+                        className="sim-cta"
+                        onClick={() => {
+                          setDashInView(false)
+                          canvasLayerOpacity.set(1)
+                          const simSpacer = document.querySelector('.sim-section-spacer') as HTMLElement | null
+                          scrollRef.current?.scrollTo({ top: simSpacer ? simSpacer.offsetTop : 650, behavior: 'smooth' })
+                        }}
+                      >
+                        ↑ Back to the city
+                      </button>
+                    </div>
+                  ) : (
+                    /* Simulator context — explore CTA */
+                    <button
+                      className="sim-cta"
+                      onClick={() => {
+                        const el = document.getElementById('dashboard')
+                        if (el && scrollRef.current) {
+                          scrollRef.current.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
+                        }
+                      }}
+                    >
+                      Explore the data
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                        <path d="M7 2v10M2 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </motion.div>
             </motion.nav>
-          </>
+          </motion.div>
         )}
 
         {/* ── Layer 3: curtain ─────────────────────────────────────────────────
@@ -408,8 +469,19 @@ export default function App() {
           {/* Simulator section spacer — keeps scroll height for sidebar context */}
           <div className="sim-section-spacer" aria-hidden="true" />
 
-          {/* Dashboard placeholder — Phase 4 will fill this */}
-          <section id="dashboard" className="dashboard-placeholder" aria-label="Dashboard" />
+          <DashboardSection
+            onInView={setDashInView}
+            isMobile={isMobile}
+            scrollRef={scrollRef}
+            paused={paused}
+            onPause={setPaused}
+            onBackToCity={() => {
+              setDashInView(false)
+              canvasLayerOpacity.set(1)
+              const simSpacer = document.querySelector('.sim-section-spacer') as HTMLElement | null
+              scrollRef.current?.scrollTo({ top: simSpacer ? simSpacer.offsetTop : 650, behavior: 'smooth' })
+            }}
+          />
 
           <footer className="footer">
             <span>LumiNation · Red Bull Basement Portugal 2026 · Instituto Superior Técnico</span>

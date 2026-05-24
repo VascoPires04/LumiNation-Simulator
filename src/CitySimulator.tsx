@@ -1309,6 +1309,7 @@ export default function CitySimulator({
     let lastAmbientFrame = 0
     let raf = 0
     let statsTick = 0
+    let busTick   = 0   // separate 2Hz gate for simBus (dashboard history)
 
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop)
@@ -1346,17 +1347,26 @@ if (pausedRef.current) return
           lampCount: N,
           fullPower: full,
         })
-        // Emit to simBus so Dashboard + compact overlay can subscribe
+      }
+
+      // simBus emit at 2Hz — dashboard history; skip ambient (backdrop, not a data source)
+      busTick += dt
+      if (busTick >= 0.5 && variantRef.current !== 'ambient') {
+        busTick = 0
+        const N2 = lampsRef.current.length
+        const full2 = N2 * LAMP_WATTS
+        const instSaved2 = full2 - power.luminationPower
+        const annKwh2 = (instSaved2 / 1000) * HOURS_PER_YEAR_NIGHT
         simBus.emit({
           t: performance.now(),
           powerW: power.luminationPower,
-          baselineW: full,
-          eurSaved: eurSavedNow,
-          co2Kg: co2SavedNow,
+          baselineW: full2,
+          eurSaved: Math.round(annKwh2 * PRICE_PER_KWH),
+          co2Kg:    Math.round(annKwh2 * CO2_PER_KWH),
           kwhSaved: kwhSavedRef.current,
-          peds: pedsNow,
-          cars: carsNow,
-          lampCount: N,
+          peds: agentsRef.current.filter(a => a.type === 'ped').length,
+          cars: agentsRef.current.filter(a => a.type === 'car').length,
+          lampCount: N2,
         })
       }
 

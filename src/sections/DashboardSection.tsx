@@ -1,0 +1,121 @@
+// DashboardSection — Phase 4 live data dashboard.
+// Layout: PowerChart full width on top, then 3 cards.
+// Desktop: 3 cards in equal columns. Mobile: CO₂ left (spans 2 rows), € + kWh stacked right.
+// Pause state lifted to App.tsx.
+
+import { useEffect, useRef } from 'react'
+import { useSimHistory } from '../hooks/useSimHistory'
+import { useSimTotals } from '../hooks/useSimTotals'
+import PowerChart  from '../components/PowerChart'
+import CO2Gauge   from '../components/CO2Gauge'
+import EurCard    from '../components/EurCard'
+import EnergyCard from '../components/EnergyCard'
+
+interface Props {
+  onInView:     (v: boolean) => void
+  isMobile:     boolean
+  scrollRef:    React.RefObject<HTMLDivElement>
+  paused:       boolean
+  onPause:      (p: boolean) => void
+  onBackToCity: () => void
+}
+
+export default function DashboardSection({ onInView, isMobile, paused, onPause, onBackToCity }: Props) {
+  const rootRef = useRef<HTMLElement>(null)
+
+  const liveHistory = useSimHistory(600)
+  const liveTotals  = useSimTotals()
+
+  const frozenHistory = useRef(liveHistory)
+  const frozenTotals  = useRef(liveTotals)
+
+  useEffect(() => {
+    if (paused) {
+      frozenHistory.current = [...liveHistory]
+      frozenTotals.current  = liveTotals
+    }
+  }, [paused]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const displayHistory = paused ? frozenHistory.current : liveHistory
+  const displayTotals  = paused ? frozenTotals.current  : liveTotals
+
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => onInView(entry.intersectionRatio > 0.3),
+      { threshold: [0.0, 0.3, 0.6, 1.0] }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [onInView])
+
+  const hasData = displayHistory.length >= 2
+
+  const elapsed = (() => {
+    const secs = Math.round(displayHistory.length / 2)
+    return secs < 60 ? `${secs}s` : `${Math.round(secs / 60)} min`
+  })()
+
+  return (
+    <section ref={rootRef} id="dashboard" className="dashboard-section" aria-label="Live data dashboard">
+
+      <div className="dash-header">
+        <div>
+          <h2 className="dash-title">How a smart city saves money</h2>
+          <p className="dash-subtitle">
+            Live data from your session · last {elapsed}
+            {paused && <span className="dash-frozen-badge"> · frozen</span>}
+          </p>
+        </div>
+        {/* Pause — mobile only (desktop uses HUD sidebar) */}
+        {isMobile && (
+          <button
+            className={`dash-pause-btn${paused ? ' active' : ''}`}
+            onClick={() => onPause(!paused)}
+          >
+            {paused ? '▶ Resume' : '⏸ Pause'}
+          </button>
+        )}
+      </div>
+
+      {!hasData && (
+        <div className="dash-empty">
+          <p>Waiting for simulation data…</p>
+          <p className="dash-empty-hint">Scroll up and let the simulation run for a few seconds.</p>
+        </div>
+      )}
+
+      {hasData && (
+        <div className="dash-charts-area">
+          <div className="dash-card dash-chart-row">
+            <div className="dash-card-label">POWER OVER TIME</div>
+            <PowerChart history={displayHistory} paused={paused} isMobile={isMobile} />
+            <p className="dash-chart-caption">
+              Amber = LumiNation · cream = always-on · gap = energy saved · scroll/pinch to zoom
+            </p>
+          </div>
+
+          <div className="dash-bottom-cards">
+            <div className="dash-card dash-bottom-card">
+              <CO2Gauge totals={displayTotals} history={displayHistory} isMobile={isMobile} />
+            </div>
+            <div className="dash-card dash-bottom-card">
+              <EurCard history={displayHistory} totals={displayTotals} isMobile={isMobile} />
+            </div>
+            <div className="dash-card dash-bottom-card">
+              <EnergyCard history={displayHistory} totals={displayTotals} isMobile={isMobile} />
+            </div>
+          </div>
+
+          {isMobile && (
+            <button className="dash-back-btn dash-back-btn--bottom" onClick={onBackToCity}>
+              ↑ Back to city
+            </button>
+          )}
+        </div>
+      )}
+
+    </section>
+  )
+}
