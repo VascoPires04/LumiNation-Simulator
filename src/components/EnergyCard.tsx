@@ -18,9 +18,9 @@ interface Props {
 }
 
 function fmtKwh(v: number): { val: string; unit: string } {
-  if (v >= 1_000_000) return { val: (v / 1_000_000).toFixed(3), unit: 'GWh' }
-  if (v >= 1_000)     return { val: (v / 1_000).toFixed(2),     unit: 'MWh' }
-  return                     { val: v.toFixed(1),                unit: 'kWh' }
+  if (v >= 1_000_000) return { val: (v / 1_000_000).toFixed(1), unit: 'GWh' }
+  if (v >= 1_000)     return { val: (v / 1_000).toFixed(1),     unit: 'MWh' }
+  return                     { val: Math.round(v).toString(),    unit: 'kWh' }
 }
 
 function fmtKwhShort(v: number): string {
@@ -34,16 +34,26 @@ function Sparkline({ values, uid, h, w, elapsed }: {
   if (w < 20 || values.length < 2) return <svg width={w} height={h} />
   const fSize = Math.max(6, Math.round(h * 0.14))
   const ML = Math.round(fSize * 6.5)
-  const MR = 4, MT = 4
+  const MR = 4
+  const MT = fSize + 2   // room for top label text above the chart area
   const MB = fSize + 6
   const m      = max(values) ?? 1
   const iW     = w - ML - MR
   const iH     = h - MT - MB
-  const niceY  = scaleLinear().domain([0, Math.max(m, 1e-9)]).nice()
-  const yMax   = (niceY.domain() as [number, number])[1]
   const nTicks = h < 70 ? 3 : 4
-  const rawTicks = niceY.ticks(nTicks).filter(t => t > 0)
-  // Deduplicate by formatted label — avoids repeated "0.0kWh" when range is tiny
+  // Step 1: get a stable step size from a nice provisional scale
+  const provisional = scaleLinear().domain([0, Math.max(m, 1e-9)]).nice()
+  const provTicks = provisional.ticks(nTicks).filter(t => t > 0)
+  const step = provTicks.length >= 2 ? provTicks[1] - provTicks[0] : (provisional.domain() as [number,number])[1]
+  const labelStep = step * 2  // labeled ticks are every 2 steps
+  // Step 2: find the next labeled (even) ceiling above the data
+  const evenCeiling = Math.ceil(Math.max(m, 1e-9) / labelStep) * labelStep
+  // Step 3: only pre-jump two steps when data is within one step of the labeled ceiling
+  // (approaching it) — otherwise one step of headroom is enough
+  const yMax = m > evenCeiling - step ? evenCeiling + labelStep : evenCeiling
+  const niceY = scaleLinear().domain([0, yMax])
+  const rawTicks = niceY.ticks(nTicks).filter(t => t > 0 && t <= yMax)
+  // Deduplicate by formatted label
   const seen = new Set<string>()
   const ticks = rawTicks.filter(t => {
     const label = fmtKwhShort(t)
@@ -70,13 +80,15 @@ function Sparkline({ values, uid, h, w, elapsed }: {
         <clipPath id={`scK-${uid}`}><rect width={iW} height={iH} /></clipPath>
       </defs>
 
-      {/* Grid lines + label at every tick */}
-      {ticks.map(t => (
+      {/* Grid lines on every tick, labels only on even indices */}
+      {ticks.map((t, i) => (
         <g key={t}>
-          <text x={ML - 4} y={MT + y(t) + 4} textAnchor="end"
-            fontSize={fSize} fill="rgba(240,240,245,0.38)" fontFamily="Inter,sans-serif">
-            {fmtKwhShort(t)}
-          </text>
+          {i % 2 === 0 && (
+            <text x={ML - 4} y={MT + y(t) + 4} textAnchor="end"
+              fontSize={fSize} fill="rgba(240,240,245,0.38)" fontFamily="Inter,sans-serif">
+              {fmtKwhShort(t)}
+            </text>
+          )}
           <line x1={ML} x2={w - MR} y1={MT + y(t)} y2={MT + y(t)}
             stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
         </g>

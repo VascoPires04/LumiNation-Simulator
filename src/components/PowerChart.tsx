@@ -139,9 +139,12 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
           .ticks(isMobile ? 3 : 5)
           .tickFormat(d => {
             const date = d as Date
-            const m = date.getMinutes()
-            const s = date.getSeconds()
-            return `${m}:${s.toString().padStart(2, '0')}`
+            const totalSec = date.getMinutes() * 60 + date.getSeconds()
+            if (totalSec === 0) return '0s'
+            if (totalSec < 60) return `${totalSec}s`
+            const mins = Math.floor(totalSec / 60)
+            const secs = totalSec % 60
+            return secs === 0 ? `${mins}m` : `${mins}m${secs}s`
           })
       )
       .call(g => g.select('.domain').attr('stroke', 'rgba(255,255,255,0.1)'))

@@ -29,7 +29,8 @@ function Sparkline({ values, uid, h, w, elapsed }: {
   if (w < 20 || values.length < 2) return <svg width={w} height={h} />
   const fSize = Math.max(6, Math.round(h * 0.14))
   const ML = Math.round(fSize * 6.5)
-  const MR = 4, MT = 4
+  const MR = 4
+  const MT = fSize + 2   // room for top label text above the chart area
   const MB = fSize + 6
   const m      = max(values) ?? 1
   const iW     = w - ML - MR
@@ -64,13 +65,15 @@ function Sparkline({ values, uid, h, w, elapsed }: {
         <clipPath id={`scE-${uid}`}><rect width={iW} height={iH} /></clipPath>
       </defs>
 
-      {/* Grid lines + label at every tick */}
-      {ticks.map(t => (
+      {/* Grid lines on every tick, labels only on even indices */}
+      {ticks.map((t, i) => (
         <g key={t}>
-          <text x={ML - 4} y={MT + y(t) + 4} textAnchor="end"
-            fontSize={fSize} fill="rgba(240,240,245,0.38)" fontFamily="Inter,sans-serif">
-            {fmtEur(t)}
-          </text>
+          {i % 2 === 0 && (
+            <text x={ML - 4} y={MT + y(t) + 4} textAnchor="end"
+              fontSize={fSize} fill="rgba(240,240,245,0.38)" fontFamily="Inter,sans-serif">
+              {fmtEur(t)}
+            </text>
+          )}
           <line x1={ML} x2={w - MR} y1={MT + y(t)} y2={MT + y(t)}
             stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
         </g>
