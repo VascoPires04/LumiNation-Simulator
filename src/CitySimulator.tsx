@@ -83,7 +83,7 @@ const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
 // ── Isometric projection ──────────────────────────────────────────────────────
 // Toggle: set to true to enable isometric rendering. false = flat top-down.
-const ISO_MODE = false
+const ISO_MODE = true
 // Tile ratio: screen width : height = 2 : 1  (classic isometric)
 const ISO_TILE_W = 2
 const ISO_TILE_H = 1
@@ -116,6 +116,43 @@ function isoUnproject(sx: number, sy: number, W: number, H: number): { wx: numbe
   const rx =  dx / ISO_TILE_W + dy / ISO_TILE_H
   const ry = -dx / ISO_TILE_W + dy / ISO_TILE_H
   return { wx: cx + rx, wy: cy + ry }
+}
+
+/**
+ * Draw a road segment as a filled parallelogram quad (iso mode).
+ * halfW is the half-width of the road layer in world pixels.
+ * dir='h' → horizontal street; dir='v' → vertical street.
+ */
+function drawRoadQuad(
+  ctx: CanvasRenderingContext2D,
+  s: Street,
+  halfW: number,
+  W: number, H: number,
+) {
+  let p0: { sx: number; sy: number }
+  let p1: { sx: number; sy: number }
+  let p2: { sx: number; sy: number }
+  let p3: { sx: number; sy: number }
+  if (s.dir === 'h') {
+    // Horizontal street: centre at y=s.ay, extends ±halfW in y
+    p0 = isoProject(s.ax, s.ay - halfW, W, H)
+    p1 = isoProject(s.bx, s.ay - halfW, W, H)
+    p2 = isoProject(s.bx, s.ay + halfW, W, H)
+    p3 = isoProject(s.ax, s.ay + halfW, W, H)
+  } else {
+    // Vertical street: centre at x=s.ax, extends ±halfW in x
+    p0 = isoProject(s.ax - halfW, s.ay, W, H)
+    p1 = isoProject(s.ax + halfW, s.ay, W, H)
+    p2 = isoProject(s.bx + halfW, s.by, W, H)
+    p3 = isoProject(s.bx - halfW, s.by, W, H)
+  }
+  ctx.beginPath()
+  ctx.moveTo(p0.sx, p0.sy)
+  ctx.lineTo(p1.sx, p1.sy)
+  ctx.lineTo(p2.sx, p2.sy)
+  ctx.lineTo(p3.sx, p3.sy)
+  ctx.closePath()
+  ctx.fill()
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -709,44 +746,57 @@ export default function CitySimulator({
     }
 
     // Roads: sidewalk strip → asphalt → faint centre highlight → dashed line
-    ctx.strokeStyle = '#131420'  // sidewalk (slightly lighter than terrain)
-    ctx.lineWidth = 44
-    for (const s of streetsRef.current) {
-      ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
+    if (ISO_MODE) {
+      // Iso mode: draw each road layer as a filled parallelogram quad
+      ctx.fillStyle = '#131420'  // sidewalk
+      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 22, W, H)
+      ctx.fillStyle = '#0d0e17'  // asphalt
+      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 15, W, H)
+      ctx.fillStyle = '#111222'  // faint centre highlight
+      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 5, W, H)
+      ctx.fillStyle = '#32324e'  // centre line (solid thin strip in iso — dashes don't project cleanly)
+      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 0.5, W, H)
+    } else {
+      ctx.strokeStyle = '#131420'  // sidewalk (slightly lighter than terrain)
+      ctx.lineWidth = 44
+      for (const s of streetsRef.current) {
+        ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
+      }
+      ctx.strokeStyle = '#0d0e17'  // asphalt (darker than sidewalk)
+      ctx.lineWidth = 30
+      for (const s of streetsRef.current) {
+        ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
+      }
+      ctx.strokeStyle = '#111222'  // faint centre
+      ctx.lineWidth = 10
+      for (const s of streetsRef.current) {
+        ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
+      }
+      ctx.strokeStyle = '#32324e'
+      ctx.lineWidth = 0.8
+      ctx.setLineDash([6, 8])
+      for (const s of streetsRef.current) {
+        ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
+      }
+      ctx.setLineDash([])
     }
-    ctx.strokeStyle = '#0d0e17'  // asphalt (darker than sidewalk)
-    ctx.lineWidth = 30
-    for (const s of streetsRef.current) {
-      ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
-    }
-    ctx.strokeStyle = '#111222'  // faint centre
-    ctx.lineWidth = 10
-    for (const s of streetsRef.current) {
-      ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
-    }
-    ctx.strokeStyle = '#32324e'
-    ctx.lineWidth = 0.8
-    ctx.setLineDash([6, 8])
-    for (const s of streetsRef.current) {
-      ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke()
-    }
-    ctx.setLineDash([])
 
-    // Crosswalks — zebra stripes at all intersections
-    ctx.fillStyle = 'rgba(200, 205, 240, 0.14)'
-    streetPosRef.current.cols.forEach(ix => {
-      streetPosRef.current.rows.forEach(iy => {
-        for (let i = 0; i < 4; i++) {
-          ctx.fillRect(ix - 34 - i * 5, iy - 13, 3, 26)
-          ctx.fillRect(ix + 28 + i * 5, iy - 13, 3, 26)
-          ctx.fillRect(ix - 13, iy - 34 - i * 5, 26, 3)
-          ctx.fillRect(ix - 13, iy + 28 + i * 5, 26, 3)
-        }
+    // Crosswalks and roundabout use fillRect/arc and don't project to iso — skip in iso mode
+    if (!ISO_MODE) {
+      // Crosswalks — zebra stripes at all intersections
+      ctx.fillStyle = 'rgba(200, 205, 240, 0.14)'
+      streetPosRef.current.cols.forEach(ix => {
+        streetPosRef.current.rows.forEach(iy => {
+          for (let i = 0; i < 4; i++) {
+            ctx.fillRect(ix - 34 - i * 5, iy - 13, 3, 26)
+            ctx.fillRect(ix + 28 + i * 5, iy - 13, 3, 26)
+            ctx.fillRect(ix - 13, iy - 34 - i * 5, 26, 3)
+            ctx.fillRect(ix - 13, iy + 28 + i * 5, 26, 3)
+          }
+        })
       })
-    })
 
-    // Roundabout at center intersection (cosmetic — routing is unchanged)
-    {
+      // Roundabout at center intersection (cosmetic — routing is unchanged)
       const rcx = 0.5 * W, rcy = 0.5 * H
       ctx.strokeStyle = '#1e2030'
       ctx.lineWidth = 10
