@@ -354,7 +354,7 @@ export default function CitySimulator({
 
     // Buildings: between adjacent streets.
     // ISO_MODE uses a wider inset so buildings don't overlap the street visually.
-    const inset = ISO_MODE ? 32 : 14
+    const inset = ISO_MODE ? (isMobileRef.current ? 22 : 32) : 14
     const xBounds = [vx0, ...colX.flatMap(x => [x - inset, x + inset]), vx1].sort((a, b) => a - b)
     const yBounds = [vy0, ...rowY.flatMap(y => [y - inset, y + inset]), vy1].sort((a, b) => a - b)
     const buildings: Building[] = []
