@@ -418,11 +418,16 @@ export default function CitySimulator({
     }
 
     // Park zone: block just left of center column, just below center row
-    const pkXStart = xBounds.find(x => Math.abs(x - (width * 0.5 - colStep - inset)) < 20) ?? vx0
-    const pkXEnd = xBounds.find(x => Math.abs(x - (width * 0.5 - inset)) < 20) ?? (width * 0.5 - inset)
-    const pkYStart = yBounds.find(y => Math.abs(y - (height * 0.5 + inset)) < 20) ?? (height * 0.5 + inset)
-    const pkYEnd = yBounds.find(y => Math.abs(y - (height * 0.5 + rowStep - inset)) < 20) ?? (height * 0.5 + rowStep - inset)
-    parkRef.current = pkXEnd > pkXStart && pkYEnd > pkYStart
+    // Use actual street positions so it works at any canvas/mobile size
+    const centerCol = colX[Math.floor(colX.length / 2)] ?? width * 0.5
+    const leftCol   = colX[Math.floor(colX.length / 2) - 1] ?? centerCol - colStep
+    const centerRow = rowY[Math.floor(rowY.length / 2)] ?? height * 0.5
+    const nextRow   = rowY[Math.floor(rowY.length / 2) + 1] ?? centerRow + rowStep
+    const pkXStart = leftCol   + inset
+    const pkXEnd   = centerCol - inset
+    const pkYStart = centerRow + inset
+    const pkYEnd   = nextRow   - inset
+    parkRef.current = pkXEnd > pkXStart + 4 && pkYEnd > pkYStart + 4
       ? { x: pkXStart, y: pkYStart, w: pkXEnd - pkXStart, h: pkYEnd - pkYStart }
       : null
 
@@ -515,7 +520,10 @@ export default function CitySimulator({
       a.stride += dt * (a.type === 'car' ? 0 : 8)
     }
 
-    const { vx0, vy0, vx1, vy1 } = virtualBoundsRef.current
+    // Use full layout extent (min zoom) so agents aren't culled when zooming in
+    const { W, H } = dimsRef.current
+    const minZoom = isMobileRef.current ? 0.65 : 0.45
+    const { vx0, vy0, vx1, vy1 } = getVirtualBounds(W, H, minZoom)
     agentsRef.current = agents.filter(a => a.x > vx0 - 60 && a.x < vx1 + 60 && a.y > vy0 - 60 && a.y < vy1 + 60)
     if (trackedRef.current && !agentsRef.current.includes(trackedRef.current)) {
       trackedRef.current = agentsRef.current.find(a => a.type === 'ped') || null
@@ -887,7 +895,7 @@ export default function CitySimulator({
 
       const drawList: DrawItem[] = []
       for (const bld of visBuildings)
-        drawList.push({ kind: 'building', depth: (bld.x + bld.w) + (bld.y + bld.h), bld })
+        drawList.push({ kind: 'building', depth: (bld.x + bld.w) + (bld.y + bld.h) + ISO_WALL_DX * bld.isoH, bld })
       for (const l of visLamps) {
         const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
         drawList.push({ kind: 'lamp', depth: l.x + l.y, wx: l.x, wy: l.y, b, ph: poleH })
@@ -923,7 +931,7 @@ export default function CitySimulator({
           // Halo — normalised to 0-1 for linear visual response
           const n = b / MAX_VISUAL_BRI
           if (n > 0.01) {
-            const r = n * 45 * glowScale
+            const r = n * 28 * glowScale
             const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
             grd.addColorStop(0, `rgba(255, 224, 155, ${0.88 * n})`)
             grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.50 * n})`)
