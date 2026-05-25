@@ -310,9 +310,9 @@ export default function CitySimulator({
 
   // --- Layout the city ---
   function layoutCity(width: number, height: number) {
-    // Always generate for the full zoom-out range (min zoom = 0.4)
-    // draw() clips to the current zoom — no re-layout needed during zoom
-    const { vx0, vy0, vx1, vy1 } = getVirtualBounds(width, height, 0.4)
+    // Generate for full zoom-out extent. Mobile min zoom is 0.75 → less content needed.
+    const minZoom = isMobileRef.current ? 0.65 : 0.45
+    const { vx0, vy0, vx1, vy1 } = getVirtualBounds(width, height, minZoom)
 
     const colStep = width * 0.32
     const rowStep = height * 0.30
@@ -615,36 +615,37 @@ export default function CitySimulator({
 
   function drawPedestrian(ctx: CanvasRenderingContext2D, a: Agent, brightness: number, px?: number, py?: number) {
     const x = px ?? a.x, y = py ?? a.y
-    const sw = Math.sin(a.stride) * 5
-    const cw = Math.cos(a.stride) * 3.5
+    const s = isMobileRef.current ? 0.6 : 1  // smaller on mobile
+    const sw = Math.sin(a.stride) * 5 * s
+    const cw = Math.cos(a.stride) * 3.5 * s
     const skin = `rgba(240,200,160,${0.6 + 0.4 * brightness})`
     const body = `rgba(200,210,230,${0.55 + 0.45 * brightness})`
 
     // Arms
     ctx.strokeStyle = body
-    ctx.lineWidth = 2.5
+    ctx.lineWidth = 2.5 * s
     ctx.beginPath()
-    ctx.moveTo(x - 6 - sw * 0.4, y); ctx.lineTo(x + 6 + sw * 0.4, y)
+    ctx.moveTo(x - 6 * s - sw * 0.4, y); ctx.lineTo(x + 6 * s + sw * 0.4, y)
     ctx.stroke()
 
     // Legs
-    ctx.lineWidth = 2.2
+    ctx.lineWidth = 2.2 * s
     ctx.strokeStyle = `rgba(170,180,200,${0.5 + 0.5 * brightness})`
     ctx.beginPath()
-    ctx.moveTo(x, y + 2); ctx.lineTo(x + cw * 0.9, y + 8)
-    ctx.moveTo(x, y + 2); ctx.lineTo(x - cw * 0.9, y + 8)
+    ctx.moveTo(x, y + 2 * s); ctx.lineTo(x + cw * 0.9, y + 8 * s)
+    ctx.moveTo(x, y + 2 * s); ctx.lineTo(x - cw * 0.9, y + 8 * s)
     ctx.stroke()
 
     // Body
     ctx.fillStyle = body
     ctx.beginPath()
-    ctx.ellipse(x, y, 5, 6, 0, 0, Math.PI * 2)
+    ctx.ellipse(x, y, 5 * s, 6 * s, 0, 0, Math.PI * 2)
     ctx.fill()
 
     // Head
     ctx.fillStyle = skin
     ctx.beginPath()
-    ctx.arc(x, y - 3.5, 3.8, 0, Math.PI * 2)
+    ctx.arc(x, y - 3.5 * s, 3.8 * s, 0, Math.PI * 2)
     ctx.fill()
   }
 
@@ -654,7 +655,8 @@ export default function CitySimulator({
     ctx.translate(px ?? a.x, py ?? a.y)
     ctx.rotate(angle)
 
-    const w = 36, h = 16
+    const s = isMobileRef.current ? 0.6 : 1
+    const w = 36 * s, h = 16 * s
 
     ctx.fillStyle = 'rgba(0,0,0,0.45)'
     ctx.beginPath()
@@ -790,7 +792,7 @@ export default function CitySimulator({
     }
 
     // ── Lamp positions computed early so poles can be drawn BEFORE buildings ──
-    const glowScale = Math.min(W, H) / 580
+    const glowScale = (W + H) / 2 / 580
     const glowR = (14 + 110) * glowScale + 4
     const visLamps = lampsRef.current.filter(l =>
       l.x > vx0 - glowR && l.x < vx1 + glowR && l.y > vy0 - glowR && l.y < vy1 + glowR)
@@ -975,8 +977,9 @@ export default function CitySimulator({
         // kind === 'building'
         const bld = item.bld
         const { x, y, w, h, isoH } = bld
-        const ox = ISO_WALL_DX * isoH   // oblique x-offset: rightward
-        const oy = ISO_WALL_DY * isoH   // oblique y-lift: UPWARD (applied as -oy in screen-y)
+        const mob = isMobileRef.current
+        const ox = ISO_WALL_DX * isoH
+        const oy = ISO_WALL_DY * isoH
 
         // Pick palette from zone-appropriate range so each district has a distinct look
         const rng = seededRng(Math.round(x) * 7 + Math.round(y) * 11)
@@ -1023,8 +1026,8 @@ export default function CitySimulator({
           rBL.sx, rBL.sy,
         )
 
-        // Windows on south wall — sparse amber dots, seeded per building
-        if (oy > 10) {
+        // Windows on south wall — skip on mobile (too many fillRect calls)
+        if (!mob && oy > 10) {
           const winRows = Math.max(1, Math.floor(oy / 12))
           const winCols = Math.max(1, Math.floor(w / 15))
           for (let c = 0; c < winCols; c++) {
@@ -1046,30 +1049,38 @@ export default function CitySimulator({
           }
         }
 
-        // ── Roof (top face) — drawn LAST so it always sits on top of walls ──
-        const roofGrd = ctx.createLinearGradient(rTL.sx, rTL.sy, rBR.sx, rBR.sy)
-        roofGrd.addColorStop(0, pal[0])
-        roofGrd.addColorStop(1, pal[1])
-        ctx.fillStyle = roofGrd
+        // ── Roof (top face) — flat color on mobile, gradient on desktop ──
+        if (mob) {
+          ctx.fillStyle = pal[0]
+        } else {
+          const roofGrd = ctx.createLinearGradient(rTL.sx, rTL.sy, rBR.sx, rBR.sy)
+          roofGrd.addColorStop(0, pal[0])
+          roofGrd.addColorStop(1, pal[1])
+          ctx.fillStyle = roofGrd
+        }
         fillQuad(rTL.sx, rTL.sy, rTR.sx, rTR.sy, rBR.sx, rBR.sy, rBL.sx, rBL.sy)
 
-        // Roof edge highlight (NW corner — simulates moonlight from upper-left)
-        ctx.strokeStyle = 'rgba(255,255,255,0.11)'
-        ctx.lineWidth = 1
-        ctx.beginPath()
-        ctx.moveTo(rBL.sx, rBL.sy); ctx.lineTo(rTL.sx, rTL.sy); ctx.lineTo(rTR.sx, rTR.sy)
-        ctx.stroke()
+        // Roof edge highlight — skip on mobile
+        if (!mob) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.11)'
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(rBL.sx, rBL.sy); ctx.lineTo(rTL.sx, rTL.sy); ctx.lineTo(rTR.sx, rTR.sy)
+          ctx.stroke()
+        }
 
-        // Rooftop detail — faint amber dots (skylights / AC units)
-        for (let c = 0; c < Math.floor((w - 6) / 6); c++) {
-          for (let r = 0; r < Math.floor((h - 6) / 6); r++) {
-            if (rng() < 0.08) {
-              const u = (4 + c * 6) / w   // 0..1 across width
-              const v = (4 + r * 6) / h   // 0..1 across height
-              const rx = rTL.sx + (rTR.sx - rTL.sx) * u + (rBL.sx - rTL.sx) * v
-              const ry = rTL.sy + (rTR.sy - rTL.sy) * u + (rBL.sy - rTL.sy) * v
-              ctx.fillStyle = 'rgba(250,199,117,0.22)'
-              ctx.fillRect(rx, ry, 1.5, 1.5)
+        // Rooftop detail — skip on mobile
+        if (!mob) {
+          for (let c = 0; c < Math.floor((w - 6) / 6); c++) {
+            for (let r = 0; r < Math.floor((h - 6) / 6); r++) {
+              if (rng() < 0.08) {
+                const u = (4 + c * 6) / w   // 0..1 across width
+                const v = (4 + r * 6) / h   // 0..1 across height
+                const rx = rTL.sx + (rTR.sx - rTL.sx) * u + (rBL.sx - rTL.sx) * v
+                const ry = rTL.sy + (rTR.sy - rTL.sy) * u + (rBL.sy - rTL.sy) * v
+                ctx.fillStyle = 'rgba(250,199,117,0.22)'
+                ctx.fillRect(rx, ry, 1.5, 1.5)
+              }
             }
           }
         }
@@ -1687,7 +1698,9 @@ export default function CitySimulator({
     virtualBoundsRef.current = bounds
     const { vx0, vy0, vW, vH } = bounds
 
-    ctx.clearRect(0, 0, W, H)
+    // Fill entire canvas first so no black gaps appear outside the city at max zoom-out
+    ctx.fillStyle = '#08080e'
+    ctx.fillRect(0, 0, W, H)
 
     if (m === 'fpv') {
       drawFPV(ctx)
@@ -1699,7 +1712,7 @@ export default function CitySimulator({
     ctx.scale(z, z)
     ctx.translate(-W / 2, -H / 2)
 
-    // Fill dark background covering full visible virtual area
+    // Fill virtual area (redundant but keeps sub-pixel seams from showing through)
     ctx.fillStyle = '#08080e'
     ctx.fillRect(vx0, vy0, vW, vH)
 
@@ -1798,12 +1811,15 @@ export default function CitySimulator({
 
 
       // Smooth zoom easing — each wheel tick sets targetZoom, we glide towards it
+      const minZoom = isMobileRef.current ? 0.65 : 0.45
+      targetZoomRef.current = Math.max(minZoom, targetZoomRef.current)
       if (zoomRef.current !== targetZoomRef.current) {
         const ease = 1 - Math.exp(-dt * 10)
         zoomRef.current += (targetZoomRef.current - zoomRef.current) * ease
         if (Math.abs(targetZoomRef.current - zoomRef.current) < 0.001) {
           zoomRef.current = targetZoomRef.current
         }
+        zoomRef.current = Math.max(minZoom, zoomRef.current)
       }
 
       if (pausedRef.current) return
@@ -1894,7 +1910,7 @@ export default function CitySimulator({
   useEffect(() => {
     if (!externalZoomRef) return
     externalZoomRef.current = (delta: number) => {
-      targetZoomRef.current = Math.min(3, Math.max(0.4, targetZoomRef.current * delta))
+      targetZoomRef.current = Math.min(3, Math.max(0.45, targetZoomRef.current * delta))
     }
     return () => { if (externalZoomRef) externalZoomRef.current = null }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1943,7 +1959,7 @@ export default function CitySimulator({
       if (stageVisibilityRef.current < 0.8) return  // let page scroll when half-visible
       e.preventDefault()
       const delta = e.deltaY > 0 ? 0.9 : 1.1
-      targetZoomRef.current = Math.min(3, Math.max(0.4, targetZoomRef.current * delta))
+      targetZoomRef.current = Math.min(3, Math.max(0.45, targetZoomRef.current * delta))
     }
     canvas.addEventListener('wheel', onWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', onWheel)
@@ -1965,7 +1981,8 @@ export default function CitySimulator({
       const dy = e.touches[0].clientY - e.touches[1].clientY
       const dist = Math.hypot(dx, dy)
       const ratio = dist / pinchRef.current.dist
-      const pz = Math.min(3, Math.max(0.4, pinchRef.current.zoom * ratio))
+      const minZ = isMobileRef.current ? 0.65 : 0.45
+      const pz = Math.min(3, Math.max(minZ, pinchRef.current.zoom * ratio))
       zoomRef.current = pz
       targetZoomRef.current = pz
     }
@@ -1978,6 +1995,7 @@ export default function CitySimulator({
       const wasPinching = wasPinchingRef.current
       wasPinchingRef.current = false
       if (!wasPinching && e.changedTouches.length === 1) {
+        e.preventDefault()  // block the synthetic click the browser fires ~300ms later
         const touch = e.changedTouches[0]
         const rect = canvasRef.current!.getBoundingClientRect()
         const { x, y } = toSimCoords(touch.clientX - rect.left, touch.clientY - rect.top)

@@ -32,7 +32,7 @@ const LISBON_LAMPS = 70_000
 export default function App() {
   const isMobile = useIsMobile()
   const [mode, setMode]               = useState<Mode>('lumination')
-  const [baselinePct, setBaselinePct] = useState(0.30)
+  const [baselinePct, setBaselinePct] = useState(0.50)
   const [lookaheadSec, setLookaheadSec] = useState(4.0)
   const [spawnMode, setSpawnMode]     = useState<'ped' | 'car'>('ped')
   const [tooltip, setTooltip]         = useState<'baseline' | 'lookahead' | null>(null)
@@ -44,9 +44,11 @@ export default function App() {
 
   const hudY       = useMotionValue(260)  // start collapsed
   const [hudOpen, setHudOpen] = useState(false)
-  const [infoBaseBottom, setInfoBaseBottom] = useState(80)
+  const [infoBaseBottom, setInfoBaseBottom] = useState(128)
   const infoBtnBottom  = useTransform(hudY, v => Math.max(8, infoBaseBottom - v))
-  const infoHintBottom = useTransform(hudY, v => Math.max(8, infoBaseBottom - v + 64))
+  const infoHintBottom = useTransform(hudY, v => Math.max(8, infoBaseBottom - v + 58))
+  // Fade info button out as panel opens (hudY goes from max→small), in as it closes
+  const infoBtnOpacity = useTransform(hudY, v => Math.min(1, Math.max(0, (v - 40) / (hudMax - 40))))
   const springCfg = { type: 'spring' as const, stiffness: 400, damping: 38 }
 
   // Observe inner content height — hudMax always equals content height so
@@ -59,6 +61,7 @@ export default function App() {
       const h = el.offsetHeight + 40 // +40 for handle row + padding
       hudMaxRef.current = h
       setHudMax(h)
+      if (!hudOpen) hudY.jump(h)  // sync collapsed position without animation
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -141,6 +144,7 @@ export default function App() {
   // ── Mobile-specific MotionValues for HUD/topbar fade-in (scroll is 0 on mobile) ──
   const mobileHudOpacity     = useMotionValue(0)
   const mobileTopbarOpacity  = useMotionValue(0)
+  const mobileVeilOpacity    = useMotionValue(1)
 
   // ── Mobile curtain: auto-dismiss after 1s, no scroll needed ──────────────
   // Once gone it never comes back (clicking L doesn't re-show it).
@@ -156,6 +160,7 @@ export default function App() {
       setTopbarVisible(true)
       animate(mobileHudOpacity,    1, { duration: 0.55, ease: 'easeOut', delay: 0.15 })
       animate(mobileTopbarOpacity, 1, { duration: 0.55, ease: 'easeOut', delay: 0.25 })
+      animate(mobileVeilOpacity,   0, { duration: 0.8,  ease: 'easeOut' })
     }, 1000)
     // Unmount curtain DOM after fade completes (1000 + 800ms)
     const t2 = setTimeout(() => setMobileCurtainGone(true), 1800)
@@ -347,7 +352,7 @@ export default function App() {
               <motion.div
                 className="info-hint-arrow"
                 aria-hidden="true"
-                style={isMobile ? { bottom: infoHintBottom } : undefined}
+                style={isMobile ? { bottom: infoHintBottom, opacity: infoBtnOpacity } : undefined}
               >
                 <span>Click here</span>
                 <span className="info-hint-caret">↓</span>
@@ -357,7 +362,7 @@ export default function App() {
               className="info-btn"
               onClick={() => setShowInfo(true)}
               aria-label="About LumiNation"
-              style={isMobile ? { bottom: infoBtnBottom } : undefined}
+              style={isMobile ? { bottom: infoBtnBottom, opacity: infoBtnOpacity } : undefined}
             >i</motion.button>
           </>
         )}
@@ -394,7 +399,7 @@ export default function App() {
         {/* ── Layer 1: flat dim veil — softens canvas at landing state ──────── */}
         <motion.div
           className="canvas-dim-veil"
-          style={{ opacity: dimVeilOpacity }}
+          style={{ opacity: isMobile ? mobileVeilOpacity : dimVeilOpacity }}
           aria-hidden="true"
         />
 

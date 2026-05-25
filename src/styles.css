@@ -1290,7 +1290,7 @@ input[type="range"] {
     top: auto;
     right: 0;
     left: 0;
-    bottom: clamp(48px, 7vh, 80px);
+    bottom: calc(4vh + env(safe-area-inset-bottom, 0px));
     width: 100%;
     flex-direction: column;
     gap: 8px;
@@ -1401,7 +1401,7 @@ input[type="range"] {
 .info-btn {
   position: fixed;
   bottom: clamp(20px, 4vh, 36px);
-  left: clamp(16px, 3vw, 32px);
+  left: clamp(24px, 4.5vw, 44px);
   z-index: 12;
   width: 48px;
   height: 48px;
@@ -1440,7 +1440,7 @@ input[type="range"] {
   position: fixed;
   bottom: calc(clamp(20px, 4vh, 36px) + 56px);
   /* centred over the 48px info button: left edge + half button width, then translate back */
-  left: calc(clamp(16px, 3vw, 32px) + 24px);
+  left: calc(clamp(24px, 4.5vw, 44px) + 24px);
   transform: translateX(-50%);
   width: auto;
   z-index: 12;
