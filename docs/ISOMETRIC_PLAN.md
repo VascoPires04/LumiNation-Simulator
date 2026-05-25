@@ -265,10 +265,10 @@ Once the core isometric structure is solid:
 | 2 | Step 2 — iso roads | S | medium |
 | 3 | Step 3 — iso buildings | M | **high** |
 | 4 | Step 4 — iso lamps | S | medium |
-| 5 | Step 9 — depth sort | S | correctness |
+| 5 | Step 8 — iso trees | S | low |
 | 6 | Step 5 — wall light | M | **very high** |
 | 7 | Step 6 — iso agents | M | medium |
-| 8 | Step 8 — iso trees | S | low |
+| 8 | Step 9 — depth sort | S | correctness |
 | 9 | Step 7 — mesh lines | XS | low |
 | 10 | Step 10 — mobile audit | M | perf |
 | 11 | Step 11 — compare mode | S | correctness |

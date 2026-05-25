@@ -36,9 +36,12 @@ interface Agent {
   color: string | null
 }
 
+type BlockZone = 'downtown' | 'mall' | 'civic' | 'residential' | 'commercial'
 interface Building {
   x: number; y: number; w: number; h: number
   btype: 'residential' | 'commercial' | 'office'
+  isoH: number  // oblique wall height in screen-px (0 in flat mode, assigned in layoutCity)
+  zone: BlockZone
 }
 
 interface Tree { x: number; y: number }
@@ -81,41 +84,37 @@ const LAMP_REACH_BEHIND_CAR = 60
 const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
-// ── Isometric projection ──────────────────────────────────────────────────────
-// Toggle: set to true to enable isometric rendering. false = flat top-down.
+// ── Oblique-iso projection ────────────────────────────────────────────────────
+// Toggle: set to true to enable 3D oblique rendering. false = flat top-down.
 const ISO_MODE = true
-// Tile ratio: screen width : height = 2 : 1  (classic isometric)
-const ISO_TILE_W = 2
-const ISO_TILE_H = 1
+
+// Y-shear for the ground plane (roads, sidewalks).
+// sx = wx always — x-extent is preserved, streets always fill the canvas width.
+// sy = wy − (wx − W/2) × ISO_SHEAR — right side of canvas lifts slightly.
+// 0.12 is subtle: ±36px shift at the canvas edges of a 600px wide canvas.
+const ISO_SHEAR = 0.12
+
+// Oblique wall extrusion for buildings — screen-space, per unit of building height.
+// Walls extend ISO_WALL_DX px right and ISO_WALL_DY px down per height-pixel.
+const ISO_WALL_DX = 0.55
+const ISO_WALL_DY = 0.72
 
 /**
- * Project world coordinates (wx, wy) to screen (sx, sy).
- * In flat mode this is a no-op. In ISO mode it applies a 2:1 dimetric transform.
- * The pivot is the canvas centre (W/2, H/2) — same anchor as the zoom transform.
+ * Project world (wx, wy) → screen (sx, sy) with a Y-shear.
+ * sx = wx (width unchanged).  sy = wy − (wx − W/2) × ISO_SHEAR.
+ * In flat mode this is a no-op.
  */
-function isoProject(wx: number, wy: number, W: number, H: number): { sx: number; sy: number } {
+function isoProject(wx: number, wy: number, W: number, _H: number): { sx: number; sy: number } {
   if (!ISO_MODE) return { sx: wx, sy: wy }
-  const cx = W / 2, cy = H / 2
-  // Translate to canvas-centre-relative coords, apply iso, translate back
-  const rx = wx - cx, ry = wy - cy
-  return {
-    sx: cx + (rx - ry) * (ISO_TILE_W / 2),
-    sy: cy + (rx + ry) * (ISO_TILE_H / 2),
-  }
+  return { sx: wx, sy: wy - (wx - W * 0.5) * ISO_SHEAR }
 }
 
 /**
  * Inverse: screen tap (sx, sy) → world (wx, wy). Used for spawn-on-tap.
- * In flat mode this is a no-op.
  */
-function isoUnproject(sx: number, sy: number, W: number, H: number): { wx: number; wy: number } {
+function isoUnproject(sx: number, sy: number, W: number, _H: number): { wx: number; wy: number } {
   if (!ISO_MODE) return { wx: sx, wy: sy }
-  const cx = W / 2, cy = H / 2
-  const dx = sx - cx, dy = sy - cy
-  // Invert the 2:1 iso matrix
-  const rx =  dx / ISO_TILE_W + dy / ISO_TILE_H
-  const ry = -dx / ISO_TILE_W + dy / ISO_TILE_H
-  return { wx: cx + rx, wy: cy + ry }
+  return { wx: sx, wy: sy + (sx - W * 0.5) * ISO_SHEAR }
 }
 
 /**
@@ -318,6 +317,7 @@ export default function CitySimulator({
     const colStep = width * 0.32
     const rowStep = height * 0.30
     const lampOffset = 16
+    const treeOffset = ISO_MODE ? 30 : 16  // sidewalk (asphalt edge=22, sidewalk edge=32, canopy rx=8 → clears at 30)
 
     // Columns centered at W/2, extending to fill visible virtual range
     const colX: number[] = []
@@ -352,11 +352,11 @@ export default function CitySimulator({
       }
     })
 
-    // Buildings: between adjacent streets
-    const inset = 14
+    // Buildings: between adjacent streets.
+    // ISO_MODE uses a wider inset so buildings don't overlap the street visually.
+    const inset = ISO_MODE ? 32 : 14
     const xBounds = [vx0, ...colX.flatMap(x => [x - inset, x + inset]), vx1].sort((a, b) => a - b)
     const yBounds = [vy0, ...rowY.flatMap(y => [y - inset, y + inset]), vy1].sort((a, b) => a - b)
-    const btypes: ('residential' | 'commercial' | 'office')[] = ['residential', 'commercial', 'office']
     const buildings: Building[] = []
     for (let ci = 0; ci < xBounds.length - 1; ci++) {
       for (let ri = 0; ri < yBounds.length - 1; ri++) {
@@ -364,20 +364,53 @@ export default function CitySimulator({
         const y0 = yBounds[ri], y1 = yBounds[ri + 1]
         const bW = x1 - x0, bH = y1 - y0
         if (bW < inset * 2 + 4 || bH < inset * 2 + 4) continue // street zone
-        const blockCi = Math.round(x0 / colStep)
-        const blockRi = Math.round(y0 / rowStep)
-        const btype = btypes[((blockCi + blockRi) % 3 + 3) % 3]
-        const rng = seededRng(blockCi * 41 + blockRi * 13 + 7)
-        const nCols = 2 + Math.floor(rng() * 2)
-        const nRows = 2 + Math.floor(rng() * 2)
+
+        // Normalised coords relative to city centre (0,0 = block adj to centre col+row)
+        const normCi = Math.round((x0 - width  * 0.5) / colStep)
+        const normRi = Math.round((y0 - height * 0.5) / rowStep)
+
+        // Assign a district zone to this block
+        let zone: BlockZone = 'commercial'
+        if      (normCi === 0  && normRi === 0)                          zone = 'downtown'
+        else if (normCi === 1  && normRi === 0)                          zone = 'mall'
+        else if ((normCi === 0 || normCi === 1) && normRi === -1)        zone = 'civic'
+        else if (Math.abs(normCi) >= 2 || Math.abs(normRi) >= 2)        zone = 'residential'
+
+        const rng = seededRng(normCi * 41 + normRi * 13 + 7)
+
+        // Zone-specific layout parameters
+        let nCols: number, nRows: number, skipRate: number
+        let btype: 'residential' | 'commercial' | 'office'
+        // Rectangular buildings: blocks are ~160px wide × ~90px tall so
+        // 2-3 cols × 2 rows gives natural wide-rectangle footprints.
+        if      (zone === 'downtown')    { nCols = 2 + Math.floor(rng() * 2); nRows = 2; skipRate = 0.12; btype = 'office' }
+        else if (zone === 'mall')        { nCols = 1; nRows = 1; skipRate = 0;   btype = 'commercial' }
+        else if (zone === 'civic')       { nCols = 1; nRows = 1; skipRate = 0;   btype = 'office' }
+        else if (zone === 'residential') { nCols = 2 + Math.floor(rng() * 2); nRows = 2; skipRate = 0.22; btype = 'residential' }
+        else                             { nCols = 2 + Math.floor(rng() * 2); nRows = 2; skipRate = 0.18; btype = 'commercial' }
+
         for (let bc = 0; bc < nCols; bc++) {
           for (let br = 0; br < nRows; br++) {
-            if (rng() < 0.18) continue
+            if (rng() < skipRate) continue
             const stepX = bW / nCols, stepY = bH / nRows
-            const gap = 3
-            const bw = stepX - gap * 2, bh = stepY - gap * 2
+
+            // ~5% of buildings become tall towers — same footprint, just much taller.
+            const isTower = zone !== 'mall' && rng() < 0.05
+            const bw = stepX - 4
+            const bh = stepY - 4
+            const offX = 2, offY = 2
+
             if (bw > 4 && bh > 4) {
-              buildings.push({ x: x0 + bc * stepX + gap, y: y0 + br * stepY + gap, w: bw, h: bh, btype })
+              const isoH = ISO_MODE ? Math.round(
+                isTower
+                  ? 100 + rng() * 60                         // tower: 100–160px (≈10–15 fl)
+                  : zone === 'downtown'    ? 28 + rng() * 28 // normal downtown: 28–56px
+                  : zone === 'mall'        ? 10 + rng() * 10 // flat mall: 10–20px
+                  : zone === 'civic'       ? 35 + rng() * 25 // civic: 35–60px
+                  : zone === 'residential' ? 14 + rng() * 18 // houses: 14–32px
+                  :                          18 + rng() * 18 // commercial: 18–36px
+              ) : 0
+              buildings.push({ x: x0 + bc * stepX + offX, y: y0 + br * stepY + offY, w: bw, h: bh, btype, isoH, zone })
             }
           }
         }
@@ -400,13 +433,13 @@ export default function CitySimulator({
       const tRng = seededRng(posKey * 137 + 42)
       if (s.dir === 'h') {
         for (let x = vx0 + lampStep * 0.5; x < vx1; x += lampStep) {
-          if (tRng() < 0.28) trees.push({ x, y: s.ay - lampOffset })
-          if (tRng() < 0.20) trees.push({ x, y: s.ay + lampOffset })
+          if (tRng() < 0.28) trees.push({ x, y: s.ay - treeOffset })
+          if (tRng() < 0.20) trees.push({ x, y: s.ay + treeOffset })
         }
       } else {
         for (let y = vy0 + lampStep * 0.5; y < vy1; y += lampStep) {
-          if (tRng() < 0.24) trees.push({ x: s.ax - lampOffset, y })
-          if (tRng() < 0.18) trees.push({ x: s.ax + lampOffset, y })
+          if (tRng() < 0.24) trees.push({ x: s.ax - treeOffset, y })
+          if (tRng() < 0.18) trees.push({ x: s.ax + treeOffset, y })
         }
       }
     })
@@ -681,9 +714,14 @@ export default function CitySimulator({
     const { W, H } = dimsRef.current
     const { vx0, vy0, vx1, vy1, vW, vH } = virtualBoundsRef.current
 
-    // Cull to visible virtual bounds — avoids drawing off-screen elements
+    // Cull to visible virtual bounds — avoids drawing off-screen elements.
+    // In ISO mode expand the margin to account for oblique wall offsets that
+    // extend beyond the footprint (ox rightward, oy upward in screen space).
+    const isoCullMX = ISO_MODE ? 80 : 0
+    const isoCullMY = ISO_MODE ? 60 : 0
     const visBuildings = buildingsRef.current.filter(b =>
-      b.x < vx1 && b.x + b.w > vx0 && b.y < vy1 && b.y + b.h > vy0)
+      b.x < vx1 + isoCullMX && b.x + b.w > vx0 - isoCullMX &&
+      b.y < vy1 + isoCullMY && b.y + b.h > vy0 - isoCullMY)
     const visTrees = treesRef.current.filter(t =>
       t.x > vx0 - 12 && t.x < vx1 + 12 && t.y > vy0 - 12 && t.y < vy1 + 12)
 
@@ -691,72 +729,373 @@ export default function CitySimulator({
     ctx.fillStyle = '#08080e'
     ctx.fillRect(vx0, vy0, vW, vH)
 
-    // Park zone (green space)
+    // ── Roads drawn FIRST so buildings render on top ─────────────────────────
+    if (ISO_MODE) {
+      ctx.fillStyle = '#131420'  // sidewalk — matches inset=32
+      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 32, W, H)
+      ctx.fillStyle = '#0d0e17'  // asphalt
+      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 22, W, H)
+      ctx.fillStyle = '#111222'  // centre highlight
+      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 7, W, H)
+      ctx.fillStyle = '#32324e'  // centre line
+      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 0.5, W, H)
+      // Roundabouts
+      const { cols: rCols0, rows: rRows0 } = streetPosRef.current
+      const rcRx0 = 20, rcRy0 = rcRx0 * (1 - ISO_SHEAR * 0.8)
+      rCols0.forEach((cx, ci) => {
+        rRows0.forEach((cy, ri) => {
+          if (seededRng(ci * 31 + ri * 17 + 3)() >= 0.40) return
+          const rcp = isoProject(cx, cy, W, H)
+          if (rcp.sx < vx0 - 30 || rcp.sx > vx1 + 30 || rcp.sy < vy0 - 30 || rcp.sy > vy1 + 30) return
+          ctx.strokeStyle = '#1a1c30'; ctx.lineWidth = 10
+          ctx.beginPath(); ctx.ellipse(rcp.sx, rcp.sy, rcRx0, rcRy0, 0, 0, Math.PI * 2); ctx.stroke()
+          const rcg0 = ctx.createRadialGradient(rcp.sx, rcp.sy, 0, rcp.sx, rcp.sy, rcRx0 * 0.65)
+          rcg0.addColorStop(0, '#0d1a0e'); rcg0.addColorStop(1, '#070d08')
+          ctx.fillStyle = rcg0
+          ctx.beginPath(); ctx.ellipse(rcp.sx, rcp.sy, rcRx0 * 0.60, rcRy0 * 0.60, 0, 0, Math.PI * 2); ctx.fill()
+          ctx.fillStyle = 'rgba(200,210,255,0.15)'
+          ctx.beginPath(); ctx.ellipse(rcp.sx, rcp.sy, 2.5, 2, 0, 0, Math.PI * 2); ctx.fill()
+        })
+      })
+    }
+
+    // Park zone (green space) — projected through isoProject in ISO mode
     const park = parkRef.current
     if (park) {
-      const pg = ctx.createLinearGradient(park.x, park.y, park.x + park.w, park.y + park.h)
-      pg.addColorStop(0, '#0a1e0c')
-      pg.addColorStop(1, '#091508')
-      ctx.fillStyle = pg
-      ctx.fillRect(park.x, park.y, park.w, park.h)
-    }
-
-    // Building shadows — SE offset creates height illusion
-    for (const bld of visBuildings) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.62)'
-      ctx.fillRect(bld.x + 4, bld.y + 4, bld.w, bld.h)
-    }
-
-    // Building footprints with strong type tints + edge lighting
-    for (const bld of visBuildings) {
-      const bGrd = ctx.createLinearGradient(bld.x, bld.y, bld.x + bld.w, bld.y + bld.h)
-      if (bld.btype === 'residential') {
-        bGrd.addColorStop(0, '#1e1316'); bGrd.addColorStop(1, '#281c22')
-      } else if (bld.btype === 'commercial') {
-        bGrd.addColorStop(0, '#10152a'); bGrd.addColorStop(1, '#171f38')
+      if (ISO_MODE) {
+        const pTL = isoProject(park.x,           park.y,           W, H)
+        const pTR = isoProject(park.x + park.w,  park.y,           W, H)
+        const pBR = isoProject(park.x + park.w,  park.y + park.h,  W, H)
+        const pBL = isoProject(park.x,            park.y + park.h,  W, H)
+        const pg = ctx.createLinearGradient(pTL.sx, pTL.sy, pBR.sx, pBR.sy)
+        pg.addColorStop(0, '#0a1e0c')
+        pg.addColorStop(1, '#091508')
+        ctx.fillStyle = pg
+        ctx.beginPath()
+        ctx.moveTo(pTL.sx, pTL.sy); ctx.lineTo(pTR.sx, pTR.sy)
+        ctx.lineTo(pBR.sx, pBR.sy); ctx.lineTo(pBL.sx, pBL.sy)
+        ctx.closePath(); ctx.fill()
       } else {
-        bGrd.addColorStop(0, '#111a18'); bGrd.addColorStop(1, '#172420')
+        const pg = ctx.createLinearGradient(park.x, park.y, park.x + park.w, park.y + park.h)
+        pg.addColorStop(0, '#0a1e0c')
+        pg.addColorStop(1, '#091508')
+        ctx.fillStyle = pg
+        ctx.fillRect(park.x, park.y, park.w, park.h)
       }
-      ctx.fillStyle = bGrd
-      ctx.fillRect(bld.x, bld.y, bld.w, bld.h)
-      // NW highlight — simulates light from upper-left
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
-      ctx.fillRect(bld.x, bld.y, bld.w, 1.5)
-      ctx.fillRect(bld.x, bld.y, 1.5, bld.h)
-      // SE shadow edge
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.38)'
-      ctx.fillRect(bld.x + bld.w - 1.5, bld.y, 1.5, bld.h)
-      ctx.fillRect(bld.x, bld.y + bld.h - 1.5, bld.w, 1.5)
-      // Windows
-      const rng = seededRng(bld.x * 13 + bld.y * 31)
-      const winSize = 2
-      const winSpacing = 5
-      const wCols = Math.floor((bld.w - 6) / winSpacing)
-      const wRows = Math.floor((bld.h - 6) / winSpacing)
-      if (wCols > 0 && wRows > 0) {
-        for (let c = 0; c < wCols; c++) {
-          for (let r = 0; r < wRows; r++) {
-            if (rng() < 0.13) {
-              ctx.fillStyle = 'rgba(250, 199, 117, 0.25)'
-              ctx.fillRect(bld.x + 4 + c * winSpacing, bld.y + 4 + r * winSpacing, winSize, winSize)
+    }
+
+    // ── Lamp positions computed early so poles can be drawn BEFORE buildings ──
+    const glowScale = Math.min(W, H) / 580
+    const glowR = (14 + 110) * glowScale + 4
+    const visLamps = lampsRef.current.filter(l =>
+      l.x > vx0 - glowR && l.x < vx1 + glowR && l.y > vy0 - glowR && l.y < vy1 + glowR)
+
+    type LampScreenPos = { sx: number; sy: number; b: number; poleH: number }
+    const isoLampPositions: LampScreenPos[] = []
+    if (ISO_MODE) {
+      // ── Collect lamp screen positions for the depth-sorted draw list ────────
+      const poleH = 9
+      for (const l of visLamps) {
+        const p = isoProject(l.x, l.y, W, H)
+        const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
+        isoLampPositions.push({ sx: p.sx, sy: p.sy, b, poleH })
+      }
+      const { cols: rCols0, rows: rRows0 } = streetPosRef.current
+      rCols0.forEach((cx, ci) => {
+        rRows0.forEach((cy, ri) => {
+          if (seededRng(ci * 31 + ri * 17 + 3)() >= 0.40) return
+          const rp = isoProject(cx, cy, W, H)
+          const near = lampsRef.current.filter(l => Math.hypot(l.x - cx, l.y - cy) < 50)
+          const rb = near.length > 0
+            ? (useBaseline ? MAX_VISUAL_BRI : near.reduce((s, l) => s + l.brightness, 0) / near.length * MAX_VISUAL_BRI)
+            : baselineRef.current * MAX_VISUAL_BRI
+          isoLampPositions.push({ sx: rp.sx, sy: rp.sy, b: rb, poleH: 14 })
+        })
+      })
+
+      // ── Palettes + helpers ──────────────────────────────────────────────────
+      // [roofFrom, roofTo, westWall(lit), southWall(mid), eastWall(shadow)]
+      const PALETTE: [string, string, string, string, string][] = [
+        ['#323234', '#28282c', '#38383c', '#2e2e32', '#202022'],
+        ['#282830', '#202028', '#2e2e38', '#242430', '#181820'],
+        ['#342c22', '#2a2219', '#3c3228', '#302818', '#221c10'],
+        ['#3a2c1c', '#2c2014', '#44342a', '#362818', '#261c10'],
+        ['#162030', '#101828', '#1c2838', '#14202e', '#0e1422'],
+        ['#101a32', '#0c1228', '#161e3c', '#0e182e', '#080e1e'],
+        ['#361a10', '#2a100c', '#40221a', '#32160e', '#200e08'],
+        ['#1e2c1a', '#141e12', '#263620', '#1a2818', '#101c10'],
+      ]
+      const ZONE_PALS: Record<BlockZone, number[]> = {
+        downtown:    [0, 1, 4, 5, 4, 5],
+        mall:        [0, 1, 2, 0, 2, 3],
+        civic:       [0, 1, 4, 7, 0, 1],
+        residential: [0, 1, 2, 3, 4, 5, 6, 7],
+        commercial:  [0, 1, 2, 3, 4, 5, 6, 7],
+      }
+
+      const fillQuad = (
+        x0: number, y0: number, x1: number, y1: number,
+        x2: number, y2: number, x3: number, y3: number,
+      ) => {
+        ctx.beginPath()
+        ctx.moveTo(x0, y0); ctx.lineTo(x1, y1)
+        ctx.lineTo(x2, y2); ctx.lineTo(x3, y3)
+        ctx.closePath(); ctx.fill()
+      }
+
+      // ISO crosswalks — before depth sort so buildings correctly occlude them
+      if (ISO_MODE) {
+        const drawIsoRect2 = (wx: number, wy: number, rw: number, rh: number) => {
+          const tl = isoProject(wx,      wy,      W, H)
+          const tr = isoProject(wx + rw, wy,      W, H)
+          const br = isoProject(wx + rw, wy + rh, W, H)
+          const bl = isoProject(wx,      wy + rh, W, H)
+          ctx.beginPath()
+          ctx.moveTo(tl.sx, tl.sy); ctx.lineTo(tr.sx, tr.sy)
+          ctx.lineTo(br.sx, br.sy); ctx.lineTo(bl.sx, bl.sy)
+          ctx.closePath(); ctx.fill()
+        }
+        ctx.fillStyle = 'rgba(200, 205, 240, 0.14)'
+        streetPosRef.current.cols.forEach(ix => {
+          streetPosRef.current.rows.forEach(iy => {
+            for (let i = 0; i < 4; i++) {
+              // Horizontal stripes (26×3) on horizontal roads — step in y
+              drawIsoRect2(ix - 50, iy - 9 + i * 6, 26, 3)   // left of intersection
+              drawIsoRect2(ix + 22, iy - 9 + i * 6, 26, 3)   // right
+              // Vertical stripes (3×26) on vertical roads — step in x
+              drawIsoRect2(ix - 9 + i * 6, iy - 54, 3, 26)   // above intersection
+              drawIsoRect2(ix - 9 + i * 6, iy + 22, 3, 26)   // below
+            }
+          })
+        })
+      }
+
+      // ── Unified depth-sorted draw list: buildings + lamps merged ─────────
+      // Each lamp's depth key = its world (x+y). Building depth key = (x+y) of footprint.
+      type DrawItem =
+        | { kind: 'building'; depth: number; bld: Building }
+        | { kind: 'lamp';     depth: number; wx: number; wy: number; b: number; ph: number }
+        | { kind: 'tree';     depth: number; wx: number; wy: number }
+
+      const drawList: DrawItem[] = []
+      for (const bld of visBuildings)
+        drawList.push({ kind: 'building', depth: (bld.x + bld.w) + (bld.y + bld.h), bld })
+      for (const l of visLamps) {
+        const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
+        drawList.push({ kind: 'lamp', depth: l.x + l.y, wx: l.x, wy: l.y, b, ph: poleH })
+      }
+      for (const t of visTrees)
+        drawList.push({ kind: 'tree', depth: t.x + t.y, wx: t.x, wy: t.y })
+      // Roundabout lamps
+      rCols0.forEach((cx, ci) => {
+        rRows0.forEach((cy, ri) => {
+          if (seededRng(ci * 31 + ri * 17 + 3)() >= 0.40) return
+          const near = lampsRef.current.filter(l => Math.hypot(l.x - cx, l.y - cy) < 50)
+          const rb = near.length > 0
+            ? (useBaseline ? MAX_VISUAL_BRI : near.reduce((s, l) => s + l.brightness, 0) / near.length * MAX_VISUAL_BRI)
+            : baselineRef.current * MAX_VISUAL_BRI
+          drawList.push({ kind: 'lamp', depth: cx + cy, wx: cx, wy: cy, b: rb, ph: 14 })
+        })
+      })
+      drawList.sort((a, b) => a.depth - b.depth)  // far first, near last
+
+      for (const item of drawList) {
+        if (item.kind === 'lamp') {
+          const { wx, wy, b, ph } = item
+          const p = isoProject(wx, wy, W, H)
+          const hx = p.sx, hy = p.sy - ph
+          // Pole
+          ctx.strokeStyle = 'rgba(180, 185, 210, 0.75)'; ctx.lineWidth = 0.9
+          ctx.beginPath(); ctx.moveTo(p.sx, p.sy); ctx.lineTo(hx, hy); ctx.stroke()
+          ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + 3, hy - 2); ctx.stroke()
+          // Halo
+          const r = (14 + b * 110) * glowScale
+          const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
+          grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * b})`)
+          grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * b})`)
+          grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.16 * b})`)
+          grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.05 * b})`)
+          grd.addColorStop(1,    'rgba(250, 199, 117, 0)')
+          ctx.fillStyle = grd
+          ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill()
+          ctx.fillStyle = `rgba(255, 230, 170, ${0.5 + 0.5 * b})`
+          ctx.beginPath(); ctx.arc(hx, hy, 2.2, 0, Math.PI * 2); ctx.fill()
+          ctx.fillStyle = '#22222a'
+          ctx.beginPath(); ctx.arc(hx, hy, 0.9, 0, Math.PI * 2); ctx.fill()
+          continue
+        }
+
+        // kind === 'tree'
+        if (item.kind === 'tree') {
+          const tp = isoProject(item.wx, item.wy, W, H)
+          const tx = tp.sx, ty = tp.sy
+          // Shadow on ground
+          ctx.fillStyle = 'rgba(0,0,0,0.35)'
+          ctx.beginPath(); ctx.ellipse(tx + 2, ty + 1, 8, 4.5, 0, 0, Math.PI * 2); ctx.fill()
+          // Trunk — short vertical line
+          ctx.strokeStyle = 'rgba(60,40,20,0.9)'; ctx.lineWidth = 2
+          ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx, ty - 10); ctx.stroke()
+          // Canopy — stacked ellipses getting smaller going up
+          ctx.fillStyle = 'rgba(8,42,11,0.97)'
+          ctx.beginPath(); ctx.ellipse(tx, ty - 10, 8, 5, 0, 0, Math.PI * 2); ctx.fill()
+          ctx.fillStyle = 'rgba(15,65,20,0.88)'
+          ctx.beginPath(); ctx.ellipse(tx - 1, ty - 16, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill()
+          ctx.fillStyle = 'rgba(26,95,34,0.65)'
+          ctx.beginPath(); ctx.ellipse(tx - 1, ty - 21, 4, 2.5, 0, 0, Math.PI * 2); ctx.fill()
+          continue
+        }
+
+        // kind === 'building'
+        const bld = item.bld
+        const { x, y, w, h, isoH } = bld
+        const ox = ISO_WALL_DX * isoH   // oblique x-offset: rightward
+        const oy = ISO_WALL_DY * isoH   // oblique y-lift: UPWARD (applied as -oy in screen-y)
+
+        // Pick palette from zone-appropriate range so each district has a distinct look
+        const rng = seededRng(Math.round(x) * 7 + Math.round(y) * 11)
+        const zonePalIdxs = ZONE_PALS[bld.zone]
+        const pal = PALETTE[zonePalIdxs[Math.floor(rng() * zonePalIdxs.length)]]
+
+        // Project all 4 footprint (ground-level) corners through the Y-shear.
+        const pTL = isoProject(x,     y,     W, H)
+        const pTR = isoProject(x + w, y,     W, H)
+        const pBR = isoProject(x + w, y + h, W, H)
+        const pBL = isoProject(x,     y + h, W, H)
+
+        // Roof corners = footprint + oblique offset (right & UP in screen space).
+        const rTL = { sx: pTL.sx + ox, sy: pTL.sy - oy }
+        const rTR = { sx: pTR.sx + ox, sy: pTR.sy - oy }
+        const rBR = { sx: pBR.sx + ox, sy: pBR.sy - oy }
+        const rBL = { sx: pBL.sx + ox, sy: pBL.sy - oy }
+
+        // Draw order: far faces first (painter's algorithm within each building)
+        // East wall (shadow — far right face, darkest)
+        ctx.fillStyle = pal[4]
+        fillQuad(
+          pTR.sx, pTR.sy,
+          pBR.sx, pBR.sy,
+          rBR.sx, rBR.sy,
+          rTR.sx, rTR.sy,
+        )
+
+        // ── West wall (lit face — left side, brightest side face) ──
+        ctx.fillStyle = pal[2]
+        fillQuad(
+          pTL.sx, pTL.sy,  // ground top-left
+          pBL.sx, pBL.sy,  // ground bottom-left
+          rBL.sx, rBL.sy,  // roof bottom-left
+          rTL.sx, rTL.sy,  // roof top-left
+        )
+
+        // ── South wall (front face — medium shade) ──
+        ctx.fillStyle = pal[3]
+        fillQuad(
+          pBL.sx, pBL.sy,
+          pBR.sx, pBR.sy,
+          rBR.sx, rBR.sy,
+          rBL.sx, rBL.sy,
+        )
+
+        // Windows on south wall — sparse amber dots, seeded per building
+        if (oy > 10) {
+          const winRows = Math.max(1, Math.floor(oy / 12))
+          const winCols = Math.max(1, Math.floor(w / 15))
+          for (let c = 0; c < winCols; c++) {
+            const wx = pBL.sx + 5 + c * 15
+            for (let r = 0; r < winRows; r++) {
+              if (rng() < 0.22) {  // ~22% of windows lit — sparse night city
+                const vFrac = (r + 0.5) / winRows
+                const hFrac = c / Math.max(winCols - 1, 1)
+                // Wall spans from roof bottom (top of wall) down to ground bottom
+                const wallTopY  = rBL.sy + (rBR.sy - rBL.sy) * hFrac
+                const wallBotY  = pBL.sy + (pBR.sy - pBL.sy) * hFrac
+                const wy = wallTopY + vFrac * (wallBotY - wallTopY)
+                ctx.fillStyle = rng() < 0.12
+                  ? 'rgba(180,220,255,0.55)'   // rare blue-white (fluorescent room)
+                  : 'rgba(250,199,117,0.70)'    // warm amber (most windows)
+                ctx.fillRect(wx, wy - 1.5, 4, 3)
+              }
+            }
+          }
+        }
+
+        // ── Roof (top face) — drawn LAST so it always sits on top of walls ──
+        const roofGrd = ctx.createLinearGradient(rTL.sx, rTL.sy, rBR.sx, rBR.sy)
+        roofGrd.addColorStop(0, pal[0])
+        roofGrd.addColorStop(1, pal[1])
+        ctx.fillStyle = roofGrd
+        fillQuad(rTL.sx, rTL.sy, rTR.sx, rTR.sy, rBR.sx, rBR.sy, rBL.sx, rBL.sy)
+
+        // Roof edge highlight (NW corner — simulates moonlight from upper-left)
+        ctx.strokeStyle = 'rgba(255,255,255,0.11)'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(rBL.sx, rBL.sy); ctx.lineTo(rTL.sx, rTL.sy); ctx.lineTo(rTR.sx, rTR.sy)
+        ctx.stroke()
+
+        // Rooftop detail — faint amber dots (skylights / AC units)
+        for (let c = 0; c < Math.floor((w - 6) / 6); c++) {
+          for (let r = 0; r < Math.floor((h - 6) / 6); r++) {
+            if (rng() < 0.08) {
+              const u = (4 + c * 6) / w   // 0..1 across width
+              const v = (4 + r * 6) / h   // 0..1 across height
+              const rx = rTL.sx + (rTR.sx - rTL.sx) * u + (rBL.sx - rTL.sx) * v
+              const ry = rTL.sy + (rTR.sy - rTL.sy) * u + (rBL.sy - rTL.sy) * v
+              ctx.fillStyle = 'rgba(250,199,117,0.22)'
+              ctx.fillRect(rx, ry, 1.5, 1.5)
+            }
+          }
+        }
+      }  // end for drawList
+    } else {
+      // ── Flat top-down buildings ───────────────────────────────────────────
+      // Building shadows — SE offset creates height illusion
+      for (const bld of visBuildings) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.62)'
+        ctx.fillRect(bld.x + 4, bld.y + 4, bld.w, bld.h)
+      }
+
+      // Building footprints with strong type tints + edge lighting
+      for (const bld of visBuildings) {
+        const bGrd = ctx.createLinearGradient(bld.x, bld.y, bld.x + bld.w, bld.y + bld.h)
+        if (bld.btype === 'residential') {
+          bGrd.addColorStop(0, '#1e1316'); bGrd.addColorStop(1, '#281c22')
+        } else if (bld.btype === 'commercial') {
+          bGrd.addColorStop(0, '#10152a'); bGrd.addColorStop(1, '#171f38')
+        } else {
+          bGrd.addColorStop(0, '#111a18'); bGrd.addColorStop(1, '#172420')
+        }
+        ctx.fillStyle = bGrd
+        ctx.fillRect(bld.x, bld.y, bld.w, bld.h)
+        // NW highlight — simulates light from upper-left
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
+        ctx.fillRect(bld.x, bld.y, bld.w, 1.5)
+        ctx.fillRect(bld.x, bld.y, 1.5, bld.h)
+        // SE shadow edge
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.38)'
+        ctx.fillRect(bld.x + bld.w - 1.5, bld.y, 1.5, bld.h)
+        ctx.fillRect(bld.x, bld.y + bld.h - 1.5, bld.w, 1.5)
+        // Windows
+        const rng = seededRng(bld.x * 13 + bld.y * 31)
+        const winSize = 2
+        const winSpacing = 5
+        const wCols = Math.floor((bld.w - 6) / winSpacing)
+        const wRows = Math.floor((bld.h - 6) / winSpacing)
+        if (wCols > 0 && wRows > 0) {
+          for (let c = 0; c < wCols; c++) {
+            for (let r = 0; r < wRows; r++) {
+              if (rng() < 0.13) {
+                ctx.fillStyle = 'rgba(250, 199, 117, 0.25)'
+                ctx.fillRect(bld.x + 4 + c * winSpacing, bld.y + 4 + r * winSpacing, winSize, winSize)
+              }
             }
           }
         }
       }
     }
 
-    // Roads: sidewalk strip → asphalt → faint centre highlight → dashed line
-    if (ISO_MODE) {
-      // Iso mode: draw each road layer as a filled parallelogram quad
-      ctx.fillStyle = '#131420'  // sidewalk
-      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 22, W, H)
-      ctx.fillStyle = '#0d0e17'  // asphalt
-      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 15, W, H)
-      ctx.fillStyle = '#111222'  // faint centre highlight
-      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 5, W, H)
-      ctx.fillStyle = '#32324e'  // centre line (solid thin strip in iso — dashes don't project cleanly)
-      for (const s of streetsRef.current) drawRoadQuad(ctx, s, 0.5, W, H)
-    } else {
+    // Roads: flat mode only (ISO roads already drawn above before buildings)
+    if (!ISO_MODE) {
       ctx.strokeStyle = '#131420'  // sidewalk (slightly lighter than terrain)
       ctx.lineWidth = 44
       for (const s of streetsRef.current) {
@@ -781,9 +1120,8 @@ export default function CitySimulator({
       ctx.setLineDash([])
     }
 
-    // Crosswalks and roundabout use fillRect/arc and don't project to iso — skip in iso mode
+    // Flat-mode crosswalks and roundabout (ISO crosswalks drawn earlier, before depth sort)
     if (!ISO_MODE) {
-      // Crosswalks — zebra stripes at all intersections
       ctx.fillStyle = 'rgba(200, 205, 240, 0.14)'
       streetPosRef.current.cols.forEach(ix => {
         streetPosRef.current.rows.forEach(iy => {
@@ -811,25 +1149,21 @@ export default function CitySimulator({
       ctx.beginPath(); ctx.arc(rcx - 1, rcy - 1, 3, 0, Math.PI * 2); ctx.fill()
     }
 
-    // Trees along sidewalks — 4-ring canopy, slightly smaller
-    for (const t of visTrees) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.42)'
-      ctx.beginPath(); ctx.arc(t.x + 2, t.y + 2, 8, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = 'rgba(8, 42, 11, 0.97)'
-      ctx.beginPath(); ctx.arc(t.x, t.y, 8, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = 'rgba(15, 65, 20, 0.88)'
-      ctx.beginPath(); ctx.arc(t.x - 1, t.y - 1, 5.5, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = 'rgba(26, 95, 34, 0.52)'
-      ctx.beginPath(); ctx.arc(t.x - 2, t.y - 2, 3, 0, Math.PI * 2); ctx.fill()
+    // Trees along sidewalks — flat mode only; ISO trees are in the depth-sorted draw list
+    if (!ISO_MODE) {
+      for (const t of visTrees) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.42)'
+        ctx.beginPath(); ctx.arc(t.x + 2, t.y + 2, 8, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = 'rgba(8, 42, 11, 0.97)'
+        ctx.beginPath(); ctx.arc(t.x, t.y, 8, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = 'rgba(15, 65, 20, 0.88)'
+        ctx.beginPath(); ctx.arc(t.x - 1, t.y - 1, 5.5, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = 'rgba(26, 95, 34, 0.52)'
+        ctx.beginPath(); ctx.arc(t.x - 2, t.y - 2, 3, 0, Math.PI * 2); ctx.fill()
+      }
     }
 
     // Communication mesh — opacity reacts to lamp brightness + amber pulse
-    // Scale glow radius with canvas size so it looks the same on all screen sizes
-    const glowScale = Math.min(W, H) / 580
-    const glowR = (14 + 110) * glowScale + 4  // max possible glow radius + margin
-    const visLamps = lampsRef.current.filter(l =>
-      l.x > vx0 - glowR && l.x < vx1 + glowR && l.y > vy0 - glowR && l.y < vy1 + glowR)
-
     ctx.lineWidth = 1
     const byStreet = new Map<string, Lamp[]>()
     visLamps.forEach(l => {
@@ -848,46 +1182,35 @@ export default function CitySimulator({
       }
     })
 
-    // Lamps + halos — lamps inside roundabout zone are merged into a single center lamp
-    const roundX = W * 0.5, roundY = H * 0.5, roundZone = 40
-    const roundLamps = visLamps.filter(l => Math.hypot(l.x - roundX, l.y - roundY) < roundZone)
-    const roundB = roundLamps.length > 0
-      ? (useBaseline ? MAX_VISUAL_BRI : (roundLamps.reduce((s, l) => s + l.brightness, 0) / roundLamps.length) * MAX_VISUAL_BRI)
-      : baselineRef.current
+    // ── Flat mode halos (no poles, buildings not an issue) ──────────────────
+    if (!ISO_MODE) {
+      const roundX = W * 0.5, roundY = H * 0.5, roundZone = 40
+      const roundLamps = visLamps.filter(l => Math.hypot(l.x - roundX, l.y - roundY) < roundZone)
+      const roundB = roundLamps.length > 0
+        ? (useBaseline ? MAX_VISUAL_BRI : roundLamps.reduce((s, l) => s + l.brightness, 0) / roundLamps.length * MAX_VISUAL_BRI)
+        : baselineRef.current
 
-    for (const l of visLamps) {
-      if (Math.hypot(l.x - roundX, l.y - roundY) < roundZone) continue
-      const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
-      const r = (14 + b * 110) * glowScale
-      const grd = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, r)
-      grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * b})`)
-      grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * b})`)
-      grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.16 * b})`)
-      grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.05 * b})`)
-      grd.addColorStop(1,    'rgba(250, 199, 117, 0)')
-      ctx.fillStyle = grd
-      ctx.beginPath(); ctx.arc(l.x, l.y, r, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = `rgba(255, 230, 170, ${0.5 + 0.5 * b})`
-      ctx.beginPath(); ctx.arc(l.x, l.y, 2.4, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = '#22222a'
-      ctx.beginPath(); ctx.arc(l.x, l.y, 1, 0, Math.PI * 2); ctx.fill()
-    }
-
-    // Single lamp at roundabout center (replaces the nearby street lamps visually)
-    {
-      const r = (14 + roundB * 110) * glowScale
-      const grd = ctx.createRadialGradient(roundX, roundY, 0, roundX, roundY, r)
-      grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * roundB})`)
-      grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * roundB})`)
-      grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.16 * roundB})`)
-      grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.05 * roundB})`)
-      grd.addColorStop(1,    'rgba(250, 199, 117, 0)')
-      ctx.fillStyle = grd
-      ctx.beginPath(); ctx.arc(roundX, roundY, r, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = `rgba(255, 230, 170, ${0.5 + 0.5 * roundB})`
-      ctx.beginPath(); ctx.arc(roundX, roundY, 2.4, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = '#22222a'
-      ctx.beginPath(); ctx.arc(roundX, roundY, 1, 0, Math.PI * 2); ctx.fill()
+      const drawFlatHalo = (hx: number, hy: number, b: number) => {
+        const r = (14 + b * 110) * glowScale
+        const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
+        grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * b})`)
+        grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * b})`)
+        grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.16 * b})`)
+        grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.05 * b})`)
+        grd.addColorStop(1,    'rgba(250, 199, 117, 0)')
+        ctx.fillStyle = grd
+        ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = `rgba(255, 230, 170, ${0.5 + 0.5 * b})`
+        ctx.beginPath(); ctx.arc(hx, hy, 2.2, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#22222a'
+        ctx.beginPath(); ctx.arc(hx, hy, 0.9, 0, Math.PI * 2); ctx.fill()
+      }
+      for (const l of visLamps) {
+        if (Math.hypot(l.x - roundX, l.y - roundY) < roundZone) continue
+        const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
+        drawFlatHalo(l.x, l.y, b)
+      }
+      drawFlatHalo(roundX, roundY, roundB)
     }
 
     for (const a of agentsRef.current) {
