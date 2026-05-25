@@ -481,6 +481,8 @@ export default function App() {
                         value={Math.round(baselinePct * 100)}
                         onChange={e => setBaselinePct(Number(e.target.value) / 100)}
                         onPointerDown={e => e.stopPropagation()}
+                        onTouchStart={e => e.stopPropagation()}
+                        style={{ touchAction: 'none' }}
                       />
                     </div>
                     <div className="slider-col">
@@ -504,6 +506,8 @@ export default function App() {
                         value={lookaheadSec}
                         onChange={e => setLookaheadSec(Number(e.target.value))}
                         onPointerDown={e => e.stopPropagation()}
+                        onTouchStart={e => e.stopPropagation()}
+                        style={{ touchAction: 'none' }}
                       />
                     </div>
                   </div>

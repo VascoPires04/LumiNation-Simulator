@@ -81,7 +81,7 @@ const LAMP_REACH_PED = 60
 const LAMP_REACH_CAR = 25
 const LAMP_REACH_BEHIND_PED = 70
 const LAMP_REACH_BEHIND_CAR = 60
-const MAX_VISUAL_BRI = 0.58  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
+const MAX_VISUAL_BRI = 0.1  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
 // ── Oblique-iso projection ────────────────────────────────────────────────────
@@ -190,9 +190,9 @@ export default function CitySimulator({
   const isMobile = useIsMobile()
 
   // Variant/autoplay refs — readable inside RAF loop without stale closure
-  const variantRef   = useRef(variant);   variantRef.current   = variant
-  const autoplayRef  = useRef(autoplay);  autoplayRef.current  = autoplay
-  const isMobileRef  = useRef(isMobile);  isMobileRef.current  = isMobile
+  const variantRef = useRef(variant); variantRef.current = variant
+  const autoplayRef = useRef(autoplay); autoplayRef.current = autoplay
+  const isMobileRef = useRef(isMobile); isMobileRef.current = isMobile
   // Sparse autoplay timer (seconds until next auto-spawn)
   const sparseTimerRef = useRef(2 + Math.random() * 3)
 
@@ -218,12 +218,12 @@ export default function CitySimulator({
 
   // Controlled pattern: external prop overrides internal state when provided
   const [baselinePctLocal, setBaselinePctLocal] = useState(0.30)
-  const baselinePct    = baselinePctProp  !== undefined ? baselinePctProp  : baselinePctLocal
+  const baselinePct = baselinePctProp !== undefined ? baselinePctProp : baselinePctLocal
   const setBaselinePct = onBaselineChange !== undefined ? onBaselineChange : setBaselinePctLocal
 
   const [lookaheadSecLocal, setLookaheadSecLocal] = useState(4.0)
-  const lookaheadSec    = lookaheadSecProp   !== undefined ? lookaheadSecProp   : lookaheadSecLocal
-  const setLookaheadSec = onLookaheadChange  !== undefined ? onLookaheadChange  : setLookaheadSecLocal
+  const lookaheadSec = lookaheadSecProp !== undefined ? lookaheadSecProp : lookaheadSecLocal
+  const setLookaheadSec = onLookaheadChange !== undefined ? onLookaheadChange : setLookaheadSecLocal
   const [scenario, setScenario] = useState<'manual' | 'quiet' | 'busy' | 'mixed'>('manual')
   const [paused, setPaused] = useState(false)
   const [spawnMode, setSpawnMode] = useState<'ped' | 'car'>('ped')
@@ -366,15 +366,15 @@ export default function CitySimulator({
         if (bW < inset * 2 + 4 || bH < inset * 2 + 4) continue // street zone
 
         // Normalised coords relative to city centre (0,0 = block adj to centre col+row)
-        const normCi = Math.round((x0 - width  * 0.5) / colStep)
+        const normCi = Math.round((x0 - width * 0.5) / colStep)
         const normRi = Math.round((y0 - height * 0.5) / rowStep)
 
         // Assign a district zone to this block
         let zone: BlockZone = 'commercial'
-        if      (normCi === 0  && normRi === 0)                          zone = 'downtown'
-        else if (normCi === 1  && normRi === 0)                          zone = 'mall'
-        else if ((normCi === 0 || normCi === 1) && normRi === -1)        zone = 'civic'
-        else if (Math.abs(normCi) >= 2 || Math.abs(normRi) >= 2)        zone = 'residential'
+        if (normCi === 0 && normRi === 0) zone = 'downtown'
+        else if (normCi === 1 && normRi === 0) zone = 'mall'
+        else if ((normCi === 0 || normCi === 1) && normRi === -1) zone = 'civic'
+        else if (Math.abs(normCi) >= 2 || Math.abs(normRi) >= 2) zone = 'residential'
 
         const rng = seededRng(normCi * 41 + normRi * 13 + 7)
 
@@ -383,11 +383,11 @@ export default function CitySimulator({
         let btype: 'residential' | 'commercial' | 'office'
         // Rectangular buildings: blocks are ~160px wide × ~90px tall so
         // 2-3 cols × 2 rows gives natural wide-rectangle footprints.
-        if      (zone === 'downtown')    { nCols = 2 + Math.floor(rng() * 2); nRows = 2; skipRate = 0.12; btype = 'office' }
-        else if (zone === 'mall')        { nCols = 1; nRows = 1; skipRate = 0;   btype = 'commercial' }
-        else if (zone === 'civic')       { nCols = 1; nRows = 1; skipRate = 0;   btype = 'office' }
+        if (zone === 'downtown') { nCols = 2 + Math.floor(rng() * 2); nRows = 2; skipRate = 0.12; btype = 'office' }
+        else if (zone === 'mall') { nCols = 1; nRows = 1; skipRate = 0; btype = 'commercial' }
+        else if (zone === 'civic') { nCols = 1; nRows = 1; skipRate = 0; btype = 'office' }
         else if (zone === 'residential') { nCols = 2 + Math.floor(rng() * 2); nRows = 2; skipRate = 0.22; btype = 'residential' }
-        else                             { nCols = 2 + Math.floor(rng() * 2); nRows = 2; skipRate = 0.18; btype = 'commercial' }
+        else { nCols = 2 + Math.floor(rng() * 2); nRows = 2; skipRate = 0.18; btype = 'commercial' }
 
         for (let bc = 0; bc < nCols; bc++) {
           for (let br = 0; br < nRows; br++) {
@@ -404,11 +404,11 @@ export default function CitySimulator({
               const isoH = ISO_MODE ? Math.round(
                 isTower
                   ? 100 + rng() * 60                         // tower: 100–160px (≈10–15 fl)
-                  : zone === 'downtown'    ? 28 + rng() * 28 // normal downtown: 28–56px
-                  : zone === 'mall'        ? 10 + rng() * 10 // flat mall: 10–20px
-                  : zone === 'civic'       ? 35 + rng() * 25 // civic: 35–60px
-                  : zone === 'residential' ? 14 + rng() * 18 // houses: 14–32px
-                  :                          18 + rng() * 18 // commercial: 18–36px
+                  : zone === 'downtown' ? 28 + rng() * 28 // normal downtown: 28–56px
+                    : zone === 'mall' ? 10 + rng() * 10 // flat mall: 10–20px
+                      : zone === 'civic' ? 35 + rng() * 25 // civic: 35–60px
+                        : zone === 'residential' ? 14 + rng() * 18 // houses: 14–32px
+                          : 18 + rng() * 18 // commercial: 18–36px
               ) : 0
               buildings.push({ x: x0 + bc * stepX + offX, y: y0 + br * stepY + offY, w: bw, h: bh, btype, isoH, zone })
             }
@@ -560,7 +560,7 @@ export default function CitySimulator({
       const dx = a.vx / sp
       const dy = a.vy / sp
       const lookaheadPx = lookaheadRef.current * 21 * Math.sqrt(sp / PED_SPEED)
-      const reachAhead  = (isCar ? LAMP_REACH_CAR  : LAMP_REACH_PED) + lookaheadPx
+      const reachAhead = (isCar ? LAMP_REACH_CAR : LAMP_REACH_PED) + lookaheadPx
       const reachBehind = ((isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) + lookaheadPx * 1.6) * backScale
       const agentStreet = a.street
 
@@ -658,48 +658,48 @@ export default function CitySimulator({
 
     ctx.fillStyle = 'rgba(0,0,0,0.45)'
     ctx.beginPath()
-    roundRect(ctx, -w/2 + 1, -h/2 + 1.5, w, h, 2)
+    roundRect(ctx, -w / 2 + 1, -h / 2 + 1.5, w, h, 2)
     ctx.fill()
 
     ctx.fillStyle = a.color || '#888'
     ctx.beginPath()
-    roundRect(ctx, -w/2, -h/2, w, h, 2.2)
+    roundRect(ctx, -w / 2, -h / 2, w, h, 2.2)
     ctx.fill()
 
     ctx.fillStyle = 'rgba(255,255,255,0.18)'
     ctx.beginPath()
-    roundRect(ctx, -w/2 + 3, -h/2 + 1.5, w - 8, h - 3, 1.5)
+    roundRect(ctx, -w / 2 + 3, -h / 2 + 1.5, w - 8, h - 3, 1.5)
     ctx.fill()
 
     ctx.fillStyle = `rgba(180,210,240,${0.35 + 0.4 * brightness})`
     ctx.beginPath()
-    ctx.moveTo(w/2 - 5, -h/2 + 1.5)
-    ctx.lineTo(w/2 - 2.5, -h/2 + 1.5)
-    ctx.lineTo(w/2 - 2.5, h/2 - 1.5)
-    ctx.lineTo(w/2 - 5, h/2 - 1.5)
+    ctx.moveTo(w / 2 - 5, -h / 2 + 1.5)
+    ctx.lineTo(w / 2 - 2.5, -h / 2 + 1.5)
+    ctx.lineTo(w / 2 - 2.5, h / 2 - 1.5)
+    ctx.lineTo(w / 2 - 5, h / 2 - 1.5)
     ctx.closePath()
     ctx.fill()
 
     // Headlights cone
-    const grd = ctx.createRadialGradient(w/2 + 2, 0, 0, w/2 + 2, 0, 28)
+    const grd = ctx.createRadialGradient(w / 2 + 2, 0, 0, w / 2 + 2, 0, 28)
     grd.addColorStop(0, `rgba(255,240,200,${0.55 * (0.7 + 0.3 * brightness)})`)
     grd.addColorStop(1, 'rgba(255,240,200,0)')
     ctx.fillStyle = grd
     ctx.beginPath()
-    ctx.moveTo(w/2, -h/2 + 1)
-    ctx.lineTo(w/2 + 28, -h * 1.2)
-    ctx.lineTo(w/2 + 28, h * 1.2)
-    ctx.lineTo(w/2, h/2 - 1)
+    ctx.moveTo(w / 2, -h / 2 + 1)
+    ctx.lineTo(w / 2 + 28, -h * 1.2)
+    ctx.lineTo(w / 2 + 28, h * 1.2)
+    ctx.lineTo(w / 2, h / 2 - 1)
     ctx.closePath()
     ctx.fill()
 
     ctx.fillStyle = 'rgba(255,250,220,0.9)'
-    ctx.beginPath(); ctx.arc(w/2 - 0.5, -h/2 + 1.8, 0.9, 0, Math.PI * 2); ctx.fill()
-    ctx.beginPath(); ctx.arc(w/2 - 0.5, h/2 - 1.8, 0.9, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(w / 2 - 0.5, -h / 2 + 1.8, 0.9, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(w / 2 - 0.5, h / 2 - 1.8, 0.9, 0, Math.PI * 2); ctx.fill()
 
     ctx.fillStyle = 'rgba(220,40,40,0.8)'
-    ctx.beginPath(); ctx.arc(-w/2 + 0.5, -h/2 + 1.8, 0.7, 0, Math.PI * 2); ctx.fill()
-    ctx.beginPath(); ctx.arc(-w/2 + 0.5, h/2 - 1.8, 0.7, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(-w / 2 + 0.5, -h / 2 + 1.8, 0.7, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(-w / 2 + 0.5, h / 2 - 1.8, 0.7, 0, Math.PI * 2); ctx.fill()
 
     ctx.restore()
   }
@@ -768,10 +768,10 @@ export default function CitySimulator({
     const park = parkRef.current
     if (park) {
       if (ISO_MODE) {
-        const pTL = isoProject(park.x,           park.y,           W, H)
-        const pTR = isoProject(park.x + park.w,  park.y,           W, H)
-        const pBR = isoProject(park.x + park.w,  park.y + park.h,  W, H)
-        const pBL = isoProject(park.x,            park.y + park.h,  W, H)
+        const pTL = isoProject(park.x, park.y, W, H)
+        const pTR = isoProject(park.x + park.w, park.y, W, H)
+        const pBR = isoProject(park.x + park.w, park.y + park.h, W, H)
+        const pBL = isoProject(park.x, park.y + park.h, W, H)
         const pg = ctx.createLinearGradient(pTL.sx, pTL.sy, pBR.sx, pBR.sy)
         pg.addColorStop(0, '#0a1e0c')
         pg.addColorStop(1, '#091508')
@@ -831,11 +831,11 @@ export default function CitySimulator({
         ['#1e2c1a', '#141e12', '#263620', '#1a2818', '#101c10'],
       ]
       const ZONE_PALS: Record<BlockZone, number[]> = {
-        downtown:    [0, 1, 4, 5, 4, 5],
-        mall:        [0, 1, 2, 0, 2, 3],
-        civic:       [0, 1, 4, 7, 0, 1],
+        downtown: [0, 1, 4, 5, 4, 5],
+        mall: [0, 1, 2, 0, 2, 3],
+        civic: [0, 1, 4, 7, 0, 1],
         residential: [0, 1, 2, 3, 4, 5, 6, 7],
-        commercial:  [0, 1, 2, 3, 4, 5, 6, 7],
+        commercial: [0, 1, 2, 3, 4, 5, 6, 7],
       }
 
       const fillQuad = (
@@ -851,10 +851,10 @@ export default function CitySimulator({
       // ISO crosswalks — before depth sort so buildings correctly occlude them
       if (ISO_MODE) {
         const drawIsoRect2 = (wx: number, wy: number, rw: number, rh: number) => {
-          const tl = isoProject(wx,      wy,      W, H)
-          const tr = isoProject(wx + rw, wy,      W, H)
+          const tl = isoProject(wx, wy, W, H)
+          const tr = isoProject(wx + rw, wy, W, H)
           const br = isoProject(wx + rw, wy + rh, W, H)
-          const bl = isoProject(wx,      wy + rh, W, H)
+          const bl = isoProject(wx, wy + rh, W, H)
           ctx.beginPath()
           ctx.moveTo(tl.sx, tl.sy); ctx.lineTo(tr.sx, tr.sy)
           ctx.lineTo(br.sx, br.sy); ctx.lineTo(bl.sx, bl.sy)
@@ -879,9 +879,9 @@ export default function CitySimulator({
       // Each lamp's depth key = its world (x+y). Building depth key = (x+y) of footprint.
       type DrawItem =
         | { kind: 'building'; depth: number; bld: Building }
-        | { kind: 'lamp';     depth: number; wx: number; wy: number; b: number; ph: number }
-        | { kind: 'tree';     depth: number; wx: number; wy: number }
-        | { kind: 'agent';    depth: number; agent: Agent; bri: number }
+        | { kind: 'lamp'; depth: number; wx: number; wy: number; b: number; ph: number }
+        | { kind: 'tree'; depth: number; wx: number; wy: number }
+        | { kind: 'agent'; depth: number; agent: Agent; bri: number }
 
       const drawList: DrawItem[] = []
       for (const bld of visBuildings)
@@ -918,17 +918,20 @@ export default function CitySimulator({
           ctx.strokeStyle = 'rgba(180, 185, 210, 0.75)'; ctx.lineWidth = 0.9
           ctx.beginPath(); ctx.moveTo(p.sx, p.sy); ctx.lineTo(hx, hy); ctx.stroke()
           ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + 3, hy - 2); ctx.stroke()
-          // Halo
-          const r = (14 + b * 110) * glowScale
-          const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
-          grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * b})`)
-          grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * b})`)
-          grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.16 * b})`)
-          grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.05 * b})`)
-          grd.addColorStop(1,    'rgba(250, 199, 117, 0)')
-          ctx.fillStyle = grd
-          ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill()
-          ctx.fillStyle = `rgba(255, 230, 170, ${0.5 + 0.5 * b})`
+          // Halo — normalised to 0-1 for linear visual response
+          const n = b / MAX_VISUAL_BRI
+          if (n > 0.01) {
+            const r = n * 45 * glowScale
+            const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
+            grd.addColorStop(0, `rgba(255, 224, 155, ${0.88 * n})`)
+            grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.50 * n})`)
+            grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.22 * n})`)
+            grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.07 * n})`)
+            grd.addColorStop(1, 'rgba(250, 199, 117, 0)')
+            ctx.fillStyle = grd
+            ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill()
+          }
+          ctx.fillStyle = `rgba(255, 230, 170, ${n})`
           ctx.beginPath(); ctx.arc(hx, hy, 2.2, 0, Math.PI * 2); ctx.fill()
           ctx.fillStyle = '#22222a'
           ctx.beginPath(); ctx.arc(hx, hy, 0.9, 0, Math.PI * 2); ctx.fill()
@@ -981,10 +984,10 @@ export default function CitySimulator({
         const pal = PALETTE[zonePalIdxs[Math.floor(rng() * zonePalIdxs.length)]]
 
         // Project all 4 footprint (ground-level) corners through the Y-shear.
-        const pTL = isoProject(x,     y,     W, H)
-        const pTR = isoProject(x + w, y,     W, H)
+        const pTL = isoProject(x, y, W, H)
+        const pTR = isoProject(x + w, y, W, H)
         const pBR = isoProject(x + w, y + h, W, H)
-        const pBL = isoProject(x,     y + h, W, H)
+        const pBL = isoProject(x, y + h, W, H)
 
         // Roof corners = footprint + oblique offset (right & UP in screen space).
         const rTL = { sx: pTL.sx + ox, sy: pTL.sy - oy }
@@ -1031,8 +1034,8 @@ export default function CitySimulator({
                 const vFrac = (r + 0.5) / winRows
                 const hFrac = c / Math.max(winCols - 1, 1)
                 // Wall spans from roof bottom (top of wall) down to ground bottom
-                const wallTopY  = rBL.sy + (rBR.sy - rBL.sy) * hFrac
-                const wallBotY  = pBL.sy + (pBR.sy - pBL.sy) * hFrac
+                const wallTopY = rBL.sy + (rBR.sy - rBL.sy) * hFrac
+                const wallBotY = pBL.sy + (pBR.sy - pBL.sy) * hFrac
                 const wy = wallTopY + vFrac * (wallBotY - wallTopY)
                 ctx.fillStyle = rng() < 0.12
                   ? 'rgba(180,220,255,0.55)'   // rare blue-white (fluorescent room)
@@ -1215,16 +1218,19 @@ export default function CitySimulator({
         : baselineRef.current
 
       const drawFlatHalo = (hx: number, hy: number, b: number) => {
-        const r = (14 + b * 110) * glowScale
-        const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
-        grd.addColorStop(0,    `rgba(255, 224, 155, ${0.62 * b})`)
-        grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.40 * b})`)
-        grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.16 * b})`)
-        grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.05 * b})`)
-        grd.addColorStop(1,    'rgba(250, 199, 117, 0)')
-        ctx.fillStyle = grd
-        ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = `rgba(255, 230, 170, ${0.5 + 0.5 * b})`
+        const n = b / MAX_VISUAL_BRI  // normalise to 0-1 for linear visual response
+        if (n > 0.01) {
+          const r = n * 120 * glowScale
+          const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
+          grd.addColorStop(0, `rgba(255, 224, 155, ${0.88 * n})`)
+          grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.56 * n})`)
+          grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.22 * n})`)
+          grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.07 * n})`)
+          grd.addColorStop(1, 'rgba(250, 199, 117, 0)')
+          ctx.fillStyle = grd
+          ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill()
+        }
+        ctx.fillStyle = `rgba(255, 230, 170, ${n})`
         ctx.beginPath(); ctx.arc(hx, hy, 2.2, 0, Math.PI * 2); ctx.fill()
         ctx.fillStyle = '#22222a'
         ctx.beginPath(); ctx.arc(hx, hy, 0.9, 0, Math.PI * 2); ctx.fill()
@@ -1780,7 +1786,7 @@ export default function CitySimulator({
     let lastAmbientFrame = 0
     let raf = 0
     let statsTick = 0
-    let busTick   = 0   // separate 2Hz gate for simBus (dashboard history)
+    let busTick = 0   // separate 2Hz gate for simBus (dashboard history)
 
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop)
@@ -1800,7 +1806,7 @@ export default function CitySimulator({
         }
       }
 
-if (pausedRef.current) return
+      if (pausedRef.current) return
       handleScenario(dt)
       const power = step(dt)
       draw(ctx)
@@ -1814,8 +1820,8 @@ if (pausedRef.current) return
         const pct = full > 0 ? Math.round((power.luminationPower / full) * 100) : 0
         const instSavedW = full - power.luminationPower
         const annualKwh = (instSavedW / 1000) * HOURS_PER_YEAR_NIGHT
-        const eurSavedNow  = Math.round(annualKwh * PRICE_PER_KWH)
-        const co2SavedNow  = Math.round(annualKwh * CO2_PER_KWH)
+        const eurSavedNow = Math.round(annualKwh * PRICE_PER_KWH)
+        const co2SavedNow = Math.round(annualKwh * CO2_PER_KWH)
         const pedsNow = agentsRef.current.filter(a => a.type === 'ped').length
         const carsNow = agentsRef.current.filter(a => a.type === 'car').length
         setStats({
@@ -1844,7 +1850,7 @@ if (pausedRef.current) return
           powerW: power.luminationPower,
           baselineW: full2,
           eurSaved: Math.round(annKwh2 * PRICE_PER_KWH),
-          co2Kg:    Math.round(annKwh2 * CO2_PER_KWH),
+          co2Kg: Math.round(annKwh2 * CO2_PER_KWH),
           kwhSaved: kwhSavedRef.current,
           peds: agentsRef.current.filter(a => a.type === 'ped').length,
           cars: agentsRef.current.filter(a => a.type === 'car').length,
@@ -1882,7 +1888,7 @@ if (pausedRef.current) return
       if (a && a.type === 'ped' && !trackedRef.current) trackedRef.current = a
     }
     return () => { if (externalSpawnRef) externalSpawnRef.current = null }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // stable: spawnAgent uses only refs internally
 
   useEffect(() => {
@@ -1891,7 +1897,7 @@ if (pausedRef.current) return
       targetZoomRef.current = Math.min(3, Math.max(0.4, targetZoomRef.current * delta))
     }
     return () => { if (externalZoomRef) externalZoomRef.current = null }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Convert screen coordinates to simulation coordinates (accounting for zoom + ISO projection)
@@ -2045,24 +2051,24 @@ if (pausedRef.current) return
         {(() => {
           const scale = lisbon ? 70_000 / Math.max(stats.lampCount, 1) : 1
           const scaledPower = stats.powerNow * scale
-          const scaledFull  = stats.fullPower * scale
-          const scaledEur   = stats.eurSaved  * scale
-          const scaledCo2   = stats.co2Saved  * scale
-          const scaledKwh   = stats.kwhSaved  * scale
+          const scaledFull = stats.fullPower * scale
+          const scaledEur = stats.eurSaved * scale
+          const scaledCo2 = stats.co2Saved * scale
+          const scaledKwh = stats.kwhSaved * scale
 
           const fmtW = (w: number) =>
             w >= 1_000_000 ? (w / 1_000_000).toFixed(2) + ' MW'
-            : w >= 1_000   ? (w / 1_000).toFixed(1) + ' kW'
-            : Math.round(w) + ' W'
+              : w >= 1_000 ? (w / 1_000).toFixed(1) + ' kW'
+                : Math.round(w) + ' W'
 
           const fmtEur = (e: number) =>
             e >= 1_000_000 ? '€' + (e / 1_000_000).toFixed(1) + 'M'
-            : e >= 1_000   ? '€' + (e / 1_000).toFixed(0) + 'k'
-            : '€' + Math.round(e).toLocaleString()
+              : e >= 1_000 ? '€' + (e / 1_000).toFixed(0) + 'k'
+                : '€' + Math.round(e).toLocaleString()
 
           const fmtCo2 = (kg: number) =>
             kg >= 1_000 ? (kg / 1_000).toFixed(1) + ' t CO₂/yr'
-            : Math.round(kg).toLocaleString() + ' kg CO₂/yr'
+              : Math.round(kg).toLocaleString() + ' kg CO₂/yr'
 
           return <>
             {lisbon && (
