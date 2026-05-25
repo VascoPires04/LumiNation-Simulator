@@ -1035,24 +1035,24 @@ export default function CitySimulator({
           rBL.sx, rBL.sy,
         )
 
-        // Windows on south wall — skip on mobile (too many fillRect calls)
-        if (!mob && oy > 10) {
-          const winRows = Math.max(1, Math.floor(oy / 12))
-          const winCols = Math.max(1, Math.floor(w / 15))
+        // Windows on south wall — bilinear placement follows the parallelogram
+        if (oy > 6) {
+          const winRows = Math.max(2, Math.floor(oy / 7))
+          const winCols = Math.max(2, Math.floor(w / 9))
           for (let c = 0; c < winCols; c++) {
-            const wx = pBL.sx + 5 + c * 15
+            const hFrac = (c + 0.5) / winCols
+            const wallTopY = rBL.sy + (rBR.sy - rBL.sy) * hFrac
+            const wallBotY = pBL.sy + (pBR.sy - pBL.sy) * hFrac
             for (let r = 0; r < winRows; r++) {
-              if (rng() < 0.22) {  // ~22% of windows lit — sparse night city
+              if (rng() < 0.40) {
                 const vFrac = (r + 0.5) / winRows
-                const hFrac = c / Math.max(winCols - 1, 1)
-                // Wall spans from roof bottom (top of wall) down to ground bottom
-                const wallTopY = rBL.sy + (rBR.sy - rBL.sy) * hFrac
-                const wallBotY = pBL.sy + (pBR.sy - pBL.sy) * hFrac
+                // Bilinear x: follow the parallelogram — horizontal + shear from roof overhang
+                const wx = pBL.sx + hFrac * (pBR.sx - pBL.sx) + (1 - vFrac) * ox
                 const wy = wallTopY + vFrac * (wallBotY - wallTopY)
-                ctx.fillStyle = rng() < 0.12
-                  ? 'rgba(180,220,255,0.55)'   // rare blue-white (fluorescent room)
-                  : 'rgba(250,199,117,0.70)'    // warm amber (most windows)
-                ctx.fillRect(wx, wy - 1.5, 4, 3)
+                ctx.fillStyle = rng() < 0.15
+                  ? 'rgba(180,220,255,0.65)'
+                  : 'rgba(250,199,117,0.85)'
+                ctx.fillRect(wx - 2, wy - 1.5, 4, 3)
               }
             }
           }
