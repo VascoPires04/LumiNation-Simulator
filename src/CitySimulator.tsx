@@ -471,7 +471,7 @@ export default function CitySimulator({
       const d = Math.hypot(px - qx, py - qy)
       if (d < bestD) { bestD = d; best = { s, qx, qy } }
     }
-    return bestD < 50 ? best : null
+    return best
   }
 
   function spawnAgent(px: number, py: number, type: AgentType, forceSign?: number): Agent | null {
@@ -613,43 +613,48 @@ export default function CitySimulator({
     ctx.arcTo(x, y, x + w, y, r)
   }
 
-  function drawPedestrian(ctx: CanvasRenderingContext2D, a: Agent, brightness: number) {
-    const sw = Math.sin(a.stride) * 2.5
-    const cw = Math.cos(a.stride) * 1.8
+  function drawPedestrian(ctx: CanvasRenderingContext2D, a: Agent, brightness: number, px?: number, py?: number) {
+    const x = px ?? a.x, y = py ?? a.y
+    const sw = Math.sin(a.stride) * 5
+    const cw = Math.cos(a.stride) * 3.5
     const skin = `rgba(240,200,160,${0.6 + 0.4 * brightness})`
     const body = `rgba(200,210,230,${0.55 + 0.45 * brightness})`
 
+    // Arms
     ctx.strokeStyle = body
-    ctx.lineWidth = 1.4
+    ctx.lineWidth = 2.5
     ctx.beginPath()
-    ctx.moveTo(a.x - 3 - sw * 0.4, a.y); ctx.lineTo(a.x + 3 + sw * 0.4, a.y)
+    ctx.moveTo(x - 6 - sw * 0.4, y); ctx.lineTo(x + 6 + sw * 0.4, y)
     ctx.stroke()
 
-    ctx.lineWidth = 1.2
+    // Legs
+    ctx.lineWidth = 2.2
     ctx.strokeStyle = `rgba(170,180,200,${0.5 + 0.5 * brightness})`
     ctx.beginPath()
-    ctx.moveTo(a.x, a.y + 1); ctx.lineTo(a.x + cw * 0.5, a.y + 4)
-    ctx.moveTo(a.x, a.y + 1); ctx.lineTo(a.x - cw * 0.5, a.y + 4)
+    ctx.moveTo(x, y + 2); ctx.lineTo(x + cw * 0.9, y + 8)
+    ctx.moveTo(x, y + 2); ctx.lineTo(x - cw * 0.9, y + 8)
     ctx.stroke()
 
+    // Body
     ctx.fillStyle = body
     ctx.beginPath()
-    ctx.ellipse(a.x, a.y, 2.4, 2.8, 0, 0, Math.PI * 2)
+    ctx.ellipse(x, y, 5, 6, 0, 0, Math.PI * 2)
     ctx.fill()
 
+    // Head
     ctx.fillStyle = skin
     ctx.beginPath()
-    ctx.arc(a.x, a.y - 1.5, 1.8, 0, Math.PI * 2)
+    ctx.arc(x, y - 3.5, 3.8, 0, Math.PI * 2)
     ctx.fill()
   }
 
-  function drawCar(ctx: CanvasRenderingContext2D, a: Agent, brightness: number) {
-    const angle = Math.atan2(a.vy, a.vx)
+  function drawCar(ctx: CanvasRenderingContext2D, a: Agent, brightness: number, px?: number, py?: number, screenAngle?: number) {
+    const angle = screenAngle ?? Math.atan2(a.vy, a.vx)
     ctx.save()
-    ctx.translate(a.x, a.y)
+    ctx.translate(px ?? a.x, py ?? a.y)
     ctx.rotate(angle)
 
-    const w = 16, h = 8
+    const w = 36, h = 16
 
     ctx.fillStyle = 'rgba(0,0,0,0.45)'
     ctx.beginPath()
@@ -876,6 +881,7 @@ export default function CitySimulator({
         | { kind: 'building'; depth: number; bld: Building }
         | { kind: 'lamp';     depth: number; wx: number; wy: number; b: number; ph: number }
         | { kind: 'tree';     depth: number; wx: number; wy: number }
+        | { kind: 'agent';    depth: number; agent: Agent; bri: number }
 
       const drawList: DrawItem[] = []
       for (const bld of visBuildings)
@@ -886,6 +892,10 @@ export default function CitySimulator({
       }
       for (const t of visTrees)
         drawList.push({ kind: 'tree', depth: t.x + t.y, wx: t.x, wy: t.y })
+      for (const a of agentsRef.current) {
+        const bri = useBaseline ? MAX_VISUAL_BRI : localBrightnessAt(a.x, a.y) * MAX_VISUAL_BRI
+        drawList.push({ kind: 'agent', depth: a.x + a.y, agent: a, bri })
+      }
       // Roundabout lamps
       rCols0.forEach((cx, ci) => {
         rRows0.forEach((cy, ri) => {
@@ -942,6 +952,20 @@ export default function CitySimulator({
           ctx.beginPath(); ctx.ellipse(tx - 1, ty - 16, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill()
           ctx.fillStyle = 'rgba(26,95,34,0.65)'
           ctx.beginPath(); ctx.ellipse(tx - 1, ty - 21, 4, 2.5, 0, 0, Math.PI * 2); ctx.fill()
+          continue
+        }
+
+        // kind === 'agent'
+        if (item.kind === 'agent') {
+          const a = item.agent
+          const { sx, sy } = isoProject(a.x, a.y, W, H)
+          if (a.type === 'car') {
+            // Adjust screen-space angle for the Y-shear
+            const isoAngle = Math.atan2(a.vy - a.vx * ISO_SHEAR, a.vx)
+            drawCar(ctx, a, item.bri, sx, sy, isoAngle)
+          } else {
+            drawPedestrian(ctx, a, item.bri, sx, sy)
+          }
           continue
         }
 
@@ -1213,10 +1237,12 @@ export default function CitySimulator({
       drawFlatHalo(roundX, roundY, roundB)
     }
 
-    for (const a of agentsRef.current) {
-      const bri = useBaseline ? MAX_VISUAL_BRI : localBrightnessAt(a.x, a.y) * MAX_VISUAL_BRI
-      if (a.type === 'car') drawCar(ctx, a, bri)
-      else drawPedestrian(ctx, a, bri)
+    if (!ISO_MODE) {
+      for (const a of agentsRef.current) {
+        const bri = useBaseline ? MAX_VISUAL_BRI : localBrightnessAt(a.x, a.y) * MAX_VISUAL_BRI
+        if (a.type === 'car') drawCar(ctx, a, bri)
+        else drawPedestrian(ctx, a, bri)
+      }
     }
 
     // Atmospheric vignette — centered on screen center, covers full virtual area
@@ -1868,15 +1894,17 @@ if (pausedRef.current) return
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Convert screen coordinates to simulation coordinates (accounting for zoom)
+  // Convert screen coordinates to simulation coordinates (accounting for zoom + ISO projection)
   const toSimCoords = (screenX: number, screenY: number) => {
     const { W, H } = dimsRef.current
     const z = zoomRef.current
     const cx = W / 2, cy = H / 2
-    return {
-      x: (screenX - cx) / z + cx,
-      y: (screenY - cy) / z + cy,
-    }
+    // 1. Undo zoom transform
+    const zx = (screenX - cx) / z + cx
+    const zy = (screenY - cy) / z + cy
+    // 2. Undo ISO shear
+    const { wx, wy } = isoUnproject(zx, zy, W, H)
+    return { x: wx, y: wy }
   }
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
