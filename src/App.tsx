@@ -27,7 +27,7 @@ type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 
 // Curtain lift completes over LIFT px of scroll
 const LIFT = 600
-const LISBON_LAMPS = 70_000
+const CITY_LAMPS = 100_000
 
 export default function App() {
   const isMobile = useIsMobile()
@@ -181,7 +181,7 @@ export default function App() {
   const simHistory = useSimHistory(60)
   const latest     = simHistory[simHistory.length - 1]
   const lisbonEur = latest
-    ? latest.eurSaved * (LISBON_LAMPS / Math.max(latest.lampCount, 1))
+    ? latest.eurSaved * (CITY_LAMPS / Math.max(latest.lampCount, 1))
     : 0
   const fmtEur = lisbonEur >= 1_000_000
     ? `€${(lisbonEur / 1_000_000).toFixed(1)}M`
@@ -419,7 +419,7 @@ export default function App() {
               <HeadlineMetric
                 value={fmtEur}
                 label="saved per year"
-                sublabel="LISBON · 70K LAMPS"
+                sublabel="CITY · 100K LAMPS"
               />
             </motion.div>
 

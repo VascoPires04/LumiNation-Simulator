@@ -11,7 +11,7 @@ import { select } from 'd3-selection'
 import { area, curveMonotoneX, line } from 'd3-shape'
 import { SimSample } from '../sim-bus'
 
-const LISBON = 70_000
+const CITY_LAMPS = 100_000
 const AMBER  = '#FF9500'
 const ORANGE = '#C85000'
 
@@ -57,7 +57,7 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
 
   const data = useMemo<Point[]>(() => {
     return history.map(s => {
-      const scale = LISBON / Math.max(s.lampCount, 1)
+      const scale = CITY_LAMPS / Math.max(s.lampCount, 1)
       return {
         t:        new Date(s.t),
         lumi:     s.powerW    * scale,

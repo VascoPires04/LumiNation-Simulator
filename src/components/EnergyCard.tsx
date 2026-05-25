@@ -7,7 +7,7 @@ import { max } from 'd3-array'
 import type { SimSample } from '../sim-bus'
 import type { SimTotals } from '../hooks/useSimTotals'
 
-const LISBON = 70_000
+const CITY_LAMPS = 100_000
 const AMBER  = '#FAC775'
 
 interface Props {
@@ -129,7 +129,7 @@ export default function EnergyCard({ history, totals, isMobile, expandable = fal
   }, [isMobile])
 
   const kwhValues = useMemo(() =>
-    history.map(s => s.kwhSaved * (LISBON / Math.max(s.lampCount, 1))),
+    history.map(s => s.kwhSaved * (CITY_LAMPS / Math.max(s.lampCount, 1))),
     [history]
   )
   const elapsed = Math.round(history.length / 2)

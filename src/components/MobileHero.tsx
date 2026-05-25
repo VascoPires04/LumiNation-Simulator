@@ -36,7 +36,7 @@ export default function MobileHero({ setMode, fmtEur, sessionCo2Kg }: Props) {
 
       {/* Row 3: headline metric */}
       <div className="mobile-hero-metric">
-        <div className="mobile-metric-label">LISBON · SAVED ANNUALLY</div>
+        <div className="mobile-metric-label">CITY · SAVED ANNUALLY</div>
         <div className="mobile-metric-value">{fmtEur}</div>
         <div className="mobile-metric-sublabel">{co2Label}</div>
       </div>

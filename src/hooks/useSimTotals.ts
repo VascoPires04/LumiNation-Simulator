@@ -1,11 +1,11 @@
 // useSimTotals — subscribes to simBus and returns the latest sample
-// with Lisbon scaling (70 000 lamps) already applied.
+// with city scaling (100 000 lamps) already applied.
 // Re-renders at ~2Hz matching the simBus emit rate.
 
 import { useEffect, useState } from 'react'
 import { simBus, SimSample } from '../sim-bus'
 
-const LISBON_LAMPS = 70_000
+const CITY_LAMPS = 100_000
 
 export interface SimTotals {
   powerW:        number   // Lisbon-scaled current power (W)
@@ -26,7 +26,7 @@ export function useSimTotals(): SimTotals | null {
 
   if (!latest) return null
 
-  const scale = LISBON_LAMPS / Math.max(latest.lampCount, 1)
+  const scale = CITY_LAMPS / Math.max(latest.lampCount, 1)
   return {
     powerW:         latest.powerW   * scale,
     baselineW:      latest.baselineW * scale,

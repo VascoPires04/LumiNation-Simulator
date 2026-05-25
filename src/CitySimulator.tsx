@@ -401,14 +401,15 @@ export default function CitySimulator({
             const offX = 2, offY = 2
 
             if (bw > 4 && bh > 4) {
+              const mob = isMobileRef.current
               const isoH = ISO_MODE ? Math.round(
                 isTower
-                  ? 100 + rng() * 60                         // tower: 100–160px (≈10–15 fl)
-                  : zone === 'downtown' ? 28 + rng() * 28 // normal downtown: 28–56px
-                    : zone === 'mall' ? 10 + rng() * 10 // flat mall: 10–20px
-                      : zone === 'civic' ? 35 + rng() * 25 // civic: 35–60px
-                        : zone === 'residential' ? 14 + rng() * 18 // houses: 14–32px
-                          : 18 + rng() * 18 // commercial: 18–36px
+                  ? (mob ? 50 + rng() * 30 : 100 + rng() * 60)   // tower: 50–80 mobile / 100–160 desktop
+                  : zone === 'downtown' ? (mob ? 18 + rng() * 18 : 28 + rng() * 28)
+                    : zone === 'mall' ? (mob ? 7 + rng() * 7 : 10 + rng() * 10)
+                      : zone === 'civic' ? (mob ? 24 + rng() * 18 : 35 + rng() * 25)
+                        : zone === 'residential' ? (mob ? 10 + rng() * 12 : 14 + rng() * 18)
+                          : (mob ? 12 + rng() * 14 : 18 + rng() * 18)
               ) : 0
               buildings.push({ x: x0 + bc * stepX + offX, y: y0 + br * stepY + offY, w: bw, h: bh, btype, isoH, zone })
             }
@@ -2075,7 +2076,7 @@ export default function CitySimulator({
 
       {variant !== 'ambient' && showFullSidebar && <aside className="sidebar">
         {(() => {
-          const scale = lisbon ? 70_000 / Math.max(stats.lampCount, 1) : 1
+          const scale = lisbon ? 100_000 / Math.max(stats.lampCount, 1) : 1
           const scaledPower = stats.powerNow * scale
           const scaledFull = stats.fullPower * scale
           const scaledEur = stats.eurSaved * scale
@@ -2100,7 +2101,7 @@ export default function CitySimulator({
             {lisbon && (
               <div style={{ background: '#FAC77522', border: '1px solid #FAC77566', borderRadius: 8, padding: '6px 10px', marginBottom: 6, fontSize: 12, color: '#FAC775', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 15 }}>🏙</span>
-                <span><strong>Lisbon scale</strong> · 70,000 lamps</span>
+                <span><strong>City scale</strong> · 100,000 lamps</span>
               </div>
             )}
 
@@ -2192,7 +2193,7 @@ export default function CitySimulator({
                 transition: 'all 0.2s',
               }}
             >
-              🏙 {lisbon ? 'Lisbon scale ON · 70k lamps' : 'Lisbon scale (70,000 lamps)'}
+              🏙 {lisbon ? 'City scale ON · 100k lamps' : 'City scale (100,000 lamps)'}
             </button>
           </div>
         </div>

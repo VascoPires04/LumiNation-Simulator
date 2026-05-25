@@ -8,7 +8,7 @@ import { max } from 'd3-array'
 import { SimSample } from '../sim-bus'
 import { SimTotals } from '../hooks/useSimTotals'
 
-const LISBON = 70_000
+const CITY_LAMPS = 100_000
 const AMBER  = '#FAC775'
 
 interface Props {
@@ -74,11 +74,11 @@ export default function MoneyCard({ history, totals, isMobile }: Props) {
   const SPARK_W = isMobile ? 100 : 130
 
   const eurValues = useMemo(() =>
-    history.map(s => s.eurSaved * (LISBON / Math.max(s.lampCount, 1))),
+    history.map(s => s.eurSaved * (CITY_LAMPS / Math.max(s.lampCount, 1))),
     [history]
   )
   const kwhValues = useMemo(() =>
-    history.map(s => s.kwhSaved * (LISBON / Math.max(s.lampCount, 1))),
+    history.map(s => s.kwhSaved * (CITY_LAMPS / Math.max(s.lampCount, 1))),
     [history]
   )
 
@@ -90,7 +90,7 @@ export default function MoneyCard({ history, totals, isMobile }: Props) {
     <div className="money-card-wrap">
       {/* Top half: € savings */}
       <div className="money-half">
-        <div className="dash-card-label">SAVED (ANUAL · LISBON)</div>
+        <div className="dash-card-label">SAVED (ANNUAL · 100K LAMPS)</div>
         <div className="money-big-number">{fmtEur(eur)}</div>
         <div className="money-sublabel">per year projected</div>
         <Sparkline values={eurValues} w={SPARK_W} />
