@@ -14,7 +14,7 @@
 // Desktop curtain: scroll-driven lift as before.
 
 import { useEffect, useRef, useState } from 'react'
-import { animate, motion, MotionConfig, useDragControls, useMotionValue, useScroll, useSpring, useTransform } from 'framer-motion'
+import { animate, motion, MotionConfig, useMotionValue, useScroll, useSpring, useTransform } from 'framer-motion'
 import CitySimulator from './CitySimulator'
 import LandingCurtain from './sections/LandingSection'
 import { useSimHistory } from './hooks/useSimHistory'
@@ -43,7 +43,6 @@ export default function App() {
   const [hudMax, setHudMax] = useState(260)
 
   const hudY       = useMotionValue(260)  // start collapsed
-  const dragControls = useDragControls()
   const [hudOpen, setHudOpen] = useState(false)
   const [infoBaseBottom, setInfoBaseBottom] = useState(128)
   const infoBtnBottom  = useTransform(hudY, v => Math.max(8, infoBaseBottom - v))
@@ -68,10 +67,51 @@ export default function App() {
     return () => ro.disconnect()
   }, [isMobile])
 
-  const HUD_OPEN_Y = Math.round(window.innerHeight * 0.06)  // ~6vh — responsive to screen height
-  const hudSnap = (_: unknown, info: { velocity: { y: number } }) => {
+  const HUD_OPEN_Y = Math.round(window.innerHeight * 0.06)
+  const hudToggle = () => {
+    const max = hudMaxRef.current
+    animate(hudY, hudOpen ? max : HUD_OPEN_Y, springCfg)
+    setHudOpen(o => !o)
+  }
+
+  // Manual drag — pure pointer tracking, no Framer Motion drag system
+  const handleDragRef = useRef<{
+    startPointerY: number
+    startHudY: number
+    lastY: number
+    lastT: number
+    vel: number
+  } | null>(null)
+
+  const onHandlePointerDown = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    handleDragRef.current = {
+      startPointerY: e.clientY,
+      startHudY: hudY.get(),
+      lastY: e.clientY,
+      lastT: performance.now(),
+      vel: 0,
+    }
+  }
+  const onHandlePointerMove = (e: React.PointerEvent) => {
+    const d = handleDragRef.current
+    if (!d) return
+    const now = performance.now()
+    const dt = now - d.lastT
+    const dy = e.clientY - d.lastY
+    d.vel = dt > 0 ? dy / dt * 1000 : d.vel
+    d.lastY = e.clientY
+    d.lastT = now
+    const max = hudMaxRef.current
+    const next = Math.min(max, Math.max(HUD_OPEN_Y, d.startHudY + (e.clientY - d.startPointerY)))
+    hudY.set(next)
+  }
+  const onHandlePointerUp = () => {
+    const d = handleDragRef.current
+    if (!d) return
+    handleDragRef.current = null
     const cur = hudY.get()
-    const vel = info.velocity.y
+    const vel = d.vel
     const max = hudMaxRef.current
     if (hudOpen ? (cur > max * 0.4 || vel > 300) : (cur < max * 0.6 || vel < -300)) {
       animate(hudY, hudOpen ? max : HUD_OPEN_Y, springCfg)
@@ -79,11 +119,6 @@ export default function App() {
     } else {
       animate(hudY, hudOpen ? HUD_OPEN_Y : max, springCfg)
     }
-  }
-  const hudToggle = () => {
-    const max = hudMaxRef.current
-    animate(hudY, hudOpen ? max : HUD_OPEN_Y, springCfg)
-    setHudOpen(o => !o)
   }
   const scrollRef        = useRef<HTMLDivElement>(null)
   const externalSpawnRef = useRef<((cx: number, cy: number) => void) | null>(null)
@@ -432,22 +467,19 @@ export default function App() {
               className="hud-controls"
               aria-label="Simulator controls"
             >
-              {/* Body — draggable via dragControls so only the handle initiates drag */}
+              {/* Body — only y-translated via hudY, no Framer Motion drag */}
               <motion.div
                 className="hud-controls-body"
                 style={isMobile ? { y: hudY } : undefined}
-                drag={isMobile ? 'y' : false}
-                dragControls={dragControls}
-                dragListener={false}
-                dragConstraints={isMobile ? { top: HUD_OPEN_Y, bottom: hudMax } : undefined}
-                dragElastic={isMobile ? { top: 0.02, bottom: 0.02 } : undefined}
-                onDragEnd={isMobile ? hudSnap : undefined}
               >
-                {/* Handle — only element that starts the drag */}
+                {/* Handle — pure pointer tracking, no FM drag */}
                 {isMobile && (
                   <div
                     className="hud-controls-handle-row"
-                    onPointerDown={e => dragControls.start(e, { snapToCursor: false })}
+                    onPointerDown={onHandlePointerDown}
+                    onPointerMove={onHandlePointerMove}
+                    onPointerUp={onHandlePointerUp}
+                    onPointerCancel={onHandlePointerUp}
                     onClick={hudToggle}
                     style={{ touchAction: 'none' }}
                   >
