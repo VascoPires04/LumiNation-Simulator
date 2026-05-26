@@ -222,6 +222,8 @@ export default function CitySimulator({
   // Static layer offscreen canvas — baked once after each layout change
   const staticCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const staticDirtyRef = useRef(true)
+  const bakedPanRef = useRef({ x: 0, y: 0 })   // pan at time of last bake
+  const bakedZoomRef = useRef(1)                  // zoom at time of last bake
   const dprRef = useRef(1)
 
   // ambient forces lumination mode so the corridor is always visible as backdrop
@@ -1746,8 +1748,8 @@ export default function CitySimulator({
 
     // ── Static layer baking ──────────────────────────────────────────────────
     // Bake ground/roads/buildings/trees into an offscreen canvas once.
-    // Rebake whenever city geometry changes (layout) or compare mode (two halves).
-    // During normal playback, every frame just blits the pre-baked layer.
+    // During pan/drag, offset the blit by the delta — no rebake until drag ends.
+    // Rebake whenever zoom changes or layout changes.
     if (m !== 'compare') {
       const useBaseline = m === 'baseline'
       // Allocate / resize offscreen canvas to match physical pixel size
@@ -1775,12 +1777,16 @@ export default function CitySimulator({
         drawCityTopDown(sCtx, useBaseline, true)
         sCtx.restore()
         staticDirtyRef.current = false
+        bakedPanRef.current = { x: panX, y: panY }
+        bakedZoomRef.current = z
       }
 
-      // Blit static layer (GPU copy — nearly free)
-      ctx.drawImage(sc, 0, 0, physW, physH, 0, 0, W, H)
+      // Blit static layer offset by pan delta since last bake (GPU copy — nearly free)
+      const dpx = panX - bakedPanRef.current.x
+      const dpy = panY - bakedPanRef.current.y
+      ctx.drawImage(sc, 0, 0, physW, physH, dpx, dpy, W, H)
 
-      // Dynamic layer: halos + mesh + agents on top
+      // Dynamic layer: halos + mesh + agents on top (with current pan)
       ctx.save()
       ctx.translate(W / 2 + panX, H / 2 + panY)
       ctx.scale(z, z)
@@ -2082,7 +2088,6 @@ export default function CitySimulator({
         pan.x = dragStartRef.current.panX + dx
         pan.y = dragStartRef.current.panY + dy
         clampPan(pan, zoomRef.current)
-        staticDirtyRef.current = true  // pan changed — rebake static layer
       }
     }
     const onUp = () => {
@@ -2090,6 +2095,7 @@ export default function CitySimulator({
       isDraggingRef.current = false
       const canvas = canvasRef.current
       if (canvas) canvas.style.cursor = 'grab'
+      staticDirtyRef.current = true  // rebake cleanly at final pan position
     }
 
     window.addEventListener('mousedown', onDown)
@@ -2210,7 +2216,6 @@ export default function CitySimulator({
         pan.x = touchDragRef.current.panX + dx
         pan.y = touchDragRef.current.panY + dy
         clampPan(pan, zoomRef.current)
-        staticDirtyRef.current = true  // pan changed — rebake static layer
       }
     }
   }
@@ -2222,6 +2227,7 @@ export default function CitySimulator({
       const wasPinching = wasPinchingRef.current
       const wasTouchDragging = isTouchDraggingRef.current
       wasPinchingRef.current = false
+      if (isTouchDraggingRef.current) staticDirtyRef.current = true  // rebake at final pan position
       isTouchDraggingRef.current = false
       touchDragRef.current = null
       if (!wasPinching && !wasTouchDragging && e.changedTouches.length === 1) {
