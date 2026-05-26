@@ -1334,13 +1334,7 @@ input[type="range"] {
   .sim-compact-value {
     font-size: clamp(0.7rem, 2.8vw, 0.85rem);
   }
-  .sim-compact-controls input[type='range'] {
-    height: 44px;
-    cursor: pointer;
-    touch-action: pan-x;
-    -webkit-appearance: none;
-    appearance: none;
-  }
+  .sim-compact-controls input[type='range'] { height: 36px; cursor: pointer; touch-action: pan-x; }
 
   /* CTA: slim full-width */
   .sim-cta {

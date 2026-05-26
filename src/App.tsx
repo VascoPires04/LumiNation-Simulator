@@ -143,6 +143,8 @@ export default function App() {
   const mobileHudOpacity     = useMotionValue(0)
   const mobileTopbarOpacity  = useMotionValue(0)
   const mobileVeilOpacity    = useMotionValue(1)
+  const mobileCanvasScale    = useMotionValue(1.04)
+  const mobileCanvasY        = useMotionValue(20)
 
   // ── Mobile curtain: auto-dismiss after 1s, no scroll needed ──────────────
   // Once gone it never comes back (clicking L doesn't re-show it).
@@ -156,9 +158,11 @@ export default function App() {
       setMobileCurtainFading(true)
       setSidebarVisible(true)
       setTopbarVisible(true)
-      animate(mobileHudOpacity,    1, { duration: 0.55, ease: 'easeOut', delay: 0.15 })
-      animate(mobileTopbarOpacity, 1, { duration: 0.55, ease: 'easeOut', delay: 0.25 })
-      animate(mobileVeilOpacity,   0, { duration: 0.8,  ease: 'easeOut' })
+      animate(mobileHudOpacity,    1,    { duration: 0.55, ease: 'easeOut', delay: 0.15 })
+      animate(mobileTopbarOpacity, 1,    { duration: 0.55, ease: 'easeOut', delay: 0.25 })
+      animate(mobileVeilOpacity,   0,    { duration: 0.8,  ease: 'easeOut' })
+      animate(mobileCanvasScale,   1.0,  { duration: 0.8,  ease: 'easeOut' })
+      animate(mobileCanvasY,       0,    { duration: 0.8,  ease: 'easeOut' })
     }, 1000)
     // Unmount curtain DOM after fade completes (1000 + 800ms)
     const t2 = setTimeout(() => setMobileCurtainGone(true), 1800)
@@ -305,7 +309,7 @@ export default function App() {
         {/* ── Layer 0b: persistent fixed canvas — fades out when dashboard in view ── */}
         <motion.div
           className="canvas-layer"
-          style={{ scale: canvasScale, y: canvasY, opacity: canvasLayerOpacity }}
+          style={{ scale: isMobile ? mobileCanvasScale : canvasScale, y: isMobile ? mobileCanvasY : canvasY, opacity: canvasLayerOpacity }}
         >
           <CitySimulator
             mode={mode}
@@ -485,7 +489,7 @@ export default function App() {
                         onChange={e => setBaselinePct(Number(e.target.value) / 100)}
                         onPointerDown={e => e.stopPropagation()}
                         onTouchStart={e => e.stopPropagation()}
-                        style={{ touchAction: 'none' }}
+                        style={{ touchAction: 'pan-x' }}
                       />
                     </div>
                     <div className="slider-col">
@@ -510,7 +514,7 @@ export default function App() {
                         onChange={e => setLookaheadSec(Number(e.target.value))}
                         onPointerDown={e => e.stopPropagation()}
                         onTouchStart={e => e.stopPropagation()}
-                        style={{ touchAction: 'none' }}
+                        style={{ touchAction: 'pan-x' }}
                       />
                     </div>
                   </div>
