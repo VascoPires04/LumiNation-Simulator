@@ -208,6 +208,15 @@ export default function CitySimulator({
   const targetZoomRef = useRef(1)
   const pinchRef = useRef<{ dist: number; zoom: number } | null>(null)
   const wasPinchingRef = useRef(false)
+  // Pan state
+  const panRef = useRef({ x: 0, y: 0 })
+  const isDraggingRef = useRef(false)
+  const didDragRef = useRef(false)
+  const dragStartRef = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 })
+  const touchDragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null)
+  const isTouchDraggingRef = useRef(false)
+  // Zoom anchor — snapshot of cursor at wheel time, held fixed throughout the easing transition
+  const zoomAnchorRef = useRef<{ x: number; y: number } | null>(null)
   const virtualBoundsRef = useRef({ vx0: 0, vy0: 0, vx1: 600, vy1: 400, vW: 600, vH: 400 })
   const streetPosRef = useRef<{ cols: number[]; rows: number[] }>({ cols: [], rows: [] })
 
@@ -731,10 +740,12 @@ export default function CitySimulator({
     const { vx0, vy0, vx1, vy1, vW, vH } = virtualBoundsRef.current
 
     // Cull to visible virtual bounds — avoids drawing off-screen elements.
-    // In ISO mode expand the margin to account for oblique wall offsets that
-    // extend beyond the footprint (ox rightward, oy upward in screen space).
-    const isoCullMX = ISO_MODE ? 80 : 0
-    const isoCullMY = ISO_MODE ? 60 : 0
+    // ox/oy are world-space offsets (sx = wx in ISO projection), so the margin
+    // must be in world pixels regardless of zoom.
+    // max isoH ≈ 160 (desktop tower), ox = 0.55*160 = 88, oy = 0.72*160 = 115.
+    // Use 200px to give a comfortable buffer.
+    const isoCullMX = ISO_MODE ? 200 : 0
+    const isoCullMY = ISO_MODE ? 200 : 0
     const visBuildings = buildingsRef.current.filter(b =>
       b.x < vx1 + isoCullMX && b.x + b.w > vx0 - isoCullMX &&
       b.y < vy1 + isoCullMY && b.y + b.h > vy0 - isoCullMY)
@@ -1271,12 +1282,6 @@ export default function CitySimulator({
       }
     }
 
-    // Atmospheric vignette — centered on screen center, covers full virtual area
-    const vg = ctx.createRadialGradient(W / 2, H / 2, vW * 0.28, W / 2, H / 2, vW * 0.78)
-    vg.addColorStop(0, 'rgba(0,0,0,0)')
-    vg.addColorStop(1, 'rgba(0,0,0,0.48)')
-    ctx.fillStyle = vg
-    ctx.fillRect(vx0, vy0, vW, vH)
   }
 
   function drawFPV(ctx: CanvasRenderingContext2D) {
@@ -1704,7 +1709,17 @@ export default function CitySimulator({
     const m = modeRef.current
     const z = zoomRef.current
     const bounds = getVirtualBounds(W, H, z)
-    virtualBoundsRef.current = bounds
+    // Shift visible bounds by pan (pan is in screen px, convert to world coords)
+    const { x: panX, y: panY } = panRef.current
+    const panWorldX = panX / z, panWorldY = panY / z
+    virtualBoundsRef.current = {
+      vx0: bounds.vx0 - panWorldX,
+      vy0: bounds.vy0 - panWorldY,
+      vx1: bounds.vx1 - panWorldX,
+      vy1: bounds.vy1 - panWorldY,
+      vW: bounds.vW,
+      vH: bounds.vH,
+    }
     const { vx0, vy0, vW, vH } = bounds
 
     // Fill entire canvas first so no black gaps appear outside the city at max zoom-out
@@ -1717,7 +1732,7 @@ export default function CitySimulator({
     }
 
     ctx.save()
-    ctx.translate(W / 2, H / 2)
+    ctx.translate(W / 2 + panRef.current.x, H / 2 + panRef.current.y)
     ctx.scale(z, z)
     ctx.translate(-W / 2, -H / 2)
 
@@ -1741,6 +1756,14 @@ export default function CitySimulator({
     }
 
     ctx.restore()
+
+    // Atmospheric vignette — drawn in screen space so it stays fixed during pan/zoom
+    const { W: vW2, H: vH2 } = dimsRef.current
+    const vg = ctx.createRadialGradient(vW2 / 2, vH2 / 2, vW2 * 0.28, vW2 / 2, vH2 / 2, vW2 * 0.78)
+    vg.addColorStop(0, 'rgba(0,0,0,0)')
+    vg.addColorStop(1, 'rgba(0,0,0,0.48)')
+    ctx.fillStyle = vg
+    ctx.fillRect(0, 0, vW2, vH2)
   }
 
   // --- Scenario auto-spawn ---
@@ -1823,12 +1846,27 @@ export default function CitySimulator({
       const minZoom = isMobileRef.current ? 0.65 : 0.45
       targetZoomRef.current = Math.max(minZoom, targetZoomRef.current)
       if (zoomRef.current !== targetZoomRef.current) {
+        const oldZ = zoomRef.current
         const ease = 1 - Math.exp(-dt * 10)
         zoomRef.current += (targetZoomRef.current - zoomRef.current) * ease
         if (Math.abs(targetZoomRef.current - zoomRef.current) < 0.001) {
           zoomRef.current = targetZoomRef.current
         }
         zoomRef.current = Math.max(minZoom, zoomRef.current)
+        // Zoom-to-cursor: keep the world point under the cursor fixed as zoom eases
+        const newZ = zoomRef.current
+        if (newZ !== oldZ) {
+          const { W, H } = dimsRef.current
+          // Use zoom anchor snapshotted at wheel-time; fall back to canvas center
+          const anchor = zoomAnchorRef.current
+          const cx = anchor ? anchor.x : W / 2
+          const cy = anchor ? anchor.y : H / 2
+          const factor = newZ / oldZ
+          const pan = panRef.current
+          pan.x = pan.x * factor + (cx - W / 2) * (1 - factor)
+          pan.y = pan.y * factor + (cy - H / 2) * (1 - factor)
+          clampPan(pan, newZ)
+        }
       }
 
       if (pausedRef.current) return
@@ -1929,16 +1967,80 @@ export default function CitySimulator({
   const toSimCoords = (screenX: number, screenY: number) => {
     const { W, H } = dimsRef.current
     const z = zoomRef.current
-    const cx = W / 2, cy = H / 2
-    // 1. Undo zoom transform
-    const zx = (screenX - cx) / z + cx
-    const zy = (screenY - cy) / z + cy
+    const { x: panX, y: panY } = panRef.current
+    // 1. Undo pan + zoom transform
+    const zx = (screenX - W / 2 - panX) / z + W / 2
+    const zy = (screenY - H / 2 - panY) / z + H / 2
     // 2. Undo ISO shear
     const { wx, wy } = isoUnproject(zx, zy, W, H)
     return { x: wx, y: wy }
   }
 
+  const clampPan = (pan: { x: number; y: number }, z: number) => {
+    const { W, H } = dimsRef.current
+    const minZ = isMobileRef.current ? 0.65 : 0.45
+    const { vx0, vy0, vx1, vy1 } = getVirtualBounds(W, H, minZ)
+    pan.x = Math.max(W / 2 - (vx1 - W / 2) * z, Math.min((W / 2 - vx0) * z - W / 2, pan.x))
+    pan.y = Math.max(H / 2 - (vy1 - H / 2) * z, Math.min((H / 2 - vy0) * z - H / 2, pan.y))
+  }
+
+  // Window-level mouse listeners for drag.
+  // mousedown checks the click lands inside the canvas bounds (not on HUD/buttons).
+  // move/up on window so drag continues outside the canvas.
+  useEffect(() => {
+    if (!interactive) return
+
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return
+      const canvas = canvasRef.current
+      if (!canvas) return
+      // Only start drag if click is within the canvas rect
+      const rect = canvas.getBoundingClientRect()
+      if (e.clientX < rect.left || e.clientX > rect.right ||
+          e.clientY < rect.top  || e.clientY > rect.bottom) return
+      // Don't drag if the click landed on a UI element (button, nav, hud, etc.)
+      if ((e.target as Element).closest('button, nav, a, input, select, [role="button"], .hud-controls, .hud-headline, .topbar, .info-btn, .info-modal, .card-expand')) return
+      isDraggingRef.current = true
+      didDragRef.current = false
+      dragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, panX: panRef.current.x, panY: panRef.current.y }
+      canvas.style.cursor = 'grabbing'
+    }
+    const onMove = (e: MouseEvent) => {
+      const canvas = canvasRef.current
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect()
+        zoomAnchorRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      }
+      if (!isDraggingRef.current) return
+      const dx = e.clientX - dragStartRef.current.mouseX
+      const dy = e.clientY - dragStartRef.current.mouseY
+      if (!didDragRef.current && Math.hypot(dx, dy) > 5) didDragRef.current = true
+      if (didDragRef.current) {
+        const pan = panRef.current
+        pan.x = dragStartRef.current.panX + dx
+        pan.y = dragStartRef.current.panY + dy
+        clampPan(pan, zoomRef.current)
+      }
+    }
+    const onUp = () => {
+      if (!isDraggingRef.current) return
+      isDraggingRef.current = false
+      const canvas = canvasRef.current
+      if (canvas) canvas.style.cursor = 'grab'
+    }
+
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [interactive])
+
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (didDragRef.current) return  // suppress click after drag
     const rect = canvasRef.current!.getBoundingClientRect()
     const { x, y } = toSimCoords(e.clientX - rect.left, e.clientY - rect.top)
     const isCar = e.shiftKey || activeSpawnModeRef.current === 'car'
@@ -1967,8 +2069,28 @@ export default function CitySimulator({
     const onWheel = (e: WheelEvent) => {
       if (stageVisibilityRef.current < 0.8) return  // let page scroll when half-visible
       e.preventDefault()
-      const delta = e.deltaY > 0 ? 0.9 : 1.1
-      targetZoomRef.current = Math.min(3, Math.max(0.45, targetZoomRef.current * delta))
+      const minZ = isMobileRef.current ? 0.65 : 0.45
+      // ctrlKey = trackpad pinch-to-zoom. deltaX != 0 = trackpad two-finger scroll.
+      // Plain mouse wheel has ctrlKey=false and deltaX=0 — treat as zoom.
+      const isTrackpadScroll = !e.ctrlKey && (Math.abs(e.deltaX) > 0 || e.deltaMode === 0 && Math.abs(e.deltaY) < 50)
+      const rect = canvas.getBoundingClientRect()
+      if (e.ctrlKey) {
+        // Trackpad pinch-to-zoom → zoom toward cursor
+        zoomAnchorRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+        const factor = Math.exp(-e.deltaY * 0.01)
+        targetZoomRef.current = Math.min(3, Math.max(minZ, targetZoomRef.current * factor))
+      } else if (isTrackpadScroll) {
+        // Trackpad two-finger scroll → pan
+        const pan = panRef.current
+        pan.x -= e.deltaX
+        pan.y -= e.deltaY
+        clampPan(pan, zoomRef.current)
+      } else {
+        // Plain scroll wheel → zoom toward cursor
+        zoomAnchorRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+        const delta = e.deltaY > 0 ? 0.9 : 1.1
+        targetZoomRef.current = Math.min(3, Math.max(minZ, targetZoomRef.current * delta))
+      }
     }
     canvas.addEventListener('wheel', onWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', onWheel)
@@ -1977,9 +2099,14 @@ export default function CitySimulator({
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (e.touches.length === 2) {
       wasPinchingRef.current = true
+      touchDragRef.current = null
+      isTouchDraggingRef.current = false
       const dx = e.touches[0].clientX - e.touches[1].clientX
       const dy = e.touches[0].clientY - e.touches[1].clientY
       pinchRef.current = { dist: Math.hypot(dx, dy), zoom: zoomRef.current }
+    } else if (e.touches.length === 1) {
+      touchDragRef.current = null
+      isTouchDraggingRef.current = false
     }
   }
 
@@ -1991,19 +2118,48 @@ export default function CitySimulator({
       const dist = Math.hypot(dx, dy)
       const ratio = dist / pinchRef.current.dist
       const minZ = isMobileRef.current ? 0.65 : 0.45
+      const oldZ = zoomRef.current
       const pz = Math.min(3, Math.max(minZ, pinchRef.current.zoom * ratio))
+      // Zoom to pinch midpoint
+      const rect = canvasRef.current!.getBoundingClientRect()
+      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left
+      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top
+      const { W, H } = dimsRef.current
+      const factor = pz / oldZ
+      const pan = panRef.current
+      pan.x = pan.x * factor + (mx - W / 2) * (1 - factor)
+      pan.y = pan.y * factor + (my - H / 2) * (1 - factor)
+      clampPan(pan, pz)
       zoomRef.current = pz
       targetZoomRef.current = pz
+    } else if (e.touches.length === 1 && !pinchRef.current) {
+      const touch = e.touches[0]
+      if (!touchDragRef.current) {
+        touchDragRef.current = { startX: touch.clientX, startY: touch.clientY, panX: panRef.current.x, panY: panRef.current.y }
+      }
+      const dx = touch.clientX - touchDragRef.current.startX
+      const dy = touch.clientY - touchDragRef.current.startY
+      if (!isTouchDraggingRef.current && Math.hypot(dx, dy) > 8) isTouchDraggingRef.current = true
+      if (isTouchDraggingRef.current) {
+        e.preventDefault()
+        const pan = panRef.current
+        pan.x = touchDragRef.current.panX + dx
+        pan.y = touchDragRef.current.panY + dy
+        clampPan(pan, zoomRef.current)
+      }
     }
   }
 
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (e.touches.length < 2) pinchRef.current = null
-    // Once all fingers are lifted, check if this was a plain tap (not a pinch)
+    // Once all fingers are lifted, check if this was a plain tap (not a pinch or drag)
     if (e.touches.length === 0) {
       const wasPinching = wasPinchingRef.current
+      const wasTouchDragging = isTouchDraggingRef.current
       wasPinchingRef.current = false
-      if (!wasPinching && e.changedTouches.length === 1) {
+      isTouchDraggingRef.current = false
+      touchDragRef.current = null
+      if (!wasPinching && !wasTouchDragging && e.changedTouches.length === 1) {
         e.preventDefault()  // block the synthetic click the browser fires ~300ms later
         const touch = e.changedTouches[0]
         const rect = canvasRef.current!.getBoundingClientRect()
@@ -2019,7 +2175,11 @@ export default function CitySimulator({
 
   return (
     <div className={`main${variant === 'ambient' ? ' main--ambient' : ''}`}>
-      <div className={`stage${dimmedActual ? ' stage--dimmed' : ''}`} ref={stageRef}>
+      <div
+        className={`stage${dimmedActual ? ' stage--dimmed' : ''}`}
+        ref={stageRef}
+        style={{ cursor: interactive ? 'grab' : undefined }}
+      >
         <canvas
           ref={canvasRef}
           onClick={interactive ? handleClick : undefined}

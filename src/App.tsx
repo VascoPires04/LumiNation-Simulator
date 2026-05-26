@@ -107,8 +107,6 @@ export default function App() {
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
-  const touchStartRef    = useRef<{ x: number; y: number } | null>(null)
-  const lastTouchRef     = useRef(0) // timestamp — blocks ghost click after touch
   const { scrollY } = useScroll({ container: scrollRef })
 
   // ── Canvas layer — pull-in zoom with spring for smooth feel ──────────────
@@ -584,37 +582,11 @@ export default function App() {
           </motion.div>
         )}
 
-        {/* ── Layer 5: scroll-doc — drives curtain on desktop, forwards taps to canvas ── */}
+        {/* ── Layer 5: scroll-doc — drives curtain on desktop, drives scroll height ── */}
         <div
           ref={scrollRef}
           className="scroll-doc"
           style={mode === 'fpv' ? { pointerEvents: 'none' } : undefined}
-          onTouchStart={(e) => {
-            touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-          }}
-          onTouchEnd={(e) => {
-            const t = e.changedTouches[0]
-            const start = touchStartRef.current
-            touchStartRef.current = null
-            if (!effectiveCurtainVisible && t && start && externalSpawnRef.current) {
-              const dx = Math.abs(t.clientX - start.x)
-              const dy = Math.abs(t.clientY - start.y)
-              if (dx < 10 && dy < 10) { // tap, not scroll
-                lastTouchRef.current = Date.now()
-                externalSpawnRef.current(t.clientX, t.clientY)
-              }
-            }
-          }}
-          onClick={(e) => {
-            // Block ghost click fired by browser after touch
-            if (Date.now() - lastTouchRef.current < 500) return
-            if (!effectiveCurtainVisible && externalSpawnRef.current) {
-              // Shift+click spawns a car (desktop shortcut)
-              if (e.shiftKey) externalSpawnModeRef.current = 'car'
-              externalSpawnRef.current(e.clientX, e.clientY)
-              if (e.shiftKey) externalSpawnModeRef.current = spawnMode === 'car' ? 'car' : 'ped'
-            }
-          }}
         >
           {/* Landing spacer — transparent, height drives curtain lift distance on desktop */}
           <div className="landing-spacer" aria-hidden="true" />
