@@ -14,7 +14,7 @@
 // Desktop curtain: scroll-driven lift as before.
 
 import { useEffect, useRef, useState } from 'react'
-import { animate, motion, MotionConfig, useMotionValue, useScroll, useSpring, useTransform } from 'framer-motion'
+import { animate, motion, MotionConfig, useDragControls, useMotionValue, useScroll, useSpring, useTransform } from 'framer-motion'
 import CitySimulator from './CitySimulator'
 import LandingCurtain from './sections/LandingSection'
 import { useSimHistory } from './hooks/useSimHistory'
@@ -43,6 +43,7 @@ export default function App() {
   const [hudMax, setHudMax] = useState(260)
 
   const hudY       = useMotionValue(260)  // start collapsed
+  const dragControls = useDragControls()
   const [hudOpen, setHudOpen] = useState(false)
   const [infoBaseBottom, setInfoBaseBottom] = useState(128)
   const infoBtnBottom  = useTransform(hudY, v => Math.max(8, infoBaseBottom - v))
@@ -431,28 +432,27 @@ export default function App() {
               className="hud-controls"
               aria-label="Simulator controls"
             >
-              {/* Body — only y-translated, never draggable itself */}
+              {/* Body — draggable via dragControls so only the handle initiates drag */}
               <motion.div
                 className="hud-controls-body"
                 style={isMobile ? { y: hudY } : undefined}
+                drag={isMobile ? 'y' : false}
+                dragControls={dragControls}
+                dragListener={false}
+                dragConstraints={isMobile ? { top: HUD_OPEN_Y, bottom: hudMax } : undefined}
+                dragElastic={isMobile ? { top: 0.02, bottom: 0.02 } : undefined}
+                onDragEnd={isMobile ? hudSnap : undefined}
               >
-                {/* Handle — drag lives HERE only, so sliders never compete */}
+                {/* Handle — only element that starts the drag */}
                 {isMobile && (
-                  <motion.div
+                  <div
                     className="hud-controls-handle-row"
-                    drag="y"
-                    dragConstraints={{ top: HUD_OPEN_Y, bottom: hudMax }}
-                    dragElastic={{ top: 0.02, bottom: 0.02 }}
-                    onDrag={(_, info) => {
-                      const next = Math.min(hudMax, Math.max(HUD_OPEN_Y, hudY.get() + info.delta.y))
-                      hudY.set(next)
-                    }}
-                    onDragEnd={hudSnap}
+                    onPointerDown={e => dragControls.start(e)}
                     onClick={hudToggle}
-                    style={{ cursor: 'grab', touchAction: 'none' }}
+                    style={{ touchAction: 'none' }}
                   >
                     <div className="hud-controls-handle" />
-                  </motion.div>
+                  </div>
                 )}
 
                 <div ref={hudInnerRef} className="hud-controls-inner" style={{ pointerEvents: hudOpen ? 'auto' : 'none' }}>
