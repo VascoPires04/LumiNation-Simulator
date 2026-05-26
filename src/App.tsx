@@ -487,8 +487,7 @@ export default function App() {
                         type="range" min={0} max={100}
                         value={Math.round(baselinePct * 100)}
                         onChange={e => setBaselinePct(Number(e.target.value) / 100)}
-                        onPointerDown={e => e.stopPropagation()}
-                        onTouchStart={e => e.stopPropagation()}
+                        onPointerDown={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation() }}
                         style={{ touchAction: 'pan-x' }}
                       />
                     </div>
@@ -512,8 +511,7 @@ export default function App() {
                         type="range" min={0.5} max={8} step={0.5}
                         value={lookaheadSec}
                         onChange={e => setLookaheadSec(Number(e.target.value))}
-                        onPointerDown={e => e.stopPropagation()}
-                        onTouchStart={e => e.stopPropagation()}
+                        onPointerDown={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation() }}
                         style={{ touchAction: 'pan-x' }}
                       />
                     </div>
