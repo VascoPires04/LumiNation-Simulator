@@ -219,6 +219,10 @@ export default function CitySimulator({
   const zoomAnchorRef = useRef<{ x: number; y: number } | null>(null)
   const virtualBoundsRef = useRef({ vx0: 0, vy0: 0, vx1: 600, vy1: 400, vW: 600, vH: 400 })
   const streetPosRef = useRef<{ cols: number[]; rows: number[] }>({ cols: [], rows: [] })
+  // Static layer offscreen canvas — baked once after each layout change
+  const staticCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const staticDirtyRef = useRef(true)
+  const dprRef = useRef(1)
 
   // ambient forces lumination mode so the corridor is always visible as backdrop
   const effectiveMode: Mode = variant === 'ambient' ? 'lumination' : mode
@@ -463,6 +467,7 @@ export default function CitySimulator({
     streetsRef.current = streets
     buildingsRef.current = buildings
     treesRef.current = trees
+    staticDirtyRef.current = true  // city geometry changed — rebake static layer
 
     // Remap existing agent street references to new street objects (positions unchanged)
     for (const a of agentsRef.current) {
@@ -735,7 +740,7 @@ export default function CitySimulator({
     return Math.min(1, v + 0.1)
   }
 
-  function drawCityTopDown(ctx: CanvasRenderingContext2D, useBaseline: boolean) {
+  function drawCityTopDown(ctx: CanvasRenderingContext2D, useBaseline: boolean, staticOnly = false) {
     const { W, H } = dimsRef.current
     const { vx0, vy0, vx1, vy1, vW, vH } = virtualBoundsRef.current
 
@@ -753,7 +758,7 @@ export default function CitySimulator({
       t.x > vx0 - 12 && t.x < vx1 + 12 && t.y > vy0 - 12 && t.y < vy1 + 12)
 
     // Ground/terrain base (covers full visible virtual area)
-    ctx.fillStyle = '#08080e'
+    ctx.fillStyle = isMobileRef.current ? '#0e0c14' : '#08080e'
     ctx.fillRect(vx0, vy0, vW, vH)
 
     // ── Roads drawn FIRST so buildings render on top ─────────────────────────
@@ -843,14 +848,14 @@ export default function CitySimulator({
       // ── Palettes + helpers ──────────────────────────────────────────────────
       // [roofFrom, roofTo, westWall(lit), southWall(mid), eastWall(shadow)]
       const PALETTE: [string, string, string, string, string][] = [
-        ['#323234', '#28282c', '#38383c', '#2e2e32', '#202022'],
-        ['#282830', '#202028', '#2e2e38', '#242430', '#181820'],
-        ['#342c22', '#2a2219', '#3c3228', '#302818', '#221c10'],
-        ['#3a2c1c', '#2c2014', '#44342a', '#362818', '#261c10'],
-        ['#162030', '#101828', '#1c2838', '#14202e', '#0e1422'],
-        ['#101a32', '#0c1228', '#161e3c', '#0e182e', '#080e1e'],
-        ['#361a10', '#2a100c', '#40221a', '#32160e', '#200e08'],
-        ['#1e2c1a', '#141e12', '#263620', '#1a2818', '#101c10'],
+        ['#313136', '#27272d', '#37373d', '#2d2d33', '#202023'],
+        ['#272733', '#1f1f2b', '#2c2c3c', '#222234', '#171722'],
+        ['#392d1d', '#2e2215', '#413223', '#362a12', '#261d0b'],
+        ['#422d15', '#32200e', '#4b3324', '#3e2911', '#2c1d0a'],
+        ['#101f37', '#0b172e', '#15273f', '#0e1f34', '#0a1327'],
+        ['#09183b', '#061031', '#0f1a47', '#071637', '#030d25'],
+        ['#411708', '#340c06', '#4c1e13', '#3c1307', '#270c03'],
+        ['#1c3116', '#132210', '#243c1b', '#182d15', '#0e200e'],
       ]
       const ZONE_PALS: Record<BlockZone, number[]> = {
         downtown: [0, 1, 4, 5, 4, 5],
@@ -914,9 +919,11 @@ export default function CitySimulator({
       }
       for (const t of visTrees)
         drawList.push({ kind: 'tree', depth: t.x + t.y, wx: t.x, wy: t.y })
-      for (const a of agentsRef.current) {
-        const bri = useBaseline ? MAX_VISUAL_BRI : localBrightnessAt(a.x, a.y) * MAX_VISUAL_BRI
-        drawList.push({ kind: 'agent', depth: a.x + a.y, agent: a, bri })
+      if (!staticOnly) {
+        for (const a of agentsRef.current) {
+          const bri = useBaseline ? MAX_VISUAL_BRI : localBrightnessAt(a.x, a.y) * MAX_VISUAL_BRI
+          drawList.push({ kind: 'agent', depth: a.x + a.y, agent: a, bri })
+        }
       }
       // Roundabout lamps
       rCols0.forEach((cx, ci) => {
@@ -936,10 +943,11 @@ export default function CitySimulator({
           const { wx, wy, b, ph } = item
           const p = isoProject(wx, wy, W, H)
           const hx = p.sx, hy = p.sy - ph
-          // Pole
+          // Pole — always drawn (static)
           ctx.strokeStyle = 'rgba(180, 185, 210, 0.75)'; ctx.lineWidth = 0.9
           ctx.beginPath(); ctx.moveTo(p.sx, p.sy); ctx.lineTo(hx, hy); ctx.stroke()
           ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + 3, hy - 2); ctx.stroke()
+          if (staticOnly) continue  // skip dynamic halo when baking static layer
           // Halo — normalised to 0-1 for linear visual response
           const n = b / MAX_VISUAL_BRI
           if (n > 0.01) {
@@ -980,7 +988,8 @@ export default function CitySimulator({
           continue
         }
 
-        // kind === 'agent'
+        // kind === 'agent' — skip when baking static layer
+        if (item.kind === 'agent' && staticOnly) continue
         if (item.kind === 'agent') {
           const a = item.agent
           const { sx, sy } = isoProject(a.x, a.y, W, H)
@@ -1220,6 +1229,9 @@ export default function CitySimulator({
         ctx.beginPath(); ctx.arc(t.x - 2, t.y - 2, 3, 0, Math.PI * 2); ctx.fill()
       }
     }
+
+    // Communication mesh + halos + agents — dynamic, skip when baking static layer
+    if (staticOnly) return
 
     // Communication mesh — opacity reacts to lamp brightness + amber pulse
     ctx.lineWidth = 1
@@ -1708,6 +1720,7 @@ export default function CitySimulator({
     const { W, H } = dimsRef.current
     const m = modeRef.current
     const z = zoomRef.current
+    const dpr = dprRef.current
     const bounds = getVirtualBounds(W, H, z)
     // Shift visible bounds by pan (pan is in screen px, convert to world coords)
     const { x: panX, y: panY } = panRef.current
@@ -1731,16 +1744,57 @@ export default function CitySimulator({
       return
     }
 
-    ctx.save()
-    ctx.translate(W / 2 + panRef.current.x, H / 2 + panRef.current.y)
-    ctx.scale(z, z)
-    ctx.translate(-W / 2, -H / 2)
+    // ── Static layer baking ──────────────────────────────────────────────────
+    // Bake ground/roads/buildings/trees into an offscreen canvas once.
+    // Rebake whenever city geometry changes (layout) or compare mode (two halves).
+    // During normal playback, every frame just blits the pre-baked layer.
+    if (m !== 'compare') {
+      const useBaseline = m === 'baseline'
+      // Allocate / resize offscreen canvas to match physical pixel size
+      let sc = staticCanvasRef.current
+      const physW = Math.round(W * dpr), physH = Math.round(H * dpr)
+      if (!sc || sc.width !== physW || sc.height !== physH) {
+        sc = document.createElement('canvas')
+        sc.width = physW
+        sc.height = physH
+        staticCanvasRef.current = sc
+        staticDirtyRef.current = true
+      }
 
-    // Fill virtual area (redundant but keeps sub-pixel seams from showing through)
-    ctx.fillStyle = '#08080e'
-    ctx.fillRect(vx0, vy0, vW, vH)
+      if (staticDirtyRef.current) {
+        const sCtx = sc.getContext('2d')!
+        sCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        sCtx.fillStyle = '#08080e'
+        sCtx.fillRect(0, 0, W, H)
+        sCtx.save()
+        sCtx.translate(W / 2 + panX, H / 2 + panY)
+        sCtx.scale(z, z)
+        sCtx.translate(-W / 2, -H / 2)
+        sCtx.fillStyle = '#08080e'
+        sCtx.fillRect(vx0, vy0, vW, vH)
+        drawCityTopDown(sCtx, useBaseline, true)
+        sCtx.restore()
+        staticDirtyRef.current = false
+      }
 
-    if (m === 'compare') {
+      // Blit static layer (GPU copy — nearly free)
+      ctx.drawImage(sc, 0, 0, physW, physH, 0, 0, W, H)
+
+      // Dynamic layer: halos + mesh + agents on top
+      ctx.save()
+      ctx.translate(W / 2 + panX, H / 2 + panY)
+      ctx.scale(z, z)
+      ctx.translate(-W / 2, -H / 2)
+      drawCityTopDown(ctx, useBaseline)
+      ctx.restore()
+    } else {
+      // Compare mode — always full redraw (secondary mode)
+      ctx.save()
+      ctx.translate(W / 2 + panX, H / 2 + panY)
+      ctx.scale(z, z)
+      ctx.translate(-W / 2, -H / 2)
+      ctx.fillStyle = '#08080e'
+      ctx.fillRect(vx0, vy0, vW, vH)
       const halfVW = vW / 2
       ctx.save(); ctx.beginPath(); ctx.rect(vx0, vy0, halfVW, vH); ctx.clip()
       drawCityTopDown(ctx, true)
@@ -1751,20 +1805,22 @@ export default function CitySimulator({
       ctx.strokeStyle = 'rgba(255,255,255,0.18)'
       ctx.lineWidth = 1
       ctx.beginPath(); ctx.moveTo(vx0 + halfVW, vy0); ctx.lineTo(vx0 + halfVW, vy0 + vH); ctx.stroke()
-    } else {
-      drawCityTopDown(ctx, m === 'baseline')
+      ctx.restore()
     }
 
-    ctx.restore()
+    // Warm ambient lift on mobile — dark palette needs a faint overlay so buildings aren't pure black
+    if (isMobileRef.current) {
+      ctx.fillStyle = 'rgba(70, 50, 20, 0.18)'
+      ctx.fillRect(0, 0, W, H)
+    }
 
     // Atmospheric vignette — desktop only, skip on mobile
     if (!isMobileRef.current) {
-      const { W: vW2, H: vH2 } = dimsRef.current
-      const vg = ctx.createRadialGradient(vW2 / 2, vH2 / 2, vW2 * 0.28, vW2 / 2, vH2 / 2, vW2 * 0.78)
+      const vg = ctx.createRadialGradient(W / 2, H / 2, W * 0.28, W / 2, H / 2, W * 0.78)
       vg.addColorStop(0, 'rgba(0,0,0,0)')
       vg.addColorStop(1, 'rgba(0,0,0,0.48)')
       ctx.fillStyle = vg
-      ctx.fillRect(0, 0, vW2, vH2)
+      ctx.fillRect(0, 0, W, H)
     }
   }
 
@@ -1809,6 +1865,7 @@ export default function CitySimulator({
     if (!canvas || !stage) return
     const ctx = canvas.getContext('2d')!
     const dpr = window.devicePixelRatio || 1
+    dprRef.current = dpr
 
     const resize = () => {
       const rect = stage.getBoundingClientRect()
@@ -1818,6 +1875,8 @@ export default function CitySimulator({
       canvas.width = W * dpr
       canvas.height = H * dpr
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      staticCanvasRef.current = null  // force offscreen canvas realloc on resize
+      staticDirtyRef.current = true
       // Re-layout when width changes OR when height changes by more than 20px
       // (e.g. switching between mobile/desktop stage heights)
       if (W !== prevW || Math.abs(H - prevH) > 20) {
@@ -1868,6 +1927,7 @@ export default function CitySimulator({
           pan.x = pan.x * factor + (cx - W / 2) * (1 - factor)
           pan.y = pan.y * factor + (cy - H / 2) * (1 - factor)
           clampPan(pan, newZ)
+          staticDirtyRef.current = true  // zoom changed — rebake static layer
         }
       }
 
@@ -2022,6 +2082,7 @@ export default function CitySimulator({
         pan.x = dragStartRef.current.panX + dx
         pan.y = dragStartRef.current.panY + dy
         clampPan(pan, zoomRef.current)
+        staticDirtyRef.current = true  // pan changed — rebake static layer
       }
     }
     const onUp = () => {
@@ -2134,6 +2195,7 @@ export default function CitySimulator({
       clampPan(pan, pz)
       zoomRef.current = pz
       targetZoomRef.current = pz
+      staticDirtyRef.current = true  // pinch zoom changed — rebake static layer
     } else if (e.touches.length === 1 && !pinchRef.current) {
       const touch = e.touches[0]
       if (!touchDragRef.current) {
@@ -2148,6 +2210,7 @@ export default function CitySimulator({
         pan.x = touchDragRef.current.panX + dx
         pan.y = touchDragRef.current.panY + dy
         clampPan(pan, zoomRef.current)
+        staticDirtyRef.current = true  // pan changed — rebake static layer
       }
     }
   }
