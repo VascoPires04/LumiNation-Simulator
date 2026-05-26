@@ -225,6 +225,10 @@ export default function CitySimulator({
   const bakedPanRef = useRef({ x: 0, y: 0 })   // pan at time of last bake
   const bakedZoomRef = useRef(1)                  // zoom at time of last bake
   const dprRef = useRef(1)
+  // Inertia — velocity in px/s applied after drag release
+  const panVelRef = useRef({ vx: 0, vy: 0 })
+  // Velocity tracker — last few samples for accurate release velocity
+  const velSamplesRef = useRef<{ x: number; y: number; t: number }[]>([])
 
   // ambient forces lumination mode so the corridor is always visible as backdrop
   const effectiveMode: Mode = variant === 'ambient' ? 'lumination' : mode
@@ -1937,6 +1941,23 @@ export default function CitySimulator({
         }
       }
 
+      // Inertia — apply pan velocity after drag release, damp each frame
+      const vel = panVelRef.current
+      if (Math.abs(vel.vx) > 1 || Math.abs(vel.vy) > 1) {
+        const pan = panRef.current
+        pan.x += vel.vx * dt
+        pan.y += vel.vy * dt
+        clampPan(pan, zoomRef.current)
+        const damping = Math.pow(0.92, dt * 60)  // frame-rate independent damping
+        vel.vx *= damping
+        vel.vy *= damping
+        // Snap to zero and do final rebake when velocity is negligible
+        if (Math.abs(vel.vx) < 1 && Math.abs(vel.vy) < 1) {
+          vel.vx = 0; vel.vy = 0
+          staticDirtyRef.current = true
+        }
+      }
+
       if (pausedRef.current) return
       handleScenario(dt)
       const power = step(dt)
@@ -2070,6 +2091,8 @@ export default function CitySimulator({
       if ((e.target as Element).closest('button, nav, a, input, select, [role="button"], .hud-controls, .hud-headline, .topbar, .info-btn, .info-modal, .card-expand')) return
       isDraggingRef.current = true
       didDragRef.current = false
+      panVelRef.current = { vx: 0, vy: 0 }  // kill any ongoing inertia
+      velSamplesRef.current = []
       dragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, panX: panRef.current.x, panY: panRef.current.y }
       canvas.style.cursor = 'grabbing'
     }
@@ -2088,6 +2111,11 @@ export default function CitySimulator({
         pan.x = dragStartRef.current.panX + dx
         pan.y = dragStartRef.current.panY + dy
         clampPan(pan, zoomRef.current)
+        // Track velocity samples (keep last 80ms)
+        const now = performance.now()
+        const samples = velSamplesRef.current
+        samples.push({ x: pan.x, y: pan.y, t: now })
+        while (samples.length > 1 && now - samples[0].t > 80) samples.shift()
       }
     }
     const onUp = () => {
@@ -2095,7 +2123,20 @@ export default function CitySimulator({
       isDraggingRef.current = false
       const canvas = canvasRef.current
       if (canvas) canvas.style.cursor = 'grab'
-      staticDirtyRef.current = true  // rebake cleanly at final pan position
+      // Compute release velocity from recent samples
+      const samples = velSamplesRef.current
+      if (samples.length >= 2) {
+        const first = samples[0], last = samples[samples.length - 1]
+        const dt = (last.t - first.t) / 1000
+        if (dt > 0) {
+          panVelRef.current = {
+            vx: (last.x - first.x) / dt,
+            vy: (last.y - first.y) / dt,
+          }
+        }
+      }
+      velSamplesRef.current = []
+      staticDirtyRef.current = true
     }
 
     window.addEventListener('mousedown', onDown)
@@ -2205,6 +2246,8 @@ export default function CitySimulator({
     } else if (e.touches.length === 1 && !pinchRef.current) {
       const touch = e.touches[0]
       if (!touchDragRef.current) {
+        panVelRef.current = { vx: 0, vy: 0 }  // kill any ongoing inertia
+        velSamplesRef.current = []
         touchDragRef.current = { startX: touch.clientX, startY: touch.clientY, panX: panRef.current.x, panY: panRef.current.y }
       }
       const dx = touch.clientX - touchDragRef.current.startX
@@ -2216,6 +2259,11 @@ export default function CitySimulator({
         pan.x = touchDragRef.current.panX + dx
         pan.y = touchDragRef.current.panY + dy
         clampPan(pan, zoomRef.current)
+        // Track velocity samples (keep last 80ms)
+        const now = performance.now()
+        const samples = velSamplesRef.current
+        samples.push({ x: pan.x, y: pan.y, t: now })
+        while (samples.length > 1 && now - samples[0].t > 80) samples.shift()
       }
     }
   }
@@ -2227,7 +2275,22 @@ export default function CitySimulator({
       const wasPinching = wasPinchingRef.current
       const wasTouchDragging = isTouchDraggingRef.current
       wasPinchingRef.current = false
-      if (isTouchDraggingRef.current) staticDirtyRef.current = true  // rebake at final pan position
+      if (isTouchDraggingRef.current) {
+        // Compute release velocity from recent samples
+        const samples = velSamplesRef.current
+        if (samples.length >= 2) {
+          const first = samples[0], last = samples[samples.length - 1]
+          const dt = (last.t - first.t) / 1000
+          if (dt > 0) {
+            panVelRef.current = {
+              vx: (last.x - first.x) / dt,
+              vy: (last.y - first.y) / dt,
+            }
+          }
+        }
+        velSamplesRef.current = []
+        staticDirtyRef.current = true
+      }
       isTouchDraggingRef.current = false
       touchDragRef.current = null
       if (!wasPinching && !wasTouchDragging && e.changedTouches.length === 1) {
