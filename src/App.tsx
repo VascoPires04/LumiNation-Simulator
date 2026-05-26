@@ -123,6 +123,8 @@ export default function App() {
   const scrollRef        = useRef<HTMLDivElement>(null)
   const externalSpawnRef = useRef<((cx: number, cy: number) => void) | null>(null)
   const externalZoomRef  = useRef<((delta: number) => void) | null>(null)
+  const spawnMouseDownRef = useRef<{ x: number; y: number } | null>(null)
+  const spawnDidDragRef   = useRef(false)
 
   const curtainVisibleRef = useRef(true)
   const dashInViewRef     = useRef(false)
@@ -627,6 +629,25 @@ export default function App() {
           ref={scrollRef}
           className="scroll-doc"
           style={mode === 'fpv' ? { pointerEvents: 'none' } : undefined}
+          onMouseDown={(e) => {
+            spawnMouseDownRef.current = { x: e.clientX, y: e.clientY }
+            spawnDidDragRef.current = false
+          }}
+          onMouseMove={(e) => {
+            const d = spawnMouseDownRef.current
+            if (d && !spawnDidDragRef.current && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) {
+              spawnDidDragRef.current = true
+            }
+          }}
+          onMouseUp={() => { spawnMouseDownRef.current = null }}
+          onClick={(e) => {
+            if (spawnDidDragRef.current) return
+            if (!effectiveCurtainVisible && externalSpawnRef.current) {
+              if (e.shiftKey) externalSpawnModeRef.current = 'car'
+              externalSpawnRef.current(e.clientX, e.clientY)
+              if (e.shiftKey) externalSpawnModeRef.current = spawnMode === 'car' ? 'car' : 'ped'
+            }
+          }}
         >
           {/* Landing spacer — transparent, height drives curtain lift distance on desktop */}
           <div className="landing-spacer" aria-hidden="true" />

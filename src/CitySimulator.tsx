@@ -824,7 +824,7 @@ export default function CitySimulator({
       const poleH = 9
       for (const l of visLamps) {
         const p = isoProject(l.x, l.y, W, H)
-        const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
+        const b = useBaseline ? MAX_VISUAL_BRI : Math.sqrt(l.brightness) * MAX_VISUAL_BRI
         isoLampPositions.push({ sx: p.sx, sy: p.sy, b, poleH })
       }
       const { cols: rCols0, rows: rRows0 } = streetPosRef.current
@@ -834,8 +834,8 @@ export default function CitySimulator({
           const rp = isoProject(cx, cy, W, H)
           const near = lampsRef.current.filter(l => Math.hypot(l.x - cx, l.y - cy) < 50)
           const rb = near.length > 0
-            ? (useBaseline ? MAX_VISUAL_BRI : near.reduce((s, l) => s + l.brightness, 0) / near.length * MAX_VISUAL_BRI)
-            : baselineRef.current * MAX_VISUAL_BRI
+            ? (useBaseline ? MAX_VISUAL_BRI : Math.sqrt(near.reduce((s, l) => s + l.brightness, 0) / near.length) * MAX_VISUAL_BRI)
+            : Math.sqrt(baselineRef.current) * MAX_VISUAL_BRI
           isoLampPositions.push({ sx: rp.sx, sy: rp.sy, b: rb, poleH: 14 })
         })
       })
@@ -909,7 +909,7 @@ export default function CitySimulator({
       for (const bld of visBuildings)
         drawList.push({ kind: 'building', depth: (bld.x + bld.w) + (bld.y + bld.h) + ISO_WALL_DX * bld.isoH, bld })
       for (const l of visLamps) {
-        const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
+        const b = useBaseline ? MAX_VISUAL_BRI : Math.sqrt(l.brightness) * MAX_VISUAL_BRI
         drawList.push({ kind: 'lamp', depth: l.x + l.y, wx: l.x, wy: l.y, b, ph: poleH })
       }
       for (const t of visTrees)
@@ -924,8 +924,8 @@ export default function CitySimulator({
           if (seededRng(ci * 31 + ri * 17 + 3)() >= 0.40) return
           const near = lampsRef.current.filter(l => Math.hypot(l.x - cx, l.y - cy) < 50)
           const rb = near.length > 0
-            ? (useBaseline ? MAX_VISUAL_BRI : near.reduce((s, l) => s + l.brightness, 0) / near.length * MAX_VISUAL_BRI)
-            : baselineRef.current * MAX_VISUAL_BRI
+            ? (useBaseline ? MAX_VISUAL_BRI : Math.sqrt(near.reduce((s, l) => s + l.brightness, 0) / near.length) * MAX_VISUAL_BRI)
+            : Math.sqrt(baselineRef.current) * MAX_VISUAL_BRI
           drawList.push({ kind: 'lamp', depth: cx + cy, wx: cx, wy: cy, b: rb, ph: 14 })
         })
       })
@@ -1232,7 +1232,7 @@ export default function CitySimulator({
     byStreet.forEach(arr => {
       arr.sort((a, b) => (a.x + a.y) - (b.x + b.y))
       for (let i = 0; i < arr.length - 1; i++) {
-        const avgB = useBaseline ? MAX_VISUAL_BRI : ((arr[i].brightness + arr[i + 1].brightness) / 2) * MAX_VISUAL_BRI
+        const avgB = useBaseline ? MAX_VISUAL_BRI : Math.sqrt((arr[i].brightness + arr[i + 1].brightness) / 2) * MAX_VISUAL_BRI
         ctx.strokeStyle = `rgba(250, 199, 117, ${0.02 + avgB * 0.08})`
         ctx.beginPath()
         ctx.moveTo(arr[i].x, arr[i].y); ctx.lineTo(arr[i + 1].x, arr[i + 1].y)
@@ -1245,8 +1245,8 @@ export default function CitySimulator({
       const roundX = W * 0.5, roundY = H * 0.5, roundZone = 40
       const roundLamps = visLamps.filter(l => Math.hypot(l.x - roundX, l.y - roundY) < roundZone)
       const roundB = roundLamps.length > 0
-        ? (useBaseline ? MAX_VISUAL_BRI : roundLamps.reduce((s, l) => s + l.brightness, 0) / roundLamps.length * MAX_VISUAL_BRI)
-        : baselineRef.current
+        ? (useBaseline ? MAX_VISUAL_BRI : Math.sqrt(roundLamps.reduce((s, l) => s + l.brightness, 0) / roundLamps.length) * MAX_VISUAL_BRI)
+        : Math.sqrt(baselineRef.current)
 
       const drawFlatHalo = (hx: number, hy: number, b: number) => {
         const n = b / MAX_VISUAL_BRI  // normalise to 0-1 for linear visual response
@@ -1268,7 +1268,7 @@ export default function CitySimulator({
       }
       for (const l of visLamps) {
         if (Math.hypot(l.x - roundX, l.y - roundY) < roundZone) continue
-        const b = useBaseline ? MAX_VISUAL_BRI : l.brightness * MAX_VISUAL_BRI
+        const b = useBaseline ? MAX_VISUAL_BRI : Math.sqrt(l.brightness) * MAX_VISUAL_BRI
         drawFlatHalo(l.x, l.y, b)
       }
       drawFlatHalo(roundX, roundY, roundB)
