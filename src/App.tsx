@@ -447,7 +447,7 @@ export default function App() {
                 {isMobile && (
                   <div
                     className="hud-controls-handle-row"
-                    onPointerDown={e => dragControls.start(e)}
+                    onPointerDown={e => dragControls.start(e, { snapToCursor: false })}
                     onClick={hudToggle}
                     style={{ touchAction: 'none' }}
                   >
