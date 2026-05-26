@@ -431,20 +431,28 @@ export default function App() {
               className="hud-controls"
               aria-label="Simulator controls"
             >
-              {/* Draggable on mobile only — static on desktop */}
+              {/* Body — only y-translated, never draggable itself */}
               <motion.div
                 className="hud-controls-body"
                 style={isMobile ? { y: hudY } : undefined}
-                drag={isMobile ? 'y' : false}
-                dragConstraints={isMobile ? { top: HUD_OPEN_Y, bottom: hudMax } : undefined}
-                dragElastic={isMobile ? { top: 0.02, bottom: 0.02 } : undefined}
-                onDragEnd={isMobile ? hudSnap : undefined}
               >
-                {/* Handle — mobile only */}
+                {/* Handle — drag lives HERE only, so sliders never compete */}
                 {isMobile && (
-                  <div className="hud-controls-handle-row" onClick={hudToggle}>
+                  <motion.div
+                    className="hud-controls-handle-row"
+                    drag="y"
+                    dragConstraints={{ top: HUD_OPEN_Y, bottom: hudMax }}
+                    dragElastic={{ top: 0.02, bottom: 0.02 }}
+                    onDrag={(_, info) => {
+                      const next = Math.min(hudMax, Math.max(HUD_OPEN_Y, hudY.get() + info.delta.y))
+                      hudY.set(next)
+                    }}
+                    onDragEnd={hudSnap}
+                    onClick={hudToggle}
+                    style={{ cursor: 'grab', touchAction: 'none' }}
+                  >
                     <div className="hud-controls-handle" />
-                  </div>
+                  </motion.div>
                 )}
 
                 <div ref={hudInnerRef} className="hud-controls-inner" style={{ pointerEvents: hudOpen ? 'auto' : 'none' }}>
@@ -487,7 +495,6 @@ export default function App() {
                         type="range" min={0} max={100}
                         value={Math.round(baselinePct * 100)}
                         onChange={e => setBaselinePct(Number(e.target.value) / 100)}
-                        onPointerDown={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation() }}
                         style={{ touchAction: 'pan-x' }}
                       />
                     </div>
@@ -511,7 +518,6 @@ export default function App() {
                         type="range" min={0.5} max={8} step={0.5}
                         value={lookaheadSec}
                         onChange={e => setLookaheadSec(Number(e.target.value))}
-                        onPointerDown={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation() }}
                         style={{ touchAction: 'pan-x' }}
                       />
                     </div>
