@@ -1757,13 +1757,15 @@ export default function CitySimulator({
 
     ctx.restore()
 
-    // Atmospheric vignette — drawn in screen space so it stays fixed during pan/zoom
-    const { W: vW2, H: vH2 } = dimsRef.current
-    const vg = ctx.createRadialGradient(vW2 / 2, vH2 / 2, vW2 * 0.28, vW2 / 2, vH2 / 2, vW2 * 0.78)
-    vg.addColorStop(0, 'rgba(0,0,0,0)')
-    vg.addColorStop(1, 'rgba(0,0,0,0.48)')
-    ctx.fillStyle = vg
-    ctx.fillRect(0, 0, vW2, vH2)
+    // Atmospheric vignette — desktop only, skip on mobile
+    if (!isMobileRef.current) {
+      const { W: vW2, H: vH2 } = dimsRef.current
+      const vg = ctx.createRadialGradient(vW2 / 2, vH2 / 2, vW2 * 0.28, vW2 / 2, vH2 / 2, vW2 * 0.78)
+      vg.addColorStop(0, 'rgba(0,0,0,0)')
+      vg.addColorStop(1, 'rgba(0,0,0,0.48)')
+      ctx.fillStyle = vg
+      ctx.fillRect(0, 0, vW2, vH2)
+    }
   }
 
   // --- Scenario auto-spawn ---
