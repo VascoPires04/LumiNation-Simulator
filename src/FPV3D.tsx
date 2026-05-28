@@ -107,22 +107,21 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
 
-    // Full desktop quality on all devices — no mobile degradation
-    const isMob = false
+    const isMob = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || W <= 768
 
     // ── Scene ──────────────────────────────────────────────────────────────
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x050810)
-    scene.fog = new THREE.FogExp2(0x0a1428, isMob ? 0.009 : 0.006)
+    scene.fog = new THREE.FogExp2(0x0a1428, isMob ? 0.010 : 0.006)
 
     // ── Camera ─────────────────────────────────────────────────────────────
-    const camera = new THREE.PerspectiveCamera(computeFOV(W / H), W / H, 0.1, isMob ? 120 : 300)
+    const camera = new THREE.PerspectiveCamera(computeFOV(W / H), W / H, 0.1, isMob ? 160 : 300)
     camera.position.set(0, 1.7, 0)
     camera.lookAt(0, 1.7, -100)
 
     // ── Renderer ───────────────────────────────────────────────────────────
     const renderer = new THREE.WebGLRenderer({ antialias: !isMob })
-    renderer.setPixelRatio(isMob ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2))
+    renderer.setPixelRatio(isMob ? 1.0 : Math.min(window.devicePixelRatio, 2))
     renderer.setSize(W, H)
     renderer.shadowMap.enabled = !isMob   // shadows too heavy for mobile WebGL
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -134,8 +133,9 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     // Hemisphere light: sky colour (cool blue-grey) from above, ground bounce
     // (warm dark) from below. This ensures building faces are always at least
     // subtly visible on all devices — real-world night streets have sky glow.
-    scene.add(new THREE.HemisphereLight(0x1a2540, 0x0a0906, 1.2))
-    scene.add(new THREE.AmbientLight(0x0a0c12, 0.3))
+    // Mobile: boost ambient since no shadow maps to add depth contrast
+    scene.add(new THREE.HemisphereLight(0x1a2540, 0x0a0906, isMob ? 1.8 : 1.2))
+    scene.add(new THREE.AmbientLight(0x0a0c12, isMob ? 0.55 : 0.3))
 
     // ── Ground ─────────────────────────────────────────────────────────────
     const roadMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x0e0e0e }) : new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.95, metalness: 0.0 })
@@ -158,7 +158,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const curbR = new THREE.Mesh(curbGeo, curbMat); curbR.position.set(4.06, 0.07, -100); scene.add(curbR)
 
     // Road centre dashes — pooled, recycled
-    const DASH_COUNT = isMob ? 20 : 63
+    const DASH_COUNT = isMob ? 30 : 63
     const DASH_SPACING = 8
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xe8e8e8 })
     const dashGeo = new THREE.BoxGeometry(0.12, 0.01, 3.2)
@@ -173,10 +173,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const starGeo = new THREE.BufferGeometry()
     const starPos: number[] = []
     const starRng = seededRng(777)
-    for (let i = 0; i < (isMob ? 80 : 280); i++) {
+    for (let i = 0; i < (isMob ? 150 : 280); i++) {
       const theta = starRng() * Math.PI * 2
       const phi = starRng() * Math.PI * 0.48   // upper hemisphere
-      const r = isMob ? 80 : 180
+      const r = isMob ? 130 : 180
       starPos.push(
         r * Math.sin(phi) * Math.cos(theta),
         r * Math.cos(phi) + 30,
@@ -188,7 +188,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     scene.add(new THREE.Points(starGeo, starMat))
 
     // ── Building pool ──────────────────────────────────────────────────────
-    const BLDG_COUNT = isMob ? 10 : 23  // per side
+    const BLDG_COUNT = isMob ? 14 : 23  // per side
     const BLDG_SPACING = 22   // metres between building groups
     const BLDG_DEPTH = 14     // Z depth of each block
     const BLDG_WIDTH = 11
@@ -212,7 +212,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const adaptiveLamps: AdaptiveLamp[] = []
 
     const trunkMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x2e1d15 }) : new THREE.MeshStandardMaterial({ color: 0x2e1d15, roughness: 0.92 })
-    const foliageMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x0a2e12 }) : new THREE.MeshStandardMaterial({ color: 0x0a2e12, roughness: 0.88 })
+    const foliageMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x1a5228 }) : new THREE.MeshStandardMaterial({ color: 0x0a2e12, roughness: 0.88 })
 
     const poleMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x888898 }) : new THREE.MeshStandardMaterial({ color: 0x888898, roughness: 0.6 })
     const armMat = isMob ? new THREE.MeshLambertMaterial({ color: 0x777788 }) : new THREE.MeshStandardMaterial({ color: 0x777788, roughness: 0.6 })
@@ -395,11 +395,11 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           group.add(mesh)
 
           // Window panes on the street-facing side
-          if (!isMob) {
-            // Desktop: full per-pane grid
+          {
             const wRng   = seededRng(seed)
-            const cols   = Math.max(2, Math.round(depth / 2.8))
-            const rows   = Math.max(2, Math.round((h - 3.5) / 3.0))
+            // Mobile: half the columns/rows — fewer draw calls, same look
+            const cols   = Math.max(2, Math.round(depth / (isMob ? 4.5 : 2.8)))
+            const rows   = Math.max(2, Math.round((h - 3.5) / (isMob ? 4.5 : 3.0)))
             const winW   = (depth / cols) * 0.52
             const winH   = ((h - 3.5) / rows) * 0.55
             const rotY   = isLeft ? Math.PI / 2 : -Math.PI / 2
@@ -1284,7 +1284,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const NPC_TOTAL_RANGE = 320
 
     // ── Tree pool ──────────────────────────────────────────────────────────
-    const TREE_COUNT = isMob ? 5 : 11   // per side
+    const TREE_COUNT = isMob ? 7 : 11   // per side
     const TREE_SPACING = 48  // metres
     interface TreeGroup {
       group: THREE.Group
@@ -1340,7 +1340,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     }
 
     // ── Streetlight pool ───────────────────────────────────────────────────
-    const LAMP_COUNT = isMob ? 10 : 46  // per side
+    const LAMP_COUNT = isMob ? 20 : 46  // per side
     const LAMP_SPACING = 11  // metres — dense urban spacing
     const LAMP_HEIGHT = 6.0
     const LAMP_ARM = 1.4     // arm toward road

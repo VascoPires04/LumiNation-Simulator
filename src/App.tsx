@@ -25,6 +25,43 @@ import DashboardSection from './sections/DashboardSection'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 
+// Custom slider — works reliably on mobile (pointer capture, no native range quirks)
+function TouchSlider({ min, max, step, value, onChange }: {
+  min: number; max: number; step: number; value: number; onChange: (v: number) => void
+}) {
+  const trackRef = useRef<HTMLDivElement>(null)
+
+  const calc = (clientX: number) => {
+    const rect = trackRef.current!.getBoundingClientRect()
+    const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    const raw  = min + pct * (max - min)
+    return Math.max(min, Math.min(max, Math.round(raw / step) * step))
+  }
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    onChange(calc(e.clientX))
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (e.buttons === 0) return
+    onChange(calc(e.clientX))
+  }
+
+  const pct = (value - min) / (max - min)
+  return (
+    <div
+      ref={trackRef}
+      className="touch-slider-track"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      style={{ touchAction: 'none' }}
+    >
+      <div className="touch-slider-fill" style={{ width: `${pct * 100}%` }} />
+      <div className="touch-slider-thumb" style={{ left: `${pct * 100}%` }} />
+    </div>
+  )
+}
+
 // Curtain lift completes over LIFT px of scroll
 const LIFT = 600
 const CITY_LAMPS = 100_000
@@ -521,11 +558,10 @@ export default function App() {
                         </span>
                         <span className="sim-compact-value">{Math.round(baselinePct * 100)}%</span>
                       </label>
-                      <input
-                        type="range" min={0} max={100}
+                      <TouchSlider
+                        min={0} max={100} step={1}
                         value={Math.round(baselinePct * 100)}
-                        onChange={e => setBaselinePct(Number(e.target.value) / 100)}
-                        style={{ touchAction: 'pan-x' }}
+                        onChange={v => setBaselinePct(v / 100)}
                       />
                     </div>
                     <div className="slider-col">
@@ -544,11 +580,10 @@ export default function App() {
                         </span>
                         <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
                       </label>
-                      <input
-                        type="range" min={0.5} max={8} step={0.5}
+                      <TouchSlider
+                        min={0.5} max={8} step={0.5}
                         value={lookaheadSec}
-                        onChange={e => setLookaheadSec(Number(e.target.value))}
-                        style={{ touchAction: 'pan-x' }}
+                        onChange={setLookaheadSec}
                       />
                     </div>
                   </div>
