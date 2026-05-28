@@ -745,18 +745,39 @@ input[type="range"] {
     right: 0;
     gap: 0;
     padding: 0;
+    will-change: transform;
   }
-  .fpv-overlay .fpv-card:first-child { display: none; }
+  .fpv-overlay .fpv-card--dashboard { display: none; }
   .fpv-overlay .fpv-card:last-child {
-    flex: 1;
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
     gap: 8px;
     border-radius: 0;
     border-left: none;
     border-right: none;
     border-bottom: none;
+    max-height: 55vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
   .fpv-card-title { display: none; }
+
+  /* Bottom sheet handle */
+  .fpv-sheet-handle-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: clamp(10px, 2.5vh, 22px) 0;
+    background: transparent;
+    cursor: grab;
+    flex-shrink: 0;
+  }
+  .fpv-sheet-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.28);
+  }
   .fpv-button-group { flex-direction: row; gap: 8px; }
   .fpv-btn {
     flex: 1;
@@ -1524,14 +1545,15 @@ input[type="range"] {
 }
 .info-modal-close {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 8px;
+  right: 8px;
   background: none;
   border: none;
   color: rgba(255,255,255,0.35);
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 16px;
+  line-height: 1;
   transition: color 0.15s;
 }
 .info-modal-close:hover { color: var(--text); }

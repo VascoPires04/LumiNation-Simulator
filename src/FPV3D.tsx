@@ -2,6 +2,36 @@ import { useEffect, useRef, useState } from 'react'
 import { useIsMobile } from './hooks/useIsMobile'
 import * as THREE from 'three'
 
+// Touch-friendly slider — pointer capture, works on mobile
+function TouchSlider({ min, max, step, value, onChange }: {
+  min: number; max: number; step: number; value: number; onChange: (v: number) => void
+}) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const calc = (clientX: number) => {
+    const rect = trackRef.current!.getBoundingClientRect()
+    const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    const raw  = min + pct * (max - min)
+    return Math.max(min, Math.min(max, Math.round(raw / step) * step))
+  }
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    onChange(calc(e.clientX))
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (e.buttons === 0) return
+    onChange(calc(e.clientX))
+  }
+  const pct = (value - min) / (max - min)
+  return (
+    <div ref={trackRef} className="touch-slider-track"
+      onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+      style={{ touchAction: 'none' }}>
+      <div className="touch-slider-fill" style={{ width: `${pct * 100}%` }} />
+      <div className="touch-slider-thumb" style={{ left: `${pct * 100}%` }} />
+    </div>
+  )
+}
+
 interface Agent {
   x: number; y: number; vx: number; vy: number
   type: 'ped' | 'car'; stride: number; t: number
@@ -66,12 +96,72 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
   const [speedMult, setSpeedMult] = useState(1.0)
   const [realSpeed, setRealSpeed] = useState(1.4)
   const [corridorLength, setCorridorLength] = useState(24.0)
+  const [baselineVal, setBaselineVal] = useState(() => Math.round(baselineRef.current * 100))
+  const [lookaheadVal, setLookaheadVal] = useState(() => lookaheadRef.current)
 
   const speedMultRef = useRef(1.0)
 
   const handleSpeedChange = (mult: number) => {
     setSpeedMult(mult)
     speedMultRef.current = mult
+  }
+
+  // ── FPV bottom sheet (mobile) ───────────────────────────────────────────
+  const sheetRef  = useRef<HTMLDivElement>(null)
+  const sheetY    = useRef(0)
+  const sheetIsOpen = useRef(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const PEEK = 56
+
+  const sheetSetY = (el: HTMLDivElement, y: number, animated: boolean) => {
+    sheetY.current = y
+    el.style.transition = animated ? 'transform 0.38s cubic-bezier(0.32, 1.25, 0.6, 1)' : 'none'
+    el.style.transform  = `translateY(${y}px)`
+  }
+
+  const sheetSnap = (open: boolean) => {
+    const el = sheetRef.current; if (!el) return
+    const maxY = el.offsetHeight - PEEK
+    sheetSetY(el, open ? 0 : maxY, true)
+    sheetIsOpen.current = open
+    setSheetOpen(open)
+  }
+
+  // Start collapsed after first layout
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      const el = sheetRef.current; if (!el) return
+      const maxY = el.offsetHeight - PEEK
+      sheetSetY(el, maxY, false)
+      sheetY.current = maxY
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  const onSheetDown = (e: React.PointerEvent) => {
+    const el = sheetRef.current; if (!el) return
+    const startY = sheetY.current
+    let lastY = e.clientY, lastT = performance.now(), vel = 0
+    sheetSetY(el, startY, false)
+
+    const onMove = (ev: PointerEvent) => {
+      const now = performance.now(); const dt = now - lastT
+      vel   = dt > 0 ? (ev.clientY - lastY) / dt * 1000 : vel
+      lastY = ev.clientY; lastT = now
+      const maxY = el.offsetHeight - PEEK
+      sheetSetY(el, Math.max(0, Math.min(maxY, startY + (ev.clientY - e.clientY))), false)
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup',   onUp)
+      const maxY  = el.offsetHeight - PEEK
+      const cur   = sheetY.current
+      const isOpen = sheetIsOpen.current
+      const goOpen = isOpen ? (cur < maxY * 0.45 && vel < 400) : (cur < maxY * 0.55 || vel < -300)
+      sheetSnap(goOpen)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup',   onUp)
   }
 
   useEffect(() => {
@@ -165,7 +255,8 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const dashes: THREE.Mesh[] = []
     for (let i = 0; i < DASH_COUNT; i++) {
       const m = new THREE.Mesh(dashGeo, dashMat)
-      m.position.set(0, 0.01, -i * DASH_SPACING + 200)
+      const dashInitZ = isMob ? (-i * DASH_SPACING) : (-i * DASH_SPACING + 200)
+      m.position.set(0, 0.01, dashInitZ)
       scene.add(m); dashes.push(m)
     }
 
@@ -184,7 +275,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       )
     }
     starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3))
-    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.4, sizeAttenuation: false, fog: false })
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.4, sizeAttenuation: false, fog: false, transparent: true, opacity: 1.0 })
     scene.add(new THREE.Points(starGeo, starMat))
 
     // ── Building pool ──────────────────────────────────────────────────────
@@ -237,16 +328,16 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     const poolTex = makeSoftPoolTexture()
 
     const WALL_COLORS = [
-      0xbcb7ae, // antique muted white (slightly greyish-cream)
-      0xaaa59c, // weathered cream (soft weathered limestone)
-      0x9b9389, // mid-tone gray facade
-      0x585654, // dark gray render
-      0x32353b, // charcoal concrete
-      0x8b5a42, // terracotta / warm brick
-      0x4a5d4e, // sage / olive green
-      0xa47c55, // warm ochre / mustard
-      0x2a3e4a, // deep teal / blue-gray
-      0x634f47, // warm taupe
+      0xd8d2c8, // antique muted white
+      0xc8c2b6, // weathered cream
+      0xb0a89e, // mid-tone gray facade
+      0x7a7875, // dark gray render
+      0x52565c, // charcoal concrete
+      0xb87858, // terracotta / warm brick
+      0x6a7d6e, // sage / olive green
+      0xc89c6a, // warm ochre / mustard
+      0x3e5868, // deep teal / blue-gray
+      0x8a6e64, // warm taupe
     ]
     const AWNING_COLORS = [0xb81820, 0x1a4aaa, 0x1a7830, 0x884400, 0x6a1a8a, 0x186878]
     const SIGN_COLORS   = [0xd02020, 0x2060cc, 0x20aa40, 0xcc8800, 0x8830cc, 0x20aacc]
@@ -1438,7 +1529,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     // ── Caption ────────────────────────────────────────────────────────────
     const caption = document.createElement('div')
     caption.style.cssText = `
-      position:absolute;bottom:28px;left:0;right:0;text-align:center;
+      position:absolute;bottom:${isMob ? '72px' : '28px'};left:0;right:0;text-align:center;
       color:rgba(255,255,255,0.45);font:12px/1 Inter,sans-serif;
       pointer-events:none;letter-spacing:0.04em;
     `
@@ -1666,8 +1757,18 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       // ── Recycle centre dashes ─────────────────────────────────────────
       for (const d of dashes) {
         if (!pausedRef.current) d.position.z += realSpeed * dt
-        if (d.position.z > 240) d.position.z -= DASH_COUNT * DASH_SPACING
+        const dashRange = DASH_COUNT * DASH_SPACING
+        if (d.position.z > (isMob ? dashRange * 0.4 : 240)) d.position.z -= dashRange
       }
+
+      // ── Stars react to baseline brightness ────────────────────────────────
+      // Below 60%: fully visible. 60→90%: fade out. Above 90%: gone.
+      // Below 50%: sky gets denser (larger points = more prominent stars).
+      const bri = baselineRef.current
+      const newStarOpacity = bri <= 0.6 ? 1.0 : Math.max(0, 1 - (bri - 0.6) / 0.35)
+      const newStarSize    = bri <= 0.5 ? 1.4 + (0.5 - bri) * 1.2 : 1.4
+      if (starMat.opacity !== newStarOpacity) { starMat.opacity = newStarOpacity; starMat.needsUpdate = true }
+      if (starMat.size    !== newStarSize)    { starMat.size    = newStarSize;    starMat.needsUpdate = true }
 
       renderer.render(scene, camera)
     }
@@ -1692,9 +1793,20 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       />
 
       {/* Floating Glassmorphic UI Panel */}
-      <div className="fpv-overlay">
+      <div ref={isMobile ? sheetRef : undefined} className="fpv-overlay">
+        {/* Drag handle — mobile only */}
+        {isMobile && (
+          <div
+            className="fpv-sheet-handle-row"
+            onPointerDown={onSheetDown}
+            onClick={() => sheetSnap(!sheetOpen)}
+            style={{ touchAction: 'none' }}
+          >
+            <div className="fpv-sheet-handle" />
+          </div>
+        )}
         {/* Left Side: Citizen Dashboard */}
-        <div className="fpv-card">
+        <div className="fpv-card fpv-card--dashboard">
           <div className="fpv-card-title">🏃 Citizen Dashboard</div>
           
           <div className="fpv-stat-row">
@@ -1752,12 +1864,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
             <div style={{ marginTop: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>
                 <span>Baseline brightness</span>
-                <span style={{ color: '#FAC775' }}>{Math.round(baselineRef.current * 100)}%</span>
+                <span style={{ color: '#FAC775' }}>{baselineVal}%</span>
               </div>
-              <input type="range" min={0} max={100}
-                defaultValue={Math.round(baselineRef.current * 100)}
-                style={{ width: '100%', accentColor: '#FAC775' }}
-                onChange={e => onBaselineChange(Number(e.target.value) / 100)}
+              <TouchSlider min={0} max={100} step={1} value={baselineVal}
+                onChange={v => { setBaselineVal(v); onBaselineChange(v / 100) }}
               />
             </div>
           )}
@@ -1766,12 +1876,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
             <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>
                 <span>Lookahead</span>
-                <span style={{ color: '#FAC775' }}>{lookaheadRef.current.toFixed(1)}s</span>
+                <span style={{ color: '#FAC775' }}>{lookaheadVal.toFixed(1)}s</span>
               </div>
-              <input type="range" min={0.5} max={8} step={0.5}
-                defaultValue={lookaheadRef.current}
-                style={{ width: '100%', accentColor: '#FAC775' }}
-                onChange={e => onLookaheadChange(Number(e.target.value))}
+              <TouchSlider min={0.5} max={8} step={0.5} value={lookaheadVal}
+                onChange={v => { setLookaheadVal(v); onLookaheadChange(v) }}
               />
             </div>
           )}

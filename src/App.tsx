@@ -95,6 +95,7 @@ export default function App() {
     const el = hudInnerRef.current
     if (!el) return
     const ro = new ResizeObserver(() => {
+      if (!el.isConnected) return  // ignore stale callbacks after unmount
       const h = el.offsetHeight + 40 // +40 for handle row + padding
       hudMaxRef.current = h
       setHudMax(h)
@@ -103,6 +104,18 @@ export default function App() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [isMobile])
+
+  // When returning from FPV, the HUD remounts but hudY may have drifted.
+  // Re-sync hudY to the correct open/closed position based on hudOpen state.
+  useEffect(() => {
+    if (!isMobile || mode === 'fpv') return
+    if (hudOpen) {
+      hudY.jump(Math.round(window.innerHeight * 0.06))
+    } else {
+      hudY.jump(hudMaxRef.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, isMobile])
 
   const HUD_OPEN_Y = Math.round(window.innerHeight * 0.06)
   const hudToggle = () => {
@@ -419,7 +432,7 @@ export default function App() {
         )}
 
         {/* ── Info button + first-time hint arrow ── */}
-        {!effectiveCurtainVisible && !dashInView && (
+        {!effectiveCurtainVisible && !dashInView && mode !== 'fpv' && (
           <>
             {showInfoHint && (
               <motion.div
