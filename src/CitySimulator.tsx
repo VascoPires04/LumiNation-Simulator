@@ -329,8 +329,8 @@ export default function CitySimulator({
 
   // --- Layout the city ---
   function layoutCity(width: number, height: number) {
-    // Generate for full zoom-out extent. Mobile min zoom is 0.75 → less content needed.
-    const minZoom = isMobileRef.current ? 0.65 : 0.45
+    // Generate for full zoom-out extent. Mobile matches desktop so users can zoom out far.
+    const minZoom = isMobileRef.current ? 0.40 : 0.45
     const { vx0, vy0, vx1, vy1 } = getVirtualBounds(width, height, minZoom)
 
     const colStep = width * 0.32
@@ -543,7 +543,7 @@ export default function CitySimulator({
 
     // Use full layout extent (min zoom) so agents aren't culled when zooming in
     const { W, H } = dimsRef.current
-    const minZoom = isMobileRef.current ? 0.65 : 0.45
+    const minZoom = isMobileRef.current ? 0.40 : 0.45
     const { vx0, vy0, vx1, vy1 } = getVirtualBounds(W, H, minZoom)
     agentsRef.current = agents.filter(a => a.x > vx0 - 60 && a.x < vx1 + 60 && a.y > vy0 - 60 && a.y < vy1 + 60)
     if (trackedRef.current && !agentsRef.current.includes(trackedRef.current)) {
@@ -1753,7 +1753,8 @@ export default function CitySimulator({
     // ── Static layer baking ──────────────────────────────────────────────────
     // Bake ground/roads/buildings/trees into an offscreen canvas once.
     // During pan/drag, offset the blit by the delta — no rebake until drag ends.
-    // Rebake whenever zoom changes or layout changes.
+    // During zoom animation, SKIP the rebake entirely — the dynamic layer draws
+    // everything correctly, and a single quality rebake fires when zoom settles.
     if (m !== 'compare') {
       const useBaseline = m === 'baseline'
       // Allocate / resize offscreen canvas to match physical pixel size
@@ -1767,7 +1768,9 @@ export default function CitySimulator({
         staticDirtyRef.current = true
       }
 
-      if (staticDirtyRef.current) {
+      // Only rebake when zoom has settled — skip the expensive redraw while easing
+      const zoomIsSettled = Math.abs(targetZoomRef.current - zoomRef.current) < 0.002
+      if (staticDirtyRef.current && zoomIsSettled) {
         const sCtx = sc.getContext('2d')!
         sCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
         sCtx.fillStyle = '#08080e'
@@ -1785,10 +1788,16 @@ export default function CitySimulator({
         bakedZoomRef.current = z
       }
 
-      // Blit static layer offset by pan delta since last bake (GPU copy — nearly free)
-      const dpx = panX - bakedPanRef.current.x
-      const dpy = panY - bakedPanRef.current.y
-      ctx.drawImage(sc, 0, 0, physW, physH, dpx, dpy, W, H)
+      if (!staticDirtyRef.current) {
+        // Blit static layer offset by pan delta since last bake (GPU copy — nearly free)
+        const dpx = panX - bakedPanRef.current.x
+        const dpy = panY - bakedPanRef.current.y
+        ctx.drawImage(sc, 0, 0, physW, physH, dpx, dpy, W, H)
+      } else {
+        // Zoom is still easing — skip stale blit, dynamic layer will draw the full scene
+        ctx.fillStyle = '#08080e'
+        ctx.fillRect(0, 0, W, H)
+      }
 
       // Dynamic layer: halos + mesh + agents on top (with current pan)
       ctx.save()
@@ -1914,11 +1923,11 @@ export default function CitySimulator({
 
 
       // Smooth zoom easing — each wheel tick sets targetZoom, we glide towards it
-      const minZoom = isMobileRef.current ? 0.65 : 0.45
+      const minZoom = isMobileRef.current ? 0.40 : 0.45
       targetZoomRef.current = Math.max(minZoom, targetZoomRef.current)
       if (zoomRef.current !== targetZoomRef.current) {
         const oldZ = zoomRef.current
-        const ease = 1 - Math.exp(-dt * 10)
+        const ease = 1 - Math.exp(-dt * 3)
         zoomRef.current += (targetZoomRef.current - zoomRef.current) * ease
         if (Math.abs(targetZoomRef.current - zoomRef.current) < 0.001) {
           zoomRef.current = targetZoomRef.current
@@ -2067,7 +2076,7 @@ export default function CitySimulator({
 
   const clampPan = (pan: { x: number; y: number }, z: number) => {
     const { W, H } = dimsRef.current
-    const minZ = isMobileRef.current ? 0.65 : 0.45
+    const minZ = isMobileRef.current ? 0.40 : 0.45
     const { vx0, vy0, vx1, vy1 } = getVirtualBounds(W, H, minZ)
     pan.x = Math.max(W / 2 - (vx1 - W / 2) * z, Math.min((W / 2 - vx0) * z - W / 2, pan.x))
     pan.y = Math.max(H / 2 - (vy1 - H / 2) * z, Math.min((H / 2 - vy0) * z - H / 2, pan.y))
@@ -2179,15 +2188,17 @@ export default function CitySimulator({
     const onWheel = (e: WheelEvent) => {
       if (stageVisibilityRef.current < 0.8) return  // let page scroll when half-visible
       e.preventDefault()
-      const minZ = isMobileRef.current ? 0.65 : 0.45
+      const minZ = isMobileRef.current ? 0.40 : 0.45
       // ctrlKey = trackpad pinch-to-zoom. deltaX != 0 = trackpad two-finger scroll.
       // Plain mouse wheel has ctrlKey=false and deltaX=0 — treat as zoom.
       const isTrackpadScroll = !e.ctrlKey && (Math.abs(e.deltaX) > 0 || e.deltaMode === 0 && Math.abs(e.deltaY) < 50)
       const rect = canvas.getBoundingClientRect()
       if (e.ctrlKey) {
         // Trackpad pinch-to-zoom → zoom toward cursor
+        // Cap raw deltaY so a fast pinch gesture can't jump more than ~2% in one event
         zoomAnchorRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-        const factor = Math.exp(-e.deltaY * 0.01)
+        const clamped = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 10)
+        const factor = Math.exp(-clamped * 0.002)
         targetZoomRef.current = Math.min(3, Math.max(minZ, targetZoomRef.current * factor))
       } else if (isTrackpadScroll) {
         // Trackpad two-finger scroll → pan
@@ -2196,9 +2207,9 @@ export default function CitySimulator({
         pan.y -= e.deltaY
         clampPan(pan, zoomRef.current)
       } else {
-        // Plain scroll wheel → zoom toward cursor
+        // Plain scroll wheel → zoom toward cursor (3% per tick)
         zoomAnchorRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-        const delta = e.deltaY > 0 ? 0.9 : 1.1
+        const delta = e.deltaY > 0 ? 0.97 : 1.03
         targetZoomRef.current = Math.min(3, Math.max(minZ, targetZoomRef.current * delta))
       }
     }
@@ -2227,7 +2238,7 @@ export default function CitySimulator({
       const dy = e.touches[0].clientY - e.touches[1].clientY
       const dist = Math.hypot(dx, dy)
       const ratio = dist / pinchRef.current.dist
-      const minZ = isMobileRef.current ? 0.65 : 0.45
+      const minZ = isMobileRef.current ? 0.40 : 0.45
       const oldZ = zoomRef.current
       const pz = Math.min(3, Math.max(minZ, pinchRef.current.zoom * ratio))
       // Zoom to pinch midpoint

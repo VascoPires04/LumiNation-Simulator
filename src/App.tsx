@@ -14,6 +14,7 @@
 // Desktop curtain: scroll-driven lift as before.
 
 import { useEffect, useRef, useState } from 'react'
+import lumiLogo from '../images/LumiNation_White.png'
 import { animate, motion, MotionConfig, useMotionValue, useScroll, useSpring, useTransform } from 'framer-motion'
 import CitySimulator from './CitySimulator'
 import LandingCurtain from './sections/LandingSection'
@@ -743,12 +744,8 @@ export default function App() {
               title={isMobile ? undefined : 'Back to start'}
               style={{ cursor: isMobile ? 'default' : 'pointer' }}
             >
-              L
+              <img src={lumiLogo} alt="LumiNation" className="brand-logo-img" />
             </motion.div>
-            <div>
-              <div className="brand-name"><span className="brand-lumi">Lumi</span><span className="brand-nation">Nation</span></div>
-              <div className="brand-tag">The adaptive light corridor · live simulator</div>
-            </div>
           </div>
           <div className="mode-bar">
               {mode === 'fpv'

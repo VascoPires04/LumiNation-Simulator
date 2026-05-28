@@ -81,6 +81,17 @@ export default function LandingCurtain({ scrollY }: Props) {
             Light that moves with you
           </motion.p>
 
+          {/* Subtitle line */}
+          <motion.p
+            className="landing-subtitle"
+            style={{ y: sloganY, opacity: sloganOpacity, scale: sloganScale }}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, ease: 'easeOut', delay: 0.18 }}
+          >
+            streets brighten ahead of you — and quietly dim behind
+          </motion.p>
+
 
           {/* Scroll cue — fades very early so canvas reveals quickly */}
           <motion.div

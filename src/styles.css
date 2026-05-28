@@ -249,23 +249,21 @@ input[type="range"] {
 
 .brand {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 12px;
 }
 
 .brand-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--amber);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-heading);
-  font-weight: 800;
-  color: var(--amber-deep);
-  font-size: 19px;
-  box-shadow: 0 0 15px rgba(250, 199, 117, 0.25);
+}
+
+.brand-logo-img {
+  height: 72px;
+  width: auto;
+  object-fit: contain;
+  display: block;
 }
 
 .brand-name {
@@ -281,7 +279,8 @@ input[type="range"] {
 
 .brand-tag {
   font-size: clamp(0.65rem, 1.2vw, 0.78rem);
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 1);
+  padding-bottom: 2px;
 }
 
 .mode-bar {
@@ -620,11 +619,8 @@ input[type="range"] {
   .brand-name {
     font-size: 13px;
   }
-  .brand-mark {
-    width: 24px;
-    height: 24px;
-    font-size: 12px;
-    box-shadow: none;
+  .brand-logo-img {
+    height: 50px;
   }
   .mode-bar {
     width: auto;
@@ -962,6 +958,18 @@ input[type="range"] {
 }
 .landing-line + .landing-line {
   margin-top: 6px;
+}
+
+/* Landing subtitle — softer, italic tag below slogan */
+.landing-subtitle {
+  font-family: var(--font);
+  font-size: clamp(0.72rem, 1.6vw, 1rem);
+  font-weight: 400;
+  font-style: italic;
+  color: rgba(250, 199, 117, 0.55);
+  letter-spacing: 0.02em;
+  margin: 8px 0 0;
+  line-height: 1.4;
 }
 
 /* Scroll cue */
@@ -1446,7 +1454,7 @@ input[type="range"] {
 @media (max-width: 480px) {
   .brand-name { font-size: clamp(0.75rem, 3.5vw, 0.9rem); }
   .app--v2 .topbar { padding: 8px 12px; }
-  .brand-mark { width: 30px; height: 30px; font-size: 15px; }
+  .brand-logo-img { height: 54px; }
 }
 
 /* ── Info button ── */
