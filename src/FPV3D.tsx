@@ -107,13 +107,13 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
 
-    // ── Mobile detection (used throughout scene setup) ─────────────────────
-    const isMob = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || W <= 768
+    // Full desktop quality on all devices — no mobile degradation
+    const isMob = false
 
     // ── Scene ──────────────────────────────────────────────────────────────
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x050810)
-    scene.fog = new THREE.FogExp2(0x0a1428, isMob ? 0.022 : 0.006)
+    scene.fog = new THREE.FogExp2(0x0a1428, isMob ? 0.009 : 0.006)
 
     // ── Camera ─────────────────────────────────────────────────────────────
     const camera = new THREE.PerspectiveCamera(computeFOV(W / H), W / H, 0.1, isMob ? 120 : 300)
@@ -135,7 +135,6 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     // (warm dark) from below. This ensures building faces are always at least
     // subtly visible on all devices — real-world night streets have sky glow.
     scene.add(new THREE.HemisphereLight(0x1a2540, 0x0a0906, 1.2))
-    // Keep a very faint ambient so deep shadows aren't pure black
     scene.add(new THREE.AmbientLight(0x0a0c12, 0.3))
 
     // ── Ground ─────────────────────────────────────────────────────────────
@@ -177,7 +176,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     for (let i = 0; i < (isMob ? 80 : 280); i++) {
       const theta = starRng() * Math.PI * 2
       const phi = starRng() * Math.PI * 0.48   // upper hemisphere
-      const r = 180
+      const r = isMob ? 80 : 180
       starPos.push(
         r * Math.sin(phi) * Math.cos(theta),
         r * Math.cos(phi) + 30,
@@ -395,15 +394,15 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
           mesh.position.set(0, h / 2, localZ)
           group.add(mesh)
 
-          // Real glass window panes on the street-facing side (skip on mobile — too many draw calls)
+          // Window panes on the street-facing side
           if (!isMob) {
+            // Desktop: full per-pane grid
             const wRng   = seededRng(seed)
             const cols   = Math.max(2, Math.round(depth / 2.8))
             const rows   = Math.max(2, Math.round((h - 3.5) / 3.0))
             const winW   = (depth / cols) * 0.52
             const winH   = ((h - 3.5) / rows) * 0.55
             const rotY   = isLeft ? Math.PI / 2 : -Math.PI / 2
-
             for (let c = 0; c < cols; c++) {
               for (let r = 0; r < rows; r++) {
                 const lit  = wRng() < 0.18
@@ -1140,7 +1139,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       }
 
       const xPos = side === 'left' ? BLDG_X_L : BLDG_X_R
-      group.position.set(xPos, 0, -index * BLDG_SPACING - BLDG_DEPTH / 2 + 200)
+      const bldgInitZ = isMob
+        ? (-index * BLDG_SPACING - BLDG_DEPTH / 2)
+        : (-index * BLDG_SPACING - BLDG_DEPTH / 2 + 200)
+      group.position.set(xPos, 0, bldgInitZ)
       scene.add(group)
       return { group, index }
     }
@@ -1323,7 +1325,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
       // Stagger: left starts at 0, right starts at TREE_SPACING/2
       const zOffset = side === 'right' ? TREE_SPACING / 2 : 0
-      group.position.set(treeX, 0, -index * TREE_SPACING - zOffset - 4 + 200)
+      const treeInitZ = isMob
+        ? (-index * TREE_SPACING - zOffset - 4)
+        : (-index * TREE_SPACING - zOffset - 4 + 200)
+      group.position.set(treeX, 0, treeInitZ)
       scene.add(group)
 
       return { group, index, side }
@@ -1414,7 +1419,12 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
 
       // Stagger: left starts at 0, right starts at LAMP_SPACING/2
       const zOffset = side === 'right' ? LAMP_SPACING / 2 : 0
-      group.position.set(0, 0, -index * LAMP_SPACING - zOffset - 8 + 200)
+      // Mobile: spread lamps ahead of camera (no +200 offset — only 10 lamps, range=110m)
+      // Desktop: +200 offset so lamps span both ahead and behind at startup
+      const initZ = isMob
+        ? (-index * LAMP_SPACING - zOffset)
+        : (-index * LAMP_SPACING - zOffset - 8 + 200)
+      group.position.set(0, 0, initZ)
       scene.add(group)
 
       return { group, point, bulb, pool, poolOuter, index, side }
@@ -1549,8 +1559,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         // Move group with world scroll
         if (!pausedRef.current) lg.group.position.z += realSpeed * dt
 
-        // Recycle: if lamp passed camera (z > 240), wrap to far end
-        if (lg.group.position.z > 240) {
+        // Recycle: wrap lamps that have scrolled past camera back to far ahead
+        // Mobile threshold is smaller (pool spans only 110m vs 506m desktop)
+        const recycleThreshold = isMob ? totalLampRange * 0.4 : 240
+        if (lg.group.position.z > recycleThreshold) {
           lg.group.position.z -= totalLampRange
         }
 
@@ -1569,9 +1581,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       }
 
       // ── Recycle & update buildings ────────────────────────────────────
+      const bldgRecycle = isMob ? totalBldgRange * 0.4 : 240
       for (const bg of allBldgs) {
         if (!pausedRef.current) bg.group.position.z += realSpeed * dt
-        if (bg.group.position.z > 240) {
+        if (bg.group.position.z > bldgRecycle) {
           bg.group.position.z -= totalBldgRange
         }
       }
@@ -1594,9 +1607,10 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       }
 
       // ── Recycle & update trees ────────────────────────────────────────
+      const treeRecycle = isMob ? totalTreeRange * 0.4 : 240
       for (const tg of allTrees) {
         if (!pausedRef.current) tg.group.position.z += realSpeed * dt
-        if (tg.group.position.z > 240) {
+        if (tg.group.position.z > treeRecycle) {
           tg.group.position.z -= totalTreeRange
         }
       }

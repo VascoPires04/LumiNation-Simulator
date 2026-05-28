@@ -229,10 +229,6 @@ export default function App() {
     ? `€${Math.round(lisbonEur / 1_000)}k`
     : `€${Math.round(lisbonEur)}`
 
-  // Citizen view is desktop-only — redirect away if somehow reached on mobile
-  useEffect(() => {
-    if (isMobile && mode === 'fpv') setMode('lumination')
-  }, [isMobile, mode])
 
   // Reset scroll container to top on mount
   useEffect(() => {
@@ -706,9 +702,7 @@ export default function App() {
               <div className="brand-tag">The adaptive light corridor · live simulator</div>
             </div>
           </div>
-          {/* Citizen view is desktop-only — too heavy for most phones */}
-          {!isMobile && (
-            <div className="mode-bar">
+          <div className="mode-bar">
               {mode === 'fpv'
                 ? <button className="active" onClick={() => setMode('lumination')}>← Simulation</button>
                 : <button onClick={() => {
@@ -721,8 +715,7 @@ export default function App() {
                     }
                   }}>Citizen view</button>
               }
-            </div>
-          )}
+          </div>
         </motion.header>
 
       </div>
