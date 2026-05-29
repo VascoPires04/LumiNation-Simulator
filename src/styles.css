@@ -1312,15 +1312,28 @@ input[type="range"] {
 }
 .sim-cta:hover { background: rgba(250,199,117,0.1); }
 
-/* ── Tablet (768–1024px): narrower HUD ── */
-@media (max-width: 1024px) and (min-width: 769px) {
+/* ── Narrow desktop / tablet (601–1024px): compact HUD ── */
+@media (max-width: 1024px) and (min-width: 601px) {
   .hud-headline,
   .hud-modes,
   .hud-controls {
-    right: 24px;
-    width: clamp(160px, 17vw, 210px);
+    right: 16px;
+    width: clamp(150px, 22vw, 210px);
   }
-  .hud-controls { top: 320px; gap: 18px; }
+  .hud-headline { top: 110px; }
+  .hud-controls {
+    top: clamp(260px, 38vh, 340px);
+    gap: 10px;
+    max-height: calc(100vh - clamp(260px, 38vh, 340px) - 16px);
+    overflow-y: auto;
+  }
+  .fpv-card {
+    padding: 12px;
+    gap: 8px;
+    min-width: 0;
+    width: clamp(140px, 28vw, 220px);
+  }
+  .fpv-overlay { gap: 10px; bottom: 14px; left: 14px; right: 14px; }
 }
 
 /* ── Mobile (<= 768px): headline top-center, modes top strip, controls bottom bar ── */
