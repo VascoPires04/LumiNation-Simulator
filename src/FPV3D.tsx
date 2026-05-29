@@ -197,7 +197,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
 
-    const isMob = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || W <= 600
+    const isMob = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || W <= 480
 
     // ── Scene ──────────────────────────────────────────────────────────────
     const scene = new THREE.Scene()
