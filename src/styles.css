@@ -1320,12 +1320,13 @@ input[type="range"] {
     right: 16px;
     width: clamp(150px, 22vw, 210px);
   }
-  .hud-headline { top: 110px; }
+  .hud-headline { top: 100px; }
   .hud-controls {
-    top: clamp(260px, 38vh, 340px);
-    gap: 10px;
-    max-height: calc(100vh - clamp(260px, 38vh, 340px) - 16px);
+    top: auto;
+    bottom: 20px;
+    max-height: 52vh;
     overflow-y: auto;
+    gap: 10px;
   }
   .fpv-card {
     padding: 12px;
