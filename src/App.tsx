@@ -70,6 +70,7 @@ const CITY_LAMPS = 100_000
 
 export default function App() {
   const isMobile = useIsMobile()
+  const isNarrowScreen = useIsMobile(1024)
   const [mode, setMode]               = useState<Mode>('lumination')
   const [baselinePct, setBaselinePct] = useState(0.20)
   const [lookaheadSec, setLookaheadSec] = useState(3.0)
@@ -434,7 +435,7 @@ export default function App() {
         </motion.div>
 
         {/* ── Mobile spawn buttons — z:10, above scroll-doc, only after curtain lifts ── */}
-        {isMobile && !effectiveCurtainVisible && mode !== 'fpv' && !dashInView && (
+        {(isMobile || isNarrowScreen) && !effectiveCurtainVisible && mode !== 'fpv' && !dashInView && (
           <motion.div
             className="mobile-spawn-btns"
             initial={{ opacity: 0 }}
