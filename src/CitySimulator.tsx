@@ -391,7 +391,11 @@ export default function CitySimulator({
         const x0 = xBounds[ci], x1 = xBounds[ci + 1]
         const y0 = yBounds[ri], y1 = yBounds[ri + 1]
         const bW = x1 - x0, bH = y1 - y0
-        if (bW < inset * 2 + 4 || bH < inset * 2 + 4) continue // street zone
+        if (bW < 8 || bH < 8) continue // degenerate block
+        // Skip blocks whose centre sits on a road axis (road-zone strips)
+        const blockCX = (x0 + x1) / 2, blockCY = (y0 + y1) / 2
+        if (colX.some(cx => Math.abs(blockCX - cx) < inset)) continue
+        if (rowY.some(ry => Math.abs(blockCY - ry) < inset)) continue
 
         // Normalised coords relative to city centre (0,0 = block adj to centre col+row)
         const normCi = Math.round((x0 - width * 0.5) / colStep)
