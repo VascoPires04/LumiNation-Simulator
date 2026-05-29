@@ -970,7 +970,7 @@ export default function CitySimulator({
           // Halo — normalised to 0-1 for linear visual response
           const n = b / MAX_VISUAL_BRI
           if (n > 0.01) {
-            const r = n * (isMobileRef.current ? 33 : 28) * glowScale
+            const r = n * (isMobileRef.current || glowScale < 1 ? 33 : 28) * glowScale
             const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
             grd.addColorStop(0, `rgba(255, 224, 155, ${0.88 * n})`)
             grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.50 * n})`)
