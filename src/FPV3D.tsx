@@ -207,6 +207,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     // ── Camera ─────────────────────────────────────────────────────────────
     const camera = new THREE.PerspectiveCamera(computeFOV(W / H), W / H, 0.1, isMob ? 160 : 300)
     camera.position.set(0, 1.7, 0)
+    camera.rotation.order = 'YXZ'  // standard FPS: yaw first, then pitch
     camera.lookAt(0, 1.7, -100)
 
     // ── Renderer ───────────────────────────────────────────────────────────
@@ -218,6 +219,36 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
     renderer.toneMapping = THREE.ReinhardToneMapping
     renderer.toneMappingExposure = 1.0
     container.appendChild(renderer.domElement)
+
+    // ── Look-around (drag to rotate camera, spring back on release) ────────
+    let lookYaw        = 0
+    let lookPitch      = 0
+    let lookDragActive = false
+    let lookDragStartX = 0
+    let lookDragStartY = 0
+    const LOOK_SENS  = isMob ? 0.004 : 0.0025
+    const PITCH_MAX  = 70 * Math.PI / 180
+    const LOOK_SPRING = 0.07  // fraction per frame toward center on release
+
+    const onLookDown = (e: PointerEvent) => {
+      lookDragActive = true
+      lookDragStartX = e.clientX
+      lookDragStartY = e.clientY
+      renderer.domElement.setPointerCapture(e.pointerId)
+    }
+    const onLookMove = (e: PointerEvent) => {
+      if (!lookDragActive) return
+      lookYaw   = -(e.clientX - lookDragStartX) * LOOK_SENS
+      lookPitch = -(e.clientY - lookDragStartY) * LOOK_SENS
+      lookPitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, lookPitch))
+    }
+    const onLookUp = () => { lookDragActive = false }
+
+    renderer.domElement.addEventListener('pointerdown',   onLookDown)
+    renderer.domElement.addEventListener('pointermove',   onLookMove)
+    renderer.domElement.addEventListener('pointerup',     onLookUp)
+    renderer.domElement.addEventListener('pointercancel', onLookUp)
+    renderer.domElement.style.touchAction = 'none'
 
     // ── Lights ─────────────────────────────────────────────────────────────
     // Hemisphere light: sky colour (cool blue-grey) from above, ground bounce
@@ -1770,12 +1801,24 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
       if (starMat.opacity !== newStarOpacity) { starMat.opacity = newStarOpacity; starMat.needsUpdate = true }
       if (starMat.size    !== newStarSize)    { starMat.size    = newStarSize;    starMat.needsUpdate = true }
 
+      // ── Look-around: apply rotation + spring back to center on release ───
+      if (!lookDragActive) {
+        lookYaw   *= 1 - LOOK_SPRING
+        lookPitch *= 1 - LOOK_SPRING
+      }
+      camera.rotation.y = lookYaw
+      camera.rotation.x = lookPitch
+
       renderer.render(scene, camera)
     }
     animate()
 
     return () => {
       cancelAnimationFrame(rafId)
+      renderer.domElement.removeEventListener('pointerdown',   onLookDown)
+      renderer.domElement.removeEventListener('pointermove',   onLookMove)
+      renderer.domElement.removeEventListener('pointerup',     onLookUp)
+      renderer.domElement.removeEventListener('pointercancel', onLookUp)
       ro.disconnect()
       renderer.dispose()
       window.removeEventListener('keydown', handleKeyDown)

@@ -204,9 +204,10 @@ export default function CitySimulator({
   const dimsRef = useRef({ W: 0, H: 0 })
 
   // Zoom state — re-layouts city when changed
-  const zoomRef = useRef(1)
-  const targetZoomRef = useRef(1)
+  const zoomRef = useRef(0.75)
+  const targetZoomRef = useRef(0.75)
   const pinchRef = useRef<{ dist: number; zoom: number } | null>(null)
+  const presetSpawnedRef = useRef(false)
   const wasPinchingRef = useRef(false)
   // Pan state
   const panRef = useRef({ x: 0, y: 0 })
@@ -335,8 +336,16 @@ export default function CitySimulator({
 
     const colStep = width * 0.32
     const rowStep = height * 0.30
-    const lampOffset = 16
-    const treeOffset = ISO_MODE ? 30 : 16  // sidewalk (asphalt edge=22, sidewalk edge=32, canopy rx=8 → clears at 30)
+
+    // Road geometry constants — single source of truth
+    const ASPHALT_HW  = 22  // half-width of asphalt (matches drawRoadQuad call)
+    const SIDEWALK_HW = 32  // half-width of sidewalk drawing (matches drawRoadQuad call)
+    const buildingInset = ISO_MODE ? (isMobileRef.current ? 28 : 42) : 14
+
+    // Both lamp and tree sit in the drawn sidewalk strip (ASPHALT_HW → SIDEWALK_HW).
+    // Lamp: 1/3 of the way in (near the curb, like real street furniture)
+    const lampOffset = Math.round(ASPHALT_HW + (SIDEWALK_HW - ASPHALT_HW) / 3)   // = 25
+    const treeOffset = lampOffset  // same sidewalk position as lamps
 
     // Columns centered at W/2, extending to fill visible virtual range
     const colX: number[] = []
@@ -373,7 +382,7 @@ export default function CitySimulator({
 
     // Buildings: between adjacent streets.
     // ISO_MODE uses a wider inset so buildings don't overlap the street visually.
-    const inset = ISO_MODE ? (isMobileRef.current ? 22 : 32) : 14
+    const inset = buildingInset
     const xBounds = [vx0, ...colX.flatMap(x => [x - inset, x + inset]), vx1].sort((a, b) => a - b)
     const yBounds = [vy0, ...rowY.flatMap(y => [y - inset, y + inset]), vy1].sort((a, b) => a - b)
     const buildings: Building[] = []
@@ -415,9 +424,9 @@ export default function CitySimulator({
 
             // ~5% of buildings become tall towers — same footprint, just much taller.
             const isTower = zone !== 'mall' && rng() < 0.05
-            const bw = stepX - 4
-            const bh = stepY - 4
-            const offX = 2, offY = 2
+            const bw = stepX - 10
+            const bh = stepY - 10
+            const offX = 5, offY = 5
 
             if (bw > 4 && bh > 4) {
               const mob = isMobileRef.current
@@ -978,9 +987,6 @@ export default function CitySimulator({
         if (item.kind === 'tree') {
           const tp = isoProject(item.wx, item.wy, W, H)
           const tx = tp.sx, ty = tp.sy
-          // Shadow on ground
-          ctx.fillStyle = 'rgba(0,0,0,0.35)'
-          ctx.beginPath(); ctx.ellipse(tx + 2, ty + 1, 8, 4.5, 0, 0, Math.PI * 2); ctx.fill()
           // Trunk — short vertical line
           ctx.strokeStyle = 'rgba(60,40,20,0.9)'; ctx.lineWidth = 2
           ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx, ty - 10); ctx.stroke()
@@ -1906,6 +1912,18 @@ export default function CitySimulator({
       if (W !== prevW || Math.abs(H - prevH) > 20) {
         virtualBoundsRef.current = getVirtualBounds(W, H, zoomRef.current)
         layoutCity(W, H)
+        if (!presetSpawnedRef.current) {
+          presetSpawnedRef.current = true
+          // Peds on horizontal streets (exact row y → distance 0 → always wins)
+          // Rows at H*0.20, H*0.50, H*0.80
+          spawnAgent(W * 0.25, H * 0.20, 'ped',  1)   // top row, left → right
+          spawnAgent(W * 0.75, H * 0.20, 'ped', -1)   // top row, right → left
+          spawnAgent(W * 0.30, H * 0.80, 'ped',  1)   // bottom row, left → right
+          // Cars on vertical streets (exact col x → distance 0 → always wins)
+          // Cols at W*0.18, W*0.50, W*0.82
+          spawnAgent(W * 0.18, H * 0.30, 'car',  1)   // left col, moving down
+          spawnAgent(W * 0.82, H * 0.40, 'car', -1)   // right col, moving up
+        }
       }
     }
     resize()

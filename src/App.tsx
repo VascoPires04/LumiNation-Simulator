@@ -71,8 +71,8 @@ const CITY_LAMPS = 100_000
 export default function App() {
   const isMobile = useIsMobile()
   const [mode, setMode]               = useState<Mode>('lumination')
-  const [baselinePct, setBaselinePct] = useState(0.50)
-  const [lookaheadSec, setLookaheadSec] = useState(4.0)
+  const [baselinePct, setBaselinePct] = useState(0.20)
+  const [lookaheadSec, setLookaheadSec] = useState(3.0)
   const [spawnMode, setSpawnMode]     = useState<'ped' | 'car'>('ped')
   const [tooltip, setTooltip]         = useState<'baseline' | 'lookahead' | null>(null)
   const externalSpawnModeRef = useRef<'ped' | 'car'>('ped')
