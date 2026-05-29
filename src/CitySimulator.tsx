@@ -1808,22 +1808,27 @@ export default function CitySimulator({
       ctx.restore()
     } else {
       // Compare mode — always full redraw (secondary mode)
+      // Use pan-corrected virtual bounds so clip rect aligns with the transform
+      // (zoom-to-cursor shifts pan, so non-corrected bounds would offset the clip)
+      const { vx0: pvx0, vy0: pvy0, vW: pvW, vH: pvH } = virtualBoundsRef.current
+      const halfVW = pvW / 2
+      // Divider in virtual space is always at centre of visible area
+      const dividerX = pvx0 + halfVW
       ctx.save()
       ctx.translate(W / 2 + panX, H / 2 + panY)
       ctx.scale(z, z)
       ctx.translate(-W / 2, -H / 2)
       ctx.fillStyle = '#08080e'
-      ctx.fillRect(vx0, vy0, vW, vH)
-      const halfVW = vW / 2
-      ctx.save(); ctx.beginPath(); ctx.rect(vx0, vy0, halfVW, vH); ctx.clip()
+      ctx.fillRect(pvx0, pvy0, pvW, pvH)
+      ctx.save(); ctx.beginPath(); ctx.rect(pvx0, pvy0, halfVW, pvH); ctx.clip()
       drawCityTopDown(ctx, true)
       ctx.restore()
-      ctx.save(); ctx.beginPath(); ctx.rect(vx0 + halfVW, vy0, halfVW, vH); ctx.clip()
+      ctx.save(); ctx.beginPath(); ctx.rect(dividerX, pvy0, halfVW, pvH); ctx.clip()
       drawCityTopDown(ctx, false)
       ctx.restore()
       ctx.strokeStyle = 'rgba(255,255,255,0.18)'
       ctx.lineWidth = 1
-      ctx.beginPath(); ctx.moveTo(vx0 + halfVW, vy0); ctx.lineTo(vx0 + halfVW, vy0 + vH); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(dividerX, pvy0); ctx.lineTo(dividerX, pvy0 + pvH); ctx.stroke()
       ctx.restore()
     }
 
@@ -1927,7 +1932,7 @@ export default function CitySimulator({
       targetZoomRef.current = Math.max(minZoom, targetZoomRef.current)
       if (zoomRef.current !== targetZoomRef.current) {
         const oldZ = zoomRef.current
-        const ease = 1 - Math.exp(-dt * 3)
+        const ease = 1 - Math.exp(-dt * 8)
         zoomRef.current += (targetZoomRef.current - zoomRef.current) * ease
         if (Math.abs(targetZoomRef.current - zoomRef.current) < 0.001) {
           zoomRef.current = targetZoomRef.current
@@ -2189,28 +2194,28 @@ export default function CitySimulator({
       if (stageVisibilityRef.current < 0.8) return  // let page scroll when half-visible
       e.preventDefault()
       const minZ = isMobileRef.current ? 0.40 : 0.45
-      // ctrlKey = trackpad pinch-to-zoom. deltaX != 0 = trackpad two-finger scroll.
-      // Plain mouse wheel has ctrlKey=false and deltaX=0 — treat as zoom.
-      const isTrackpadScroll = !e.ctrlKey && (Math.abs(e.deltaX) > 0 || e.deltaMode === 0 && Math.abs(e.deltaY) < 50)
       const rect = canvas.getBoundingClientRect()
-      if (e.ctrlKey) {
-        // Trackpad pinch-to-zoom → zoom toward cursor
-        // Cap raw deltaY so a fast pinch gesture can't jump more than ~2% in one event
+      // Real mouse wheel: large deltaY (≥100px per click), no deltaX, not ctrlKey.
+      // Everything else (trackpad two-finger scroll, pinch) uses tiny fixed steps.
+      const isMouseWheel = !e.ctrlKey && Math.abs(e.deltaX) < 2 && Math.abs(e.deltaY) >= 100
+      if (isMouseWheel) {
+        // Physical scroll wheel — 3% per click is fine (≤3 events/sec)
         zoomAnchorRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-        const clamped = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 10)
-        const factor = Math.exp(-clamped * 0.002)
+        const factor = e.deltaY > 0 ? 0.97 : 1.03
         targetZoomRef.current = Math.min(3, Math.max(minZ, targetZoomRef.current * factor))
-      } else if (isTrackpadScroll) {
-        // Trackpad two-finger scroll → pan
+      } else if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.5) {
+        // Trackpad two-finger pan (has meaningful horizontal component)
         const pan = panRef.current
-        pan.x -= e.deltaX
-        pan.y -= e.deltaY
+        pan.x -= e.deltaX * 0.6
+        pan.y -= e.deltaY * 0.6
         clampPan(pan, zoomRef.current)
       } else {
-        // Plain scroll wheel → zoom toward cursor (3% per tick)
+        // Trackpad two-finger vertical scroll OR pinch — tiny fixed step per event
+        // Ignores deltaY magnitude: trackpad fires 60–120 events/sec so magnitude
+        // scaling causes runaway zoom. 0.4% per event is perceptible but controlled.
         zoomAnchorRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-        const delta = e.deltaY > 0 ? 0.97 : 1.03
-        targetZoomRef.current = Math.min(3, Math.max(minZ, targetZoomRef.current * delta))
+        const factor = e.deltaY > 0 ? 0.996 : (1 / 0.996)
+        targetZoomRef.current = Math.min(3, Math.max(minZ, targetZoomRef.current * factor))
       }
     }
     canvas.addEventListener('wheel', onWheel, { passive: false })

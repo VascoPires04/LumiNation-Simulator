@@ -40,7 +40,8 @@ function TouchSlider({ min, max, step, value, onChange }: {
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
-    e.currentTarget.setPointerCapture(e.pointerId)
+    e.preventDefault()
+    trackRef.current!.setPointerCapture(e.pointerId)
     onChange(calc(e.clientX))
   }
   const onPointerMove = (e: React.PointerEvent) => {
@@ -179,6 +180,7 @@ export default function App() {
 
   const curtainVisibleRef = useRef(true)
   const dashInViewRef     = useRef(false)
+  const dashUnlockedRef   = useRef(false)  // true only after user clicks "Explore the data"
 
   // Intercept wheel on scroll-doc and forward to zoom when over the simulation
   useEffect(() => {
@@ -190,7 +192,13 @@ export default function App() {
       if (curtainVisibleRef.current || dashInViewRef.current) return
       e.preventDefault()
       e.stopPropagation()
-      const delta = e.deltaY > 0 ? 0.9 : 1.1
+      // Real mouse wheel: large deltaY per click (≥100px), no horizontal component.
+      // Trackpad two-finger scroll: many small events — use tiny fixed step to avoid
+      // runaway zoom (10% × 60Hz = completely out of control).
+      const isMouseWheel = Math.abs(e.deltaX) < 2 && Math.abs(e.deltaY) >= 100
+      const delta = isMouseWheel
+        ? (e.deltaY > 0 ? 0.9 : 1.1)
+        : (e.deltaY > 0 ? 0.988 : (1 / 0.988))
       externalZoomRef.current(delta)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
@@ -363,6 +371,18 @@ export default function App() {
     return () => { el.removeEventListener('scroll', onScroll); clearTimeout(timer) }
   }, [])
 
+  // ── Scroll lock — after curtain lifts, block downward scroll until user clicks Explore ──
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => {
+      if (curtainVisibleRef.current || dashUnlockedRef.current) return
+      if (el.scrollTop > LIFT + 5) el.scrollTop = LIFT
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
   // ── Desktop scroll listener — curtain/sidebar/topbar + linear canvas fade ──
   useEffect(() => {
     return scrollY.on('change', v => {
@@ -495,7 +515,7 @@ export default function App() {
              Mobile:  headline top-center, controls bottom bar.          ── */}
         {mode !== 'fpv' && (
           <motion.div
-            style={{ opacity: effectiveSidebarOpacity, pointerEvents: effectiveSidebarVisible && !(isMobile && dashInView) ? undefined : 'none' }}
+            style={{ opacity: effectiveSidebarOpacity, pointerEvents: effectiveSidebarVisible && !(isMobile && dashInView) ? undefined : 'none', position: 'relative', zIndex: 15 }}
           >
             {/* Headline — display only, no interaction */}
             <motion.div
@@ -536,7 +556,7 @@ export default function App() {
                   </div>
                 )}
 
-                <div ref={hudInnerRef} className="hud-controls-inner" style={{ pointerEvents: hudOpen ? 'auto' : 'none' }}>
+                <div ref={hudInnerRef} className="hud-controls-inner" style={{ pointerEvents: isMobile && !hudOpen ? 'none' : 'auto' }}>
                   <div className="hud-section">
                     <p className="hud-section-desc">Switch between modes to visualize the impact.</p>
                     <div className="sim-compact-modes">
@@ -614,6 +634,7 @@ export default function App() {
                       <button
                         className="sim-cta"
                         onClick={() => {
+                          dashUnlockedRef.current = false
                           setDashInView(false)
                           canvasLayerOpacity.set(1)
                           const simSpacer = document.querySelector('.sim-section-spacer') as HTMLElement | null
@@ -628,6 +649,7 @@ export default function App() {
                     <button
                       className="sim-cta"
                       onClick={() => {
+                        dashUnlockedRef.current = true
                         if (isMobile) {
                           setDashInView(true)
                         } else {
