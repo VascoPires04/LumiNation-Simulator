@@ -244,13 +244,23 @@ export default function App() {
   const mobileCanvasScale    = useMotionValue(1.04)
   const mobileCanvasY        = useMotionValue(20)
 
-  // ── Mobile curtain: auto-dismiss after 1s, no scroll needed ──────────────
-  // Once gone it never comes back (clicking L doesn't re-show it).
+  // ── Mobile curtain: auto-dismiss after 1s, re-triggerable via logo tap ──────
   const [mobileCurtainFading, setMobileCurtainFading] = useState(false)
   const [mobileCurtainGone,   setMobileCurtainGone]   = useState(false)
+  const [mobileCurtainKey,    setMobileCurtainKey]    = useState(0)
 
   useEffect(() => {
     if (!isMobile) return
+    // Reset to fully visible state before starting the sequence
+    setMobileCurtainGone(false)
+    setMobileCurtainFading(false)
+    setSidebarVisible(false)
+    setTopbarVisible(false)
+    mobileHudOpacity.set(0)
+    mobileTopbarOpacity.set(0)
+    mobileVeilOpacity.set(1)
+    mobileCanvasScale.set(1.04)
+    mobileCanvasY.set(20)
     // Start fade after 1s
     const t1 = setTimeout(() => {
       setMobileCurtainFading(true)
@@ -265,7 +275,7 @@ export default function App() {
     // Unmount curtain DOM after fade completes (1000 + 800ms)
     const t2 = setTimeout(() => setMobileCurtainGone(true), 1800)
     return () => { clearTimeout(t1); clearTimeout(t2) }
-  }, [isMobile, mobileHudOpacity, mobileTopbarOpacity])
+  }, [isMobile, mobileCurtainKey, mobileHudOpacity, mobileTopbarOpacity, mobileVeilOpacity, mobileCanvasScale, mobileCanvasY])
 
   // Effective values — mobile uses timer-based, desktop uses scroll-based
   const effectiveCurtainVisible  = isMobile ? !mobileCurtainGone  : curtainVisible
@@ -761,11 +771,11 @@ export default function App() {
               animate={effectiveTopbarVisible ? { scale: 1 } : { scale: 0.6 }}
               transition={{ type: 'spring', stiffness: 420, damping: 18 }}
               onClick={() => {
-                // Desktop only: scroll to top re-shows the curtain
-                if (!isMobile) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+                if (isMobile) setMobileCurtainKey(k => k + 1)
+                else scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
               }}
-              title={isMobile ? undefined : 'Back to start'}
-              style={{ cursor: isMobile ? 'default' : 'pointer' }}
+              title={isMobile ? 'Back to start' : 'Back to start'}
+              style={{ cursor: 'pointer' }}
             >
               <img src={lumiLogo} alt="LumiNation" className="brand-logo-img" />
             </motion.div>
