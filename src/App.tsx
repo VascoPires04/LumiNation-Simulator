@@ -251,29 +251,41 @@ export default function App() {
 
   useEffect(() => {
     if (!isMobile) return
-    // Reset to fully visible state before starting the sequence
+    const isReplay = mobileCurtainKey > 0
     setMobileCurtainGone(false)
     setMobileCurtainFading(false)
     setSidebarVisible(false)
     setTopbarVisible(false)
-    mobileHudOpacity.set(0)
-    mobileTopbarOpacity.set(0)
-    mobileVeilOpacity.set(1)
-    mobileCanvasScale.set(1.04)
-    mobileCanvasY.set(20)
-    // Start fade after 1s
+
+    if (isReplay) {
+      // Smooth reverse: fade HUD/topbar out, veil/canvas back to intro state
+      animate(mobileHudOpacity,    0,    { duration: 0.35, ease: 'easeIn' })
+      animate(mobileTopbarOpacity, 0,    { duration: 0.35, ease: 'easeIn' })
+      animate(mobileVeilOpacity,   1,    { duration: 0.5,  ease: 'easeIn' })
+      animate(mobileCanvasScale,   1.04, { duration: 0.5,  ease: 'easeIn' })
+      animate(mobileCanvasY,       20,   { duration: 0.5,  ease: 'easeIn' })
+    } else {
+      // First load: instant jump to intro state
+      mobileHudOpacity.set(0)
+      mobileTopbarOpacity.set(0)
+      mobileVeilOpacity.set(1)
+      mobileCanvasScale.set(1.04)
+      mobileCanvasY.set(20)
+    }
+
+    // Curtain appears (fade-in on replay takes ~0.8s), hold 1s, then dismiss
+    const holdDelay = isReplay ? 1800 : 1000
     const t1 = setTimeout(() => {
       setMobileCurtainFading(true)
       setSidebarVisible(true)
       setTopbarVisible(true)
-      animate(mobileHudOpacity,    1,    { duration: 0.55, ease: 'easeOut', delay: 0.15 })
-      animate(mobileTopbarOpacity, 1,    { duration: 0.55, ease: 'easeOut', delay: 0.25 })
-      animate(mobileVeilOpacity,   0,    { duration: 0.8,  ease: 'easeOut' })
-      animate(mobileCanvasScale,   1.0,  { duration: 0.8,  ease: 'easeOut' })
-      animate(mobileCanvasY,       0,    { duration: 0.8,  ease: 'easeOut' })
-    }, 1000)
-    // Unmount curtain DOM after fade completes (1000 + 800ms)
-    const t2 = setTimeout(() => setMobileCurtainGone(true), 1800)
+      animate(mobileHudOpacity,    1,   { duration: 0.55, ease: 'easeOut', delay: 0.15 })
+      animate(mobileTopbarOpacity, 1,   { duration: 0.55, ease: 'easeOut', delay: 0.25 })
+      animate(mobileVeilOpacity,   0,   { duration: 0.8,  ease: 'easeOut' })
+      animate(mobileCanvasScale,   1.0, { duration: 0.8,  ease: 'easeOut' })
+      animate(mobileCanvasY,       0,   { duration: 0.8,  ease: 'easeOut' })
+    }, holdDelay)
+    const t2 = setTimeout(() => setMobileCurtainGone(true), holdDelay + 800)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [isMobile, mobileCurtainKey, mobileHudOpacity, mobileTopbarOpacity, mobileVeilOpacity, mobileCanvasScale, mobileCanvasY])
 
@@ -689,6 +701,8 @@ export default function App() {
                       Once gone it never returns (no scroll re-trigger on mobile). ── */}
         {(!isMobile || !mobileCurtainGone) && (
           <motion.div
+            key={mobileCurtainKey}
+            initial={isMobile && mobileCurtainKey > 0 ? { opacity: 0 } : false}
             animate={isMobile ? { opacity: mobileCurtainFading ? 0 : 1 } : { opacity: 1 }}
             transition={{ duration: 0.8, ease: 'easeOut' }}
             style={{
