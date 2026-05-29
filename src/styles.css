@@ -1320,10 +1320,10 @@ input[type="range"] {
     right: 14px !important;
     width: 160px !important;
   }
-  .hud-headline { top: 90px !important; }
+  .hud-headline { top: clamp(85px, 12vh, 130px) !important; }
   .hud-controls {
-    top: auto !important;
-    bottom: 16px !important;
+    top: clamp(180px, 27vh, 280px) !important;
+    bottom: auto !important;
     max-height: 56vh !important;
     overflow-y: auto !important;
     gap: 0 !important;
