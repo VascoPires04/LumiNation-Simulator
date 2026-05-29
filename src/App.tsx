@@ -228,7 +228,7 @@ export default function App() {
   }, [sidebarVisible])
 
   // ── Topbar — fades in as curtain lifts (Effect E) ─────────────────────────
-  const topbarOpacity = useTransform(scrollY, [LIFT * 0.25, LIFT * 0.6], [0, 1])
+  const topbarOpacity = useTransform(scrollY, [LIFT * 0.55, LIFT * 0.85], [0, 1])
   const [topbarVisible, setTopbarVisible] = useState(false)
 
   // ── Autoplay / curtain visibility ────────────────────────────────────────
@@ -386,7 +386,7 @@ export default function App() {
   // ── Desktop scroll listener — curtain/sidebar/topbar + linear canvas fade ──
   useEffect(() => {
     return scrollY.on('change', v => {
-      setTopbarVisible(v > LIFT * 0.25)
+      setTopbarVisible(v > LIFT * 0.55)
       setSidebarVisible(v > LIFT * 0.1)
       const visible = v < LIFT * 0.65
       setCurtainVisible(visible)

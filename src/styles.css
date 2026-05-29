@@ -156,12 +156,12 @@ input[type="range"] {
 }
 /* variant="full" .main fills the canvas-layer completely.
    grid-template-columns: 1fr — sidebar column removed so canvas always fills
-   full viewport width (no resize when showFullSidebar changes).
-   padding-top = topbar height so map never hides under topbar. */
+   full viewport width. No padding — canvas covers full viewport edge to edge;
+   topbar sits on top with z-index:100 and fades in as curtain lifts. */
 .canvas-layer .main {
   height: 100%;
   width: 100%;
-  padding: 108px 24px 24px 24px;
+  padding: 0;
   grid-template-columns: 1fr;
   grid-template-rows: 1fr;
 }
@@ -232,7 +232,7 @@ input[type="range"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
+  padding: 6px 24px;
   flex-wrap: wrap;
   gap: 12px;
 }
@@ -261,7 +261,7 @@ input[type="range"] {
 }
 
 .brand-logo-img {
-  height: 72px;
+  height: clamp(44px, 5.5vw, 88px);
   width: auto;
   object-fit: contain;
   display: block;
@@ -1334,6 +1334,26 @@ input[type="range"] {
     width: clamp(140px, 28vw, 220px);
   }
   .fpv-overlay { gap: 10px; bottom: 14px; left: 14px; right: 14px; }
+
+  /* Shrink HUD content to fit narrow viewport */
+  .hud-headline .headline-metric-value { font-size: clamp(1.6rem, 5.5vw, 2.4rem); }
+  .hud-headline .headline-metric-label,
+  .hud-headline .headline-metric-sublabel { font-size: 0.72rem; margin-top: 4px; }
+  .hud-context-line { font-size: 0.72rem; margin-top: 6px; }
+  .hud-section-desc { font-size: 0.72rem; }
+  .hud-section { gap: 5px; }
+  .hud-controls-inner { gap: 14px; padding-top: 14px; padding-bottom: 4px; }
+  .sim-compact-modes { gap: 5px; }
+  .sim-compact-modes button {
+    min-height: 32px;
+    padding: 5px 10px;
+    font-size: 0.76rem;
+  }
+  .sim-compact-controls { gap: 6px; }
+  .sim-compact-label { font-size: 0.72rem; margin-bottom: 1px; }
+  .sim-compact-value { font-size: 0.72rem; }
+  .sim-compact-controls input[type='range'] { height: 16px; }
+  .sim-cta { min-height: 32px; padding: 5px 10px; font-size: 0.76rem; }
 }
 
 /* ── Mobile (<= 768px): headline top-center, modes top strip, controls bottom bar ── */
