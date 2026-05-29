@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-export function useIsMobile(breakpoint = 768): boolean {
+export function useIsMobile(breakpoint = 600): boolean {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined'
       ? window.matchMedia(`(max-width: ${breakpoint}px)`).matches

@@ -170,7 +170,7 @@ input[type="range"] {
    On mobile the curtain is auto-dismissed (no scroll), so the scroll-doc never
    receives active scrolling. Lock everything to a fixed height so the URL bar
    can never trigger a viewport resize that would cause layout jumps.           */
-@media (max-width: 768px) {
+@media (max-width: 600px) {
   html {
     height: 100vh;
     height: -webkit-fill-available; /* freezes at initial viewport — URL bar can't expand layout */
@@ -199,7 +199,7 @@ input[type="range"] {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 600px) {
   .canvas-layer .main {
     padding: 52px 0 0 0;
     height: 100%;
@@ -604,7 +604,7 @@ input[type="range"] {
   display: block;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 600px) {
   /* ── App shell ── */
   .app {
     height: 100dvh;
@@ -1324,7 +1324,7 @@ input[type="range"] {
 }
 
 /* ── Mobile (<= 768px): headline top-center, modes top strip, controls bottom bar ── */
-@media (max-width: 768px) {
+@media (max-width: 600px) {
   /* Headline: fixed top, centred across full width */
   .hud-headline {
     top: 82px;
@@ -1452,7 +1452,7 @@ input[type="range"] {
 }
 
 /* ── V2: topbar + landing curtain mobile ────────────────────────────────── */
-@media (max-width: 768px) {
+@media (max-width: 600px) {
   /* Topbar — single row, condensed */
   .app--v2 .topbar { padding: 8px 14px; gap: 8px; }
   .brand-tag { font-size: clamp(9px, 2.5vw, 11px); opacity: 0.85; }
@@ -1629,7 +1629,7 @@ input[type="range"] {
 .mobile-spawn-btns {
   display: none;
 }
-@media (max-width: 768px) {
+@media (max-width: 600px) {
   .mobile-spawn-btns {
     display: flex;
     flex-direction: column;
@@ -1950,7 +1950,7 @@ input[type="range"] {
 .card-expand-btn:hover { border-color: rgba(255,255,255,0.35); color: var(--text); }
 
 /* ── Dashboard mobile ── */
-@media (max-width: 768px) {
+@media (max-width: 600px) {
   .dashboard-section {
     padding: 72px 12px 32px;
     padding-right: 12px;
