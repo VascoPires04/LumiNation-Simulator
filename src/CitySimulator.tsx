@@ -971,10 +971,11 @@ export default function CitySimulator({
           const n = b / MAX_VISUAL_BRI
           if (n > 0.01) {
             const r = n * (isMobileRef.current || glowScale < 1 ? 33 : 28) * glowScale
+            const gs = Math.min(1, glowScale)  // opacity scale: softer centre on small canvases
             const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
-            grd.addColorStop(0, `rgba(255, 224, 155, ${0.88 * n})`)
-            grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.50 * n})`)
-            grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.22 * n})`)
+            grd.addColorStop(0, `rgba(255, 224, 155, ${0.70 * gs * n})`)
+            grd.addColorStop(0.15, `rgba(252, 208, 128, ${0.42 * gs * n})`)
+            grd.addColorStop(0.40, `rgba(250, 199, 117, ${0.20 * n})`)
             grd.addColorStop(0.70, `rgba(250, 199, 117, ${0.07 * n})`)
             grd.addColorStop(1, 'rgba(250, 199, 117, 0)')
             ctx.fillStyle = grd
