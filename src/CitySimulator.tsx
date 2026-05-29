@@ -972,15 +972,15 @@ export default function CitySimulator({
           if (n > 0.01) {
             const r = n * Math.max(28 * glowScale, 42)
             const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
-            grd.addColorStop(0,    `rgba(255, 224, 155, ${0.52 * n})`)
-            grd.addColorStop(0.20, `rgba(252, 208, 128, ${0.32 * n})`)
-            grd.addColorStop(0.50, `rgba(250, 199, 117, ${0.14 * n})`)
-            grd.addColorStop(0.80, `rgba(250, 199, 117, ${0.04 * n})`)
+            grd.addColorStop(0,    `rgba(255, 224, 155, ${0.36 * n})`)
+            grd.addColorStop(0.20, `rgba(252, 208, 128, ${0.22 * n})`)
+            grd.addColorStop(0.50, `rgba(250, 199, 117, ${0.10 * n})`)
+            grd.addColorStop(0.80, `rgba(250, 199, 117, ${0.03 * n})`)
             grd.addColorStop(1, 'rgba(250, 199, 117, 0)')
             ctx.fillStyle = grd
             ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill()
           }
-          ctx.fillStyle = `rgba(255, 230, 170, ${n})`
+          ctx.fillStyle = `rgba(255, 230, 170, ${0.75 * n})`
           ctx.beginPath(); ctx.arc(hx, hy, 2.2, 0, Math.PI * 2); ctx.fill()
           ctx.fillStyle = '#22222a'
           ctx.beginPath(); ctx.arc(hx, hy, 0.9, 0, Math.PI * 2); ctx.fill()
