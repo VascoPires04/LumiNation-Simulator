@@ -544,7 +544,7 @@ export default function App() {
                 {/* Handle — pure pointer tracking, no FM drag */}
                 {isMobile && (
                   <div
-                    className="hud-controls-handle-row"
+                    className={`hud-controls-handle-row${!hudOpen ? ' hud-controls-handle-row--nudge' : ''}`}
                     onPointerDown={onHandlePointerDown}
                     onPointerMove={onHandlePointerMove}
                     onPointerUp={onHandlePointerUp}

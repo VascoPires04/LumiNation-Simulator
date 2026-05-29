@@ -233,7 +233,6 @@ input[type="range"] {
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   gap: 12px;
 }
@@ -243,9 +242,10 @@ input[type="range"] {
   left: 0;
   right: 0;
   z-index: 100;
-  background: rgba(5, 5, 8, 0.82);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: linear-gradient(to bottom, rgba(5,5,8,0.88) 0%, rgba(5,5,8,0.60) 60%, transparent 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: none;
 }
 
 .brand {
@@ -770,11 +770,15 @@ input[type="range"] {
     cursor: grab;
     flex-shrink: 0;
   }
+  .fpv-sheet-handle-row--nudge {
+    animation: pill-nudge 2.4s ease-in-out infinite;
+    animation-delay: 1.2s;
+  }
   .fpv-sheet-handle {
     width: 36px;
     height: 4px;
     border-radius: 2px;
-    background: rgba(255,255,255,0.28);
+    background: #ffffff;
   }
   .fpv-button-group { flex-direction: row; gap: 8px; }
   .fpv-btn {
@@ -1179,12 +1183,25 @@ input[type="range"] {
   width: 44px;
   height: 4px;
   border-radius: 3px;
-  background: rgba(240,240,245,0.30);
+  background: #ffffff;
   transition: background 0.15s;
 }
 .hud-controls-handle-row:hover .hud-controls-handle,
 .hud-controls-handle-row:active .hud-controls-handle {
-  background: rgba(250,199,117,0.6);
+  background: rgba(250,199,117,0.9);
+}
+
+@keyframes pill-nudge {
+  0%   { transform: translateY(0); }
+  18%  { transform: translateY(-5px); }
+  32%  { transform: translateY(-2px); }
+  46%  { transform: translateY(-4px); }
+  60%  { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+.hud-controls-handle-row--nudge {
+  animation: pill-nudge 2.4s ease-in-out infinite;
+  animation-delay: 1.2s;
 }
 
 /* Body — panel that slides as one unit (handle + content) */

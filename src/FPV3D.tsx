@@ -1797,7 +1797,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
         {/* Drag handle — mobile only */}
         {isMobile && (
           <div
-            className="fpv-sheet-handle-row"
+            className={`fpv-sheet-handle-row${!sheetOpen ? ' fpv-sheet-handle-row--nudge' : ''}`}
             onPointerDown={onSheetDown}
             onClick={() => sheetSnap(!sheetOpen)}
             style={{ touchAction: 'none' }}
