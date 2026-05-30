@@ -12,16 +12,17 @@ import EurCard    from '../components/EurCard'
 import EnergyCard from '../components/EnergyCard'
 
 interface Props {
-  onInView:     (v: boolean) => void
-  inView:       boolean
-  isMobile:     boolean
-  scrollRef:    React.RefObject<HTMLDivElement>
-  paused:       boolean
-  onPause:      (p: boolean) => void
-  onBackToCity: () => void
+  onInView:        (v: boolean) => void
+  inView:          boolean
+  isMobile:        boolean
+  scrollRef:       React.RefObject<HTMLDivElement>
+  paused:          boolean
+  onPause:         (p: boolean) => void
+  onBackToCity:    () => void
+  captureFreezeRef?: React.MutableRefObject<(() => void) | null>
 }
 
-export default function DashboardSection({ onInView, inView, isMobile, paused, onPause, onBackToCity }: Props) {
+export default function DashboardSection({ onInView, inView, isMobile, paused, onPause, onBackToCity, captureFreezeRef }: Props) {
   const rootRef = useRef<HTMLElement>(null)
 
   const liveHistory = useSimHistory(600)
@@ -30,19 +31,19 @@ export default function DashboardSection({ onInView, inView, isMobile, paused, o
   const [frozenHistory, setFrozenHistory] = useState(liveHistory)
   const [frozenTotals,  setFrozenTotals]  = useState(liveTotals)
 
-  // Keep refs so the effect below always sees the latest live data
   const liveHistoryRef = useRef(liveHistory)
   liveHistoryRef.current = liveHistory
   const liveTotalsRef = useRef(liveTotals)
   liveTotalsRef.current = liveTotals
 
-  // Capture snapshot whenever paused becomes true — works regardless of who triggered it
-  useEffect(() => {
-    if (paused) {
+  // Expose capture function — caller can invoke this synchronously before setting paused=true
+  // so the frozen snapshot and the pause state land in the same React render batch (no flash)
+  if (captureFreezeRef) {
+    captureFreezeRef.current = () => {
       setFrozenHistory([...liveHistoryRef.current])
       setFrozenTotals(liveTotalsRef.current)
     }
-  }, [paused])
+  }
 
   const handlePause = (p: boolean) => onPause(p)
 

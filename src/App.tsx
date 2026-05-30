@@ -178,9 +178,10 @@ export default function App() {
   const spawnMouseDownRef = useRef<{ x: number; y: number } | null>(null)
   const spawnDidDragRef   = useRef(false)
 
-  const curtainVisibleRef = useRef(true)
-  const dashInViewRef     = useRef(false)
-  const dashUnlockedRef   = useRef(false)  // true only after user clicks "Explore the data"
+  const curtainVisibleRef  = useRef(true)
+  const dashInViewRef      = useRef(false)
+  const dashUnlockedRef    = useRef(false)  // true only after user clicks "Explore the data"
+  const captureFreezeRef   = useRef<(() => void) | null>(null)
 
   // Intercept wheel on scroll-doc and forward to zoom when over the simulation
   useEffect(() => {
@@ -552,7 +553,10 @@ export default function App() {
                 valueAction={dashInView ? (
                   <button
                     className={`hud-pause-icon${paused ? ' active' : ''}`}
-                    onClick={() => setPaused(p => !p)}
+                    onClick={() => {
+                      if (!paused) captureFreezeRef.current?.()
+                      setPaused(p => !p)
+                    }}
                     aria-label={paused ? 'Resume data' : 'Pause data'}
                   >
                     {paused ? '▶' : '⏸'}
@@ -756,6 +760,7 @@ export default function App() {
             scrollRef={scrollRef}
             paused={paused}
             onPause={setPaused}
+            captureFreezeRef={captureFreezeRef}
             onBackToCity={() => {
               setDashInView(false)
               canvasLayerOpacity.set(1)

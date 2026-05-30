@@ -13,10 +13,14 @@ interface HeadlineMetricProps {
 export default function HeadlineMetric({ value, label, sublabel, valueAction }: HeadlineMetricProps) {
   return (
     <div className="headline-metric">
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+      {valueAction ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="headline-metric-value">{value}</div>
+          {valueAction}
+        </div>
+      ) : (
         <div className="headline-metric-value">{value}</div>
-        {valueAction}
-      </div>
+      )}
       <div className="headline-metric-label">{label}</div>
       {sublabel && <div className="headline-metric-sublabel">{sublabel}</div>}
     </div>
