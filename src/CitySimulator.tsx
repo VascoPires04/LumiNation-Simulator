@@ -77,7 +77,8 @@ const HOURS_PER_YEAR_NIGHT = 4100
 const PED_SPEED = 1.4
 const CAR_SPEED = 11
 const METERS_PER_PIXEL = 0.35
-const SAFETY_BEHIND_SEC = 3.0  // seconds lamps stay lit after an agent passes
+const SAFETY_BEHIND_SEC = 4.0  // seconds lamps stay lit after an agent passes
+const SENSOR_RANGE_PX   = 80   // minimum corridor radius — mmWave radar detection range (~28m)
 const MAX_VISUAL_BRI = 0.1  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
@@ -600,8 +601,8 @@ export default function CitySimulator({
       // Physics-based corridor: ETA = distAlong / sp
       // Lamp activates if 0 ≤ ETA ≤ lookaheadSec (ahead)
       //                 or 0 ≤ -ETA ≤ SAFETY_BEHIND_SEC (behind)
-      const lookaheadPx   = sp * lookaheadRef.current            // px ahead
-      const reachBehindPx = sp * SAFETY_BEHIND_SEC * backScale   // px behind
+      const lookaheadPx   = Math.max(sp * lookaheadRef.current, SENSOR_RANGE_PX)
+      const reachBehindPx = Math.max(sp * SAFETY_BEHIND_SEC, SENSOR_RANGE_PX) * backScale
 
       const agentStreet = a.street
 
