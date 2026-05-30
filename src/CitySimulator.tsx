@@ -598,16 +598,16 @@ export default function CitySimulator({
       const sp     = Math.max(0.1, Math.hypot(a.vx, a.vy))  // m/s
       const spPx   = sp / METERS_PER_PIXEL                   // canvas px/s
       const pedPx  = PED_SPEED / METERS_PER_PIXEL             // ped canvas px/s
-      // power-dampen: faster agents get more corridor but not linearly — exponent < 0.5 keeps cars from dominating
-      const spVis  = pedPx * Math.pow(spPx / pedPx, 0.35)
       const dx = a.vx / sp, dy = a.vy / sp
 
-      // ETA corridor: 1s of slider = 1 lamp spacing for a pedestrian.
-      // screenScale shrinks the corridor on narrow canvases so it never fills the whole screen.
+      // Positive exponent so faster agents get proportionally more corridor.
+      // visSec / 3 brings the absolute scale down so peds are ~2 lamp spacings at 3 s
+      // while cars stay at the level the user confirmed was good.
       const { W, H } = dimsRef.current
       const lampStep    = Math.min(W, H) * 0.11
       const screenScale = Math.min(W / 550, 1.0)
-      const visSec      = lampStep / pedPx * screenScale
+      const spVis  = pedPx * Math.pow(spPx / pedPx, 0.38)
+      const visSec = lampStep / pedPx * screenScale / 3
       const lookaheadPx   = Math.max(spVis * lookaheadRef.current * visSec, SENSOR_RANGE_PX)
       const reachBehindPx = lookaheadPx * BEHIND_RATIO * backScale
 

@@ -650,7 +650,7 @@ export default function App() {
                         <span className="sim-compact-value">{lookaheadSec.toFixed(1)}s</span>
                       </label>
                       <TouchSlider
-                        min={0.5} max={8} step={0.5}
+                        min={0} max={12} step={0.5}
                         value={lookaheadSec}
                         onChange={setLookaheadSec}
                       />

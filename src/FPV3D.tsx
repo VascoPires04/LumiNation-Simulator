@@ -1921,7 +1921,7 @@ export default function FPV3D({ lampsRef, trackedRef, lookaheadRef, baselineRef,
                 <span>Lookahead</span>
                 <span style={{ color: '#FAC775' }}>{lookaheadVal.toFixed(1)}s</span>
               </div>
-              <TouchSlider min={0.5} max={8} step={0.5} value={lookaheadVal}
+              <TouchSlider min={0} max={12} step={0.5} value={lookaheadVal}
                 onChange={v => { setLookaheadVal(v); onLookaheadChange(v) }}
               />
             </div>
