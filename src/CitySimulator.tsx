@@ -78,7 +78,6 @@ const PED_SPEED = 1.4
 const CAR_SPEED = 11
 const METERS_PER_PIXEL = 0.35
 const SENSOR_RANGE_PX   = 40   // minimum corridor radius — mmWave radar detection range (~14m)
-const BEHIND_RATIO      = 0.7  // back corridor is 70% of front — slightly shorter, same slider response
 const MAX_VISUAL_BRI = 0.1  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
@@ -584,9 +583,6 @@ export default function CitySimulator({
     // Lamp targets
     // Scale the REAR corridor proportionally to canvas width — on a 375px mobile
     // canvas the 260px rear reach was eating almost the whole screen. The FRONT
-    // reach stays full-size so (a) the corridor looks long ahead and (b) the
-    // Lookahead slider has a visible effect. Reference width: 960px desktop.
-    const backScale = Math.min(1, dimsRef.current.W / 960)
     // Only process lamps near the visible area — huge perf win for the extended pre-generated city
     const { vx0: svx0, vy0: svy0, vx1: svx1, vy1: svy1 } = virtualBoundsRef.current
     const corrMargin = 500
@@ -608,8 +604,9 @@ export default function CitySimulator({
       const screenScale = Math.min(W / 550, 1.0)
       const spVis  = pedPx * Math.pow(spPx / pedPx, 0.38)
       const visSec = lampStep / pedPx * screenScale / 3
-      const lookaheadPx   = Math.max(spVis * lookaheadRef.current * visSec, SENSOR_RANGE_PX)
-      const reachBehindPx = lookaheadPx * BEHIND_RATIO * backScale
+      const lookaheadPx   = Math.max(spVis * lookaheadRef.current * visSec, lampStep)
+      // Behind: 85% of front formula, same floor — mathematically always ≤ lookaheadPx
+      const reachBehindPx = Math.max(spVis * lookaheadRef.current * visSec * 0.85, lampStep)
 
       const agentStreet = a.street
 

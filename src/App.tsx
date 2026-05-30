@@ -60,7 +60,7 @@ function TouchSlider({ min, max, step, value, onChange }: {
       style={{ touchAction: 'none' }}
     >
       <div className="touch-slider-fill" style={{ width: `${pct * 100}%` }} />
-      <div className="touch-slider-thumb" style={{ left: `${pct * 100}%` }} />
+      <div className="touch-slider-thumb" style={{ left: `clamp(9px, ${pct * 100}%, calc(100% - 9px))` }} />
     </div>
   )
 }
@@ -280,12 +280,15 @@ export default function App() {
       setSidebarVisible(true)
       setTopbarVisible(true)
       animate(mobileHudOpacity,    1,   { duration: 0.55, ease: 'easeOut', delay: 0.15 })
-      animate(mobileTopbarOpacity, 1,   { duration: 0.55, ease: 'easeOut', delay: 0.25 })
       animate(mobileVeilOpacity,   0,   { duration: 0.8,  ease: 'easeOut' })
       animate(mobileCanvasScale,   1.0, { duration: 0.8,  ease: 'easeOut' })
       animate(mobileCanvasY,       0,   { duration: 0.8,  ease: 'easeOut' })
     }, holdDelay)
-    const t2 = setTimeout(() => setMobileCurtainGone(true), holdDelay + 800)
+    // Topbar fades in only after curtain is fully gone — mirrors desktop behaviour
+    const t2 = setTimeout(() => {
+      setMobileCurtainGone(true)
+      animate(mobileTopbarOpacity, 1, { duration: 0.4, ease: 'easeOut' })
+    }, holdDelay + 800)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [isMobile, mobileCurtainKey, mobileHudOpacity, mobileTopbarOpacity, mobileVeilOpacity, mobileCanvasScale, mobileCanvasY])
 
