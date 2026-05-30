@@ -1,16 +1,22 @@
 // HeadlineMetric — large glanceable metric display.
 // Used in SimulatorSection (Phase 3) for the annual € saved at city scale.
 
+import type { ReactNode } from 'react'
+
 interface HeadlineMetricProps {
-  value: string      // e.g. "€4.2M"
-  label: string      // e.g. "saved per year · city scale"
-  sublabel?: string  // e.g. "100,000 streetlights"
+  value: string
+  label: string
+  sublabel?: string
+  valueAction?: ReactNode  // rendered top-aligned beside the value, e.g. a pause icon
 }
 
-export default function HeadlineMetric({ value, label, sublabel }: HeadlineMetricProps) {
+export default function HeadlineMetric({ value, label, sublabel, valueAction }: HeadlineMetricProps) {
   return (
     <div className="headline-metric">
-      <div className="headline-metric-value">{value}</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+        <div className="headline-metric-value">{value}</div>
+        {valueAction}
+      </div>
       <div className="headline-metric-label">{label}</div>
       {sublabel && <div className="headline-metric-sublabel">{sublabel}</div>}
     </div>

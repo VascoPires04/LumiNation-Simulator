@@ -10,8 +10,8 @@ import { scaleLinear, scaleTime } from 'd3-scale'
 import { select } from 'd3-selection'
 import { area, curveMonotoneX, line } from 'd3-shape'
 import { SimSample } from '../sim-bus'
+import { CITY_LAMPS } from '../constants'
 
-const CITY_LAMPS = 100_000
 const AMBER  = '#FF9500'
 const ORANGE = '#C85000'
 
@@ -37,17 +37,18 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
   const xAxisRef     = useRef<SVGGElement>(null)
   const yAxisRef     = useRef<SVGGElement>(null)
 
-  const [dims, setDims] = useState({ w: 600, h: isMobile ? 180 : 260 })
+  const chartH = () => isMobile ? 180 : Math.round(Math.min(Math.max(180, window.innerHeight * 0.26), 260))
+  const [dims, setDims] = useState({ w: 600, h: chartH() })
   const [hoverX, setHoverX] = useState<number | null>(null)
 
   useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
     const ro = new ResizeObserver(() => {
-      setDims({ w: el.offsetWidth, h: isMobile ? 180 : 260 })
+      setDims({ w: el.offsetWidth, h: chartH() })
     })
     ro.observe(el)
-    setDims({ w: el.offsetWidth, h: isMobile ? 180 : 260 })
+    setDims({ w: el.offsetWidth, h: chartH() })
     return () => ro.disconnect()
   }, [isMobile])
 
@@ -133,17 +134,22 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
   // D3 axes
   useEffect(() => {
     if (!xAxisRef.current) return
+    const nTicks = isMobile ? 3 : 5
+    const [t0, t1] = xScale.domain() as [Date, Date]
+    const span = t1.getTime() - t0.getTime()
+    const tickVals = Array.from({ length: nTicks }, (_, i) =>
+      new Date(t0.getTime() + span * i / (nTicks - 1))
+    )
     select(xAxisRef.current)
       .call(
         axisBottom(xScale)
-          .ticks(isMobile ? 3 : 5)
+          .tickValues(tickVals)
           .tickFormat(d => {
-            const date = d as Date
-            const totalSec = date.getMinutes() * 60 + date.getSeconds()
-            if (totalSec === 0) return '0s'
-            if (totalSec < 60) return `${totalSec}s`
-            const mins = Math.floor(totalSec / 60)
-            const secs = totalSec % 60
+            const elapsedSec = Math.round(((d as Date).getTime() - t0.getTime()) / 1000)
+            if (elapsedSec === 0) return '0s'
+            if (elapsedSec < 60) return `${elapsedSec}s`
+            const mins = Math.floor(elapsedSec / 60)
+            const secs = elapsedSec % 60
             return secs === 0 ? `${mins}m` : `${mins}m${secs}s`
           })
       )
@@ -283,6 +289,17 @@ export default function PowerChart({ history, paused, isMobile }: Props) {
           {/* Axes */}
           <g ref={xAxisRef} transform={`translate(0,${iH})`} />
           <g ref={yAxisRef} />
+
+          {/* Y-axis unit label */}
+          <text
+            transform={`rotate(-90)`}
+            x={-(iH / 2)}
+            y={-(mg.left - 11)}
+            textAnchor="middle"
+            fill="rgba(240,240,245,0.38)"
+            fontSize={isMobile ? 8 : 9}
+            fontFamily="Inter, sans-serif"
+          >{fmtPower(yMax).unit}</text>
 
           {/* Savings badge — bottom right inside chart */}
           <g transform={`translate(${iW - (isMobile ? 68 : 76)},${iH - (isMobile ? 36 : 44)})`}>

@@ -6,8 +6,8 @@ import { scaleLinear } from 'd3-scale'
 import { max } from 'd3-array'
 import type { SimSample } from '../sim-bus'
 import type { SimTotals } from '../hooks/useSimTotals'
+import { CITY_LAMPS } from '../constants'
 
-const CITY_LAMPS = 100_000
 const AMBER  = '#FAC775'
 
 interface Props {

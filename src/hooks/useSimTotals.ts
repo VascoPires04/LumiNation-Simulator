@@ -4,8 +4,7 @@
 
 import { useEffect, useState } from 'react'
 import { simBus, SimSample } from '../sim-bus'
-
-const CITY_LAMPS = 100_000
+import { CITY_LAMPS } from '../constants'
 
 export interface SimTotals {
   powerW:        number   // Lisbon-scaled current power (W)

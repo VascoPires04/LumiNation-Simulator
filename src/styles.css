@@ -858,6 +858,30 @@ input[type="range"] {
   text-align: center;
   padding: 28px 16px;
 }
+/* Pause icon in HUD headline — sits below the big number, no layout impact on the metric */
+.hud-pause-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-height: unset;
+  padding: 0;
+  margin-top: 8px;
+  border-radius: 50%;
+  border: 0.5px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.hud-pause-icon:hover { border-color: rgba(255,255,255,0.4); color: var(--text); }
+.hud-pause-icon.active {
+  background: rgba(250,199,117,0.12);
+  border-color: var(--amber);
+  color: var(--amber);
+}
 .headline-metric-value {
   font-family: var(--font-heading);
   font-size: clamp(2.5rem, 8vw, 5rem);
@@ -1091,11 +1115,15 @@ input[type="range"] {
 
 /* Controls — modes + sliders + CTA, desktop: below headline, right column */
 .hud-controls {
-  top: 380px;
+  top: clamp(260px, 38vh, 420px);
+  max-height: calc(100dvh - clamp(260px, 38vh, 420px) - 20px);
+  overflow-y: auto;
+  scrollbar-width: none;
   display: flex;
   flex-direction: column;
   gap: 0;
 }
+.hud-controls::-webkit-scrollbar { display: none; }
 
 /* Context line below the headline metric */
 .hud-context-line {
@@ -1109,7 +1137,7 @@ input[type="range"] {
 }
 
 /* Section wrapper with descriptor above mode buttons */
-.hud-section { display: flex; flex-direction: column; gap: 8px; }
+.hud-section { display: flex; flex-direction: column; gap: clamp(4px, 1vh, 8px); }
 .hud-section-desc {
   font-size: clamp(0.85rem, 1.3vw, 0.95rem);
   color: rgba(254, 254, 255, 0.68);
@@ -1207,28 +1235,29 @@ input[type="range"] {
 /* Body — panel that slides as one unit (handle + content) */
 .hud-controls-body {
   will-change: transform;
+  flex-shrink: 0; /* prevent flex container from compressing content; overflow-y on parent scrolls instead */
 }
 
 /* Inner padding so content has breathing room */
 .hud-controls-inner {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding-top: 28px;
-  padding-bottom: 8px;
+  gap: clamp(10px, 2.5vh, 24px);
+  padding-top: clamp(12px, 3vh, 28px);
+  padding-bottom: clamp(4px, 1vh, 8px);
 }
 
 /* Mode buttons — vertical stack on desktop */
 .sim-compact-modes {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: clamp(4px, 1vh, 10px);
   pointer-events: auto;
 }
 .sim-compact-modes button {
   pointer-events: auto;
-  min-height: 44px;
-  padding: 10px 16px;
+  min-height: clamp(32px, 4.5vh, 44px);
+  padding: clamp(6px, 1vh, 10px) 16px;
   font-size: clamp(0.85rem, 1.4vw, 1rem);
   font-family: var(--font-heading);
   font-weight: 400;
@@ -1258,7 +1287,7 @@ input[type="range"] {
 .sim-compact-controls {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: clamp(4px, 1vh, 10px);
   pointer-events: auto;
 }
 .slider-col {
@@ -1295,8 +1324,8 @@ input[type="range"] {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 16px;
-  min-height: 44px;
+  padding: clamp(6px, 1vh, 10px) 16px;
+  min-height: clamp(32px, 4.5vh, 44px);
   font-family: var(--font-heading);
   font-size: clamp(0.8rem, 1.4vw, 1rem);
   font-weight: 500;
@@ -1477,12 +1506,17 @@ input[type="range"] {
   pointer-events: none;
 }
 
-/* Footer — re-enable pointer events for links */
-.scroll-doc .footer {
-  pointer-events: auto;
-  background: rgba(5, 5, 8, 0.92);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+/* Fixed footer — mirrors topbar at the bottom, visible when dashboard is in view */
+.app-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: linear-gradient(to top, rgba(5,5,8,0.88) 0%, rgba(5,5,8,0.60) 60%, transparent 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: none;
 }
 
 /* ── V2: topbar + landing curtain mobile ────────────────────────────────── */
@@ -1705,11 +1739,14 @@ input[type="range"] {
   We add a comfortable 24px gap on top → padding-right: clamp(284px,28vw,440px).
 */
 .dashboard-section {
-  padding: 88px clamp(24px, 4vw, 60px) 40px;
+  height: 100dvh;
+  /* padding-top = topbar logo height + responsive breathing room, both vw-driven */
+  padding: calc(clamp(44px, 5.5vw, 88px) + clamp(16px, 2.5vw, 40px)) clamp(24px, 4vw, 60px) clamp(48px, 6vh, 72px);
   padding-right: clamp(284px, 28vw, 440px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
   pointer-events: auto;
   position: relative;
   z-index: 1;
@@ -1721,7 +1758,42 @@ input[type="range"] {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 28px;
+  margin-bottom: clamp(14px, 2.5vh, 28px);
+  flex-shrink: 0;
+}
+
+/* Title row — title + inline pause icon */
+.dash-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dash-pause-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  min-height: unset;
+  padding: 0;
+  border-radius: 50%;
+  border: 0.5px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-muted);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.dash-pause-icon:hover {
+  border-color: rgba(255,255,255,0.35);
+  color: var(--text);
+}
+.dash-pause-icon.active {
+  background: rgba(250,199,117,0.12);
+  border-color: var(--amber);
+  color: var(--amber);
 }
 
 /* Step 3 — bigger title */
@@ -1793,12 +1865,22 @@ input[type="range"] {
   font-size: 14px;
 }
 
-/* Charts area */
+/* Charts area — flex-grows to fill remaining section height, scrolls internally */
 .dash-charts-area {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 38px;
+  gap: clamp(18px, 3vh, 38px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(250,199,117,0.25) transparent;
 }
+.dash-charts-area::-webkit-scrollbar { width: 4px; }
+.dash-charts-area::-webkit-scrollbar-track { background: transparent; }
+.dash-charts-area::-webkit-scrollbar-thumb { background: rgba(250,199,117,0.25); border-radius: 2px; }
 
 /* PowerChart card — full width of the content area */
 .dash-chart-row { width: 100%; }
@@ -1807,16 +1889,12 @@ input[type="range"] {
 .dash-bottom-cards {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 18px;
-  max-height: clamp(260px, 32vh, 380px);
+  gap: clamp(10px, 1.5vw, 18px);
 }
 
 .dash-bottom-card {
   min-height: 0;
-  overflow: hidden;
 }
-
-.dash-bottom-card { overflow: hidden; }
 
 /* Cards */
 .dash-card {

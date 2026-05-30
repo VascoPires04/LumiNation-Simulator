@@ -30,13 +30,21 @@ export default function DashboardSection({ onInView, inView, isMobile, paused, o
   const [frozenHistory, setFrozenHistory] = useState(liveHistory)
   const [frozenTotals,  setFrozenTotals]  = useState(liveTotals)
 
-  const handlePause = (p: boolean) => {
-    if (p) {
-      setFrozenHistory([...liveHistory])
-      setFrozenTotals(liveTotals)
+  // Keep refs so the effect below always sees the latest live data
+  const liveHistoryRef = useRef(liveHistory)
+  liveHistoryRef.current = liveHistory
+  const liveTotalsRef = useRef(liveTotals)
+  liveTotalsRef.current = liveTotals
+
+  // Capture snapshot whenever paused becomes true — works regardless of who triggered it
+  useEffect(() => {
+    if (paused) {
+      setFrozenHistory([...liveHistoryRef.current])
+      setFrozenTotals(liveTotalsRef.current)
     }
-    onPause(p)
-  }
+  }, [paused])
+
+  const handlePause = (p: boolean) => onPause(p)
 
   const displayHistory = paused ? frozenHistory : liveHistory
   const displayTotals  = paused ? frozenTotals  : liveTotals
@@ -64,22 +72,24 @@ export default function DashboardSection({ onInView, inView, isMobile, paused, o
 
       <div className="dash-header">
         <div>
-          <h2 className="dash-title">How a smart city saves money</h2>
+          <div className="dash-title-row">
+            <h2 className="dash-title">How a smart city saves money</h2>
+            {isMobile && (
+              <button
+                className={`dash-pause-icon${paused ? ' active' : ''}`}
+                onClick={() => handlePause(!paused)}
+                aria-label={paused ? 'Resume data' : 'Pause data'}
+              >
+                {paused ? '▶' : '⏸'}
+              </button>
+            )}
+          </div>
           <p className="dash-subtitle">
             Live data from your session · last {elapsed}
             {paused && <span className="dash-frozen-badge"> · frozen</span>}
             <br />city scale · 100,000 lamps
           </p>
         </div>
-        {/* Pause — mobile only (desktop uses HUD sidebar) */}
-        {isMobile && (
-          <button
-            className={`dash-pause-btn${paused ? ' active' : ''}`}
-            onClick={() => handlePause(!paused)}
-          >
-            {paused ? '▶ Resume' : '⏸ Pause'}
-          </button>
-        )}
       </div>
 
       {!hasData && (

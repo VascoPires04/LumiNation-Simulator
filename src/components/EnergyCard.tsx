@@ -1,4 +1,4 @@
-// EnergyCard — cumulative session kWh saved with sparkline.
+﻿// EnergyCard — cumulative session kWh saved with sparkline.
 
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { line, curveMonotoneX } from 'd3-shape'
@@ -6,8 +6,7 @@ import { scaleLinear } from 'd3-scale'
 import { max } from 'd3-array'
 import type { SimSample } from '../sim-bus'
 import type { SimTotals } from '../hooks/useSimTotals'
-
-const CITY_LAMPS = 100_000
+import { CITY_LAMPS } from '../constants'
 const AMBER  = '#FAC775'
 
 interface Props {
@@ -145,7 +144,7 @@ export default function EnergyCard({ history, totals, isMobile, expandable = fal
           {expanded ? '✕' : '⤢'}
         </button>
       )}
-      <div className="dash-card-label">ENERGY AVOIDED · SESSION</div>
+      <div className="dash-card-label">ENERGY SAVED · SESSION</div>
       <div className="money-big-number">
         {kwhVal}<span className="money-unit">{kwhUnit}</span>
       </div>

@@ -23,6 +23,7 @@ import { useIsMobile } from './hooks/useIsMobile'
 import HeadlineMetric from './components/HeadlineMetric'
 import ParticleBackground from './components/ParticleBackground'
 import DashboardSection from './sections/DashboardSection'
+import { CITY_LAMPS } from './constants'
 
 type Mode = 'lumination' | 'baseline' | 'compare' | 'fpv'
 
@@ -66,8 +67,6 @@ function TouchSlider({ min, max, step, value, onChange }: {
 
 // Curtain lift completes over LIFT px of scroll
 const LIFT = 600
-const CITY_LAMPS = 100_000
-
 export default function App() {
   const isMobile = useIsMobile()
   const isNarrowScreen = useIsMobile(1024)
@@ -540,7 +539,7 @@ export default function App() {
           <motion.div
             style={{ opacity: effectiveSidebarOpacity, pointerEvents: effectiveSidebarVisible && !(isMobile && dashInView) ? undefined : 'none', position: 'relative', zIndex: 15 }}
           >
-            {/* Headline — display only, no interaction */}
+            {/* Headline + optional pause icon when in dashboard */}
             <motion.div
               className="hud-headline"
               aria-live="polite"
@@ -550,6 +549,15 @@ export default function App() {
                 value={fmtEur}
                 label="saved per year"
                 sublabel="CITY · 100K LAMPS"
+                valueAction={dashInView ? (
+                  <button
+                    className={`hud-pause-icon${paused ? ' active' : ''}`}
+                    onClick={() => setPaused(p => !p)}
+                    aria-label={paused ? 'Resume data' : 'Pause data'}
+                  >
+                    {paused ? '▶' : '⏸'}
+                  </button>
+                ) : undefined}
               />
             </motion.div>
 
@@ -646,14 +654,8 @@ export default function App() {
                   </div>
 
                   {dashInView ? (
-                    /* Dashboard context — pause + back */
+                    /* Dashboard context — back only (pause is the icon in dash-header) */
                     <div className="hud-dash-actions">
-                      <button
-                        className={`dash-pause-btn${paused ? ' active' : ''}`}
-                        onClick={() => setPaused(p => !p)}
-                      >
-                        {paused ? '▶ Resume data' : '⏸ Pause data'}
-                      </button>
                       <button
                         className="sim-cta"
                         onClick={() => {
@@ -764,10 +766,6 @@ export default function App() {
             }}
           />
 
-          <footer className="footer">
-            <span>LumiNation · Red Bull Basement Portugal 2026 · Instituto Superior Técnico</span>
-            <span>v0.1 · early prototype</span>
-          </footer>
         </div>
 
         {/* ── Layer 100: topbar — fixed, glassmorphic, fades in on scroll/timer ── */}
@@ -809,6 +807,17 @@ export default function App() {
               }
           </div>
         </motion.header>
+
+        {/* ── Fixed footer — mirrors topbar, fades in when dashboard is in view ── */}
+        <motion.footer
+          className="footer app-footer"
+          animate={{ opacity: dashInView ? 1 : 0 }}
+          transition={{ duration: 0.3 }}
+          style={{ pointerEvents: dashInView ? 'auto' : 'none' }}
+        >
+          <span>LumiNation · Red Bull Basement Portugal 2026</span>
+          <span>v.1 · published</span>
+        </motion.footer>
 
       </div>
     </MotionConfig>
