@@ -77,8 +77,8 @@ const HOURS_PER_YEAR_NIGHT = 4100
 const PED_SPEED = 1.4
 const CAR_SPEED = 11
 const METERS_PER_PIXEL = 0.35
-const SAFETY_BEHIND_SEC = 8.0  // seconds lamps stay lit after an agent passes
-const SENSOR_RANGE_PX   = 150  // minimum corridor radius — mmWave radar detection range (~52m)
+const SENSOR_RANGE_PX   = 40   // minimum corridor radius — mmWave radar detection range (~14m)
+const BEHIND_RATIO      = 0.7  // back corridor is 70% of front — slightly shorter, same slider response
 const MAX_VISUAL_BRI = 0.1  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
@@ -595,14 +595,21 @@ export default function CitySimulator({
       l.y > svy0 - corrMargin && l.y < svy1 + corrMargin)
     for (const l of lampsRef.current) l.target = baselineRef.current
     for (const a of agentsRef.current) {
-      const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))  // px/s
-      const dx = a.vx / sp, dy = a.vy / sp               // unit direction
+      const sp     = Math.max(0.1, Math.hypot(a.vx, a.vy))  // m/s
+      const spPx   = sp / METERS_PER_PIXEL                   // canvas px/s
+      const pedPx  = PED_SPEED / METERS_PER_PIXEL             // ped canvas px/s
+      // power-dampen: faster agents get more corridor but not linearly — exponent < 0.5 keeps cars from dominating
+      const spVis  = pedPx * Math.pow(spPx / pedPx, 0.35)
+      const dx = a.vx / sp, dy = a.vy / sp
 
-      // Physics-based corridor: ETA = distAlong / sp
-      // Lamp activates if 0 ≤ ETA ≤ lookaheadSec (ahead)
-      //                 or 0 ≤ -ETA ≤ SAFETY_BEHIND_SEC (behind)
-      const lookaheadPx   = Math.max(sp * lookaheadRef.current, SENSOR_RANGE_PX)
-      const reachBehindPx = Math.max(sp * SAFETY_BEHIND_SEC, SENSOR_RANGE_PX) * backScale
+      // ETA corridor: 1s of slider = 1 lamp spacing for a pedestrian.
+      // screenScale shrinks the corridor on narrow canvases so it never fills the whole screen.
+      const { W, H } = dimsRef.current
+      const lampStep    = Math.min(W, H) * 0.11
+      const screenScale = Math.min(W / 550, 1.0)
+      const visSec      = lampStep / pedPx * screenScale
+      const lookaheadPx   = Math.max(spVis * lookaheadRef.current * visSec, SENSOR_RANGE_PX)
+      const reachBehindPx = lookaheadPx * BEHIND_RATIO * backScale
 
       const agentStreet = a.street
 
