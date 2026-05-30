@@ -73,7 +73,7 @@ export default function App() {
   const isNarrowScreen = useIsMobile(1024)
   const [mode, setMode]               = useState<Mode>('lumination')
   const [baselinePct, setBaselinePct] = useState(0.20)
-  const [lookaheadSec, setLookaheadSec] = useState(3.0)
+  const [lookaheadSec, setLookaheadSec] = useState(5.0)
   const [spawnMode, setSpawnMode]     = useState<'ped' | 'car'>('ped')
   const [tooltip, setTooltip]         = useState<'baseline' | 'lookahead' | null>(null)
   const externalSpawnModeRef = useRef<'ped' | 'car'>('ped')
