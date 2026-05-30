@@ -77,10 +77,7 @@ const HOURS_PER_YEAR_NIGHT = 4100
 const PED_SPEED = 1.4
 const CAR_SPEED = 11
 const METERS_PER_PIXEL = 0.35
-const LAMP_REACH_PED = 60
-const LAMP_REACH_CAR = 25
-const LAMP_REACH_BEHIND_PED = 70
-const LAMP_REACH_BEHIND_CAR = 60
+const SAFETY_BEHIND_SEC = 3.0  // seconds lamps stay lit after an agent passes
 const MAX_VISUAL_BRI = 0.1  // Visual scale: physical brightness × this = visual brightness (smooth, no dead zone)
 const CAR_COLORS = ['#3a6fb5', '#a83232', '#2c8a4a', '#5a4a8a', '#c47a1a']
 
@@ -597,30 +594,37 @@ export default function CitySimulator({
       l.y > svy0 - corrMargin && l.y < svy1 + corrMargin)
     for (const l of lampsRef.current) l.target = baselineRef.current
     for (const a of agentsRef.current) {
-      const isCar = a.type === 'car'
-      const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))
-      const dx = a.vx / sp
-      const dy = a.vy / sp
-      const lookaheadPx = lookaheadRef.current * 21 * Math.sqrt(sp / PED_SPEED)
-      const reachAhead = (isCar ? LAMP_REACH_CAR : LAMP_REACH_PED) + lookaheadPx
-      const reachBehind = ((isCar ? LAMP_REACH_BEHIND_CAR : LAMP_REACH_BEHIND_PED) + lookaheadPx * 1.6) * backScale
+      const sp = Math.max(0.1, Math.hypot(a.vx, a.vy))  // px/s
+      const dx = a.vx / sp, dy = a.vy / sp               // unit direction
+
+      // Physics-based corridor: ETA = distAlong / sp
+      // Lamp activates if 0 ≤ ETA ≤ lookaheadSec (ahead)
+      //                 or 0 ≤ -ETA ≤ SAFETY_BEHIND_SEC (behind)
+      const lookaheadPx   = sp * lookaheadRef.current            // px ahead
+      const reachBehindPx = sp * SAFETY_BEHIND_SEC * backScale   // px behind
+
       const agentStreet = a.street
 
       for (const l of stepLamps) {
         const sameStreet = streetsRef.current[l.streetId] === agentStreet
 
         if (!sameStreet) {
+          // Intersection spillover: lamp on a crossing street within junction range
           const d = Math.hypot(l.x - a.x, l.y - a.y)
           const spillover = 50
-          if (d < spillover) {
-            const boost = 1 - (d / spillover)
-            l.target = Math.max(l.target, boost)
-          }
+          if (d < spillover) l.target = Math.max(l.target, 1 - d / spillover)
           continue
         }
 
+        // Signed distance along agent's direction of travel
+        // Positive = lamp is ahead of agent, negative = behind
         const distAlong = (l.x - a.x) * dx + (l.y - a.y) * dy
-        if (distAlong >= -reachBehind && distAlong <= (lookaheadPx + reachAhead)) {
+
+        if (distAlong >= 0 && distAlong <= lookaheadPx) {
+          // Ahead: ETA ≤ lookaheadSec — pre-activate now
+          l.target = 1.0
+        } else if (distAlong < 0 && distAlong >= -reachBehindPx) {
+          // Behind: agent passed within SAFETY_BEHIND_SEC — keep lit for safety
           l.target = 1.0
         }
       }
