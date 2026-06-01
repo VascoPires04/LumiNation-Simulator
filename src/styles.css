@@ -1884,6 +1884,13 @@ input[type="range"] {
 .dash-charts-area::-webkit-scrollbar-track { background: transparent; }
 .dash-charts-area::-webkit-scrollbar-thumb { background: rgba(250,199,117,0.25); border-radius: 2px; }
 
+@media (max-width: 480px) {
+  .dash-charts-area {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: none;
+  }
+}
+
 /* PowerChart card — full width of the content area */
 .dash-chart-row { width: 100%; }
 
@@ -2071,13 +2078,11 @@ input[type="range"] {
     padding: 72px 12px 32px;
     padding-right: 12px;
     gap: 12px;
-    /* Make dashboard itself scrollable on mobile — fixed height + overflow */
+    /* Section is the fixed frame — does NOT scroll itself; dash-charts-area scrolls inside */
     position: fixed;
     inset: 0;
     z-index: 6;
-    overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
     pointer-events: auto;
     background: rgba(5, 5, 8, 0.96);
     backdrop-filter: blur(12px);

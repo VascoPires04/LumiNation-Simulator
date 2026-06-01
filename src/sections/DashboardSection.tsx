@@ -78,7 +78,7 @@ export default function DashboardSection({ onInView, inView, isMobile, paused, o
             {isMobile && (
               <button
                 className={`dash-pause-icon${paused ? ' active' : ''}`}
-                onClick={() => handlePause(!paused)}
+                onClick={() => { if (!paused) captureFreezeRef?.current?.(); handlePause(!paused) }}
                 aria-label={paused ? 'Resume data' : 'Pause data'}
               >
                 {paused ? '▶' : '⏸'}
